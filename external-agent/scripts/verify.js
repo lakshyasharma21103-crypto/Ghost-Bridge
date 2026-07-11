@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const { Writable } = require('node:stream');
 const { start } = require('../src/server');
+const { MockProvider } = require('../src/providers/mock.provider');
 const { createLogger } = require('../src/utils/logger');
 
 const runtimeToken = crypto.randomBytes(32).toString('base64url');
@@ -52,12 +53,15 @@ async function verify() {
       runtimeToken,
       allowedGatewayOrigins: [],
       requestTimeoutMs: 5_000,
+      aiProvider: 'mock',
+      gemini: { model: undefined, webSearchEnabled: false },
       jsonBodyLimit: '32kb',
       rateLimitWindowMs: 60_000,
       rateLimitMax: 100,
     },
     host: '127.0.0.1',
     logger,
+    provider: new MockProvider(),
   });
   const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -128,7 +132,8 @@ async function verify() {
       'Invocation summary was unexpected.',
     );
     assert(!invoked.text.includes(runtimeToken), 'Runtime token appeared in the success response.');
-    report('authenticated invocation', 'deterministic external runtime response returned');
+    assert(invoked.body?.response?.runtime?.provider === 'mock', 'Mock provider was not used.');
+    report('authenticated invocation', 'deterministic mock runtime response returned');
 
     const finalHealth = await request(baseUrl, '/health', { label: 'final health check' });
     assert(

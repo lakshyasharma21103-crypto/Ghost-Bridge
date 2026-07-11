@@ -1,17 +1,50 @@
-const EXTERNAL_AGENT_SOURCE = 'https://example.com/external-agent-source';
+const { z } = require('zod');
+const { SERVICE_NAME, SERVICE_VERSION } = require('../constants');
 
-function researchTopic(topic) {
-  return {
-    summary: `External agent result for: ${topic}`,
-    sources: [EXTERNAL_AGENT_SOURCE],
-    runtime: {
-      service: 'external-research-agent',
-      version: '1.0.0',
-    },
-  };
+const providerResultSchema = z
+  .object({
+    summary: z.string().trim().min(1),
+    sourceReferences: z.array(
+      z.object({ title: z.string().trim().min(1), url: z.string().url() }).strict(),
+    ),
+    webSearchUsed: z.boolean(),
+  })
+  .strict();
+
+class ResearchService {
+  constructor(provider, config) {
+    if (!provider?.research || !provider?.checkConfiguration) {
+      throw new Error('A research AI provider is required.');
+    }
+    this.provider = provider;
+    this.config = config;
+  }
+
+  async researchTopic({ topic, requestId, signal }) {
+    const normalizedTopic = String(topic).trim().replace(/\s+/g, ' ');
+    const result = providerResultSchema.parse(
+      await this.provider.research({ topic: normalizedTopic, requestId, signal }),
+    );
+
+    return {
+      summary: result.summary,
+      sources: result.sourceReferences.map((source) => source.url),
+      runtime: {
+        service: SERVICE_NAME,
+        version: SERVICE_VERSION,
+        provider: this.config.aiProvider,
+        model:
+          this.config.aiProvider === 'gemini'
+            ? this.config.gemini.model
+            : this.provider.model || 'deterministic-test',
+        webSearchUsed: result.webSearchUsed,
+        sourceCount: result.sourceReferences.length,
+      },
+    };
+  }
 }
 
 module.exports = {
-  EXTERNAL_AGENT_SOURCE,
-  researchTopic,
+  ResearchService,
+  providerResultSchema,
 };

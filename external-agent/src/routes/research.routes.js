@@ -1,7 +1,6 @@
 const express = require('express');
 const { z } = require('zod');
 const { authenticateRuntime } = require('../middleware/authenticateRuntime');
-const { researchTopic } = require('../services/research.service');
 const { RuntimeError } = require('../utils/errors');
 
 const invocationSchema = z
@@ -17,10 +16,10 @@ function validationDetails(error) {
   }));
 }
 
-function researchRouter(runtimeToken) {
+function researchRouter(runtimeToken, researchService) {
   const router = express.Router();
 
-  router.post('/invoke', authenticateRuntime(runtimeToken), (request, response, next) => {
+  router.post('/invoke', authenticateRuntime(runtimeToken), async (request, response, next) => {
     const parsed = invocationSchema.safeParse(request.body);
     if (!parsed.success) {
       next(
@@ -34,12 +33,22 @@ function researchRouter(runtimeToken) {
       return;
     }
 
-    response.json({
-      response: researchTopic(parsed.data.topic),
-      meta: {
+    try {
+      const result = await researchService.researchTopic({
+        topic: parsed.data.topic,
         requestId: request.requestId,
-      },
-    });
+        signal: request.runtimeAbortSignal,
+      });
+      if (response.writableEnded || response.destroyed) return;
+      response.json({
+        response: result,
+        meta: {
+          requestId: request.requestId,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   return router;

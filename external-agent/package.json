@@ -1,8 +1,8 @@
 {
   "name": "external-agent",
   "private": true,
-  "version": "1.0.0",
-  "description": "Independent authenticated external research runtime for Agent Passport interoperability testing.",
+  "version": "2.0.0",
+  "description": "Independent authenticated Gemini-powered research runtime for Agent Passport interoperability.",
   "main": "src/server.js",
   "engines": {
     "node": ">=20"
@@ -10,13 +10,15 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "build": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js",
-    "typecheck": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js",
-    "lint": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js",
+    "build": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js && node --check scripts/verifyGeminiAgent.js",
+    "typecheck": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js && node --check scripts/verifyGeminiAgent.js",
+    "lint": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js && node --check scripts/verifyGeminiAgent.js",
     "test": "node --test",
-    "verify": "node scripts/verify.js"
+    "verify": "node scripts/verify.js",
+    "verify:gemini-agent": "node scripts/verifyGeminiAgent.js"
   },
   "dependencies": {
+    "@google/genai": "^2.11.0",
     "cors": "2.8.6",
     "dotenv": "16.6.1",
     "express": "4.22.2",

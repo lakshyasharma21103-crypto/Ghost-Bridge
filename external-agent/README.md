@@ -1,13 +1,13 @@
 # External Research Agent
 
-An independently runnable and deployable authenticated REST runtime used to prove external Agent Passport interoperability. It intentionally returns deterministic research-style output and is not an LLM-powered agent. The gateway's development-only External Agent Integration can register its passport and carry this service's bearer token through encrypted delegated runtime access.
+An independently runnable and deployable Gemini-powered research runtime used through the existing Agent Passport REST adapter. The Gemini API key stays inside this service; the gateway receives only the established bearer-authenticated research response.
 
 ## API
 
 - `GET /health` is unauthenticated and returns service identity and health.
 - `POST /v1/research/invoke` requires `Authorization: Bearer <token>` and a JSON body such as `{ "topic": "latest AI infrastructure trends" }`.
 
-Successful invocation responses include `response.runtime.service: "external-research-agent"`, proving that the response came from this service rather than the gateway mock runtime.
+Successful invocation responses retain the existing `response.summary`, `response.sources`, and `response.runtime` contract. Runtime metadata identifies the configured provider and model without exposing credentials or provider internals.
 
 ## Environment
 
@@ -19,7 +19,15 @@ Copy `.env.example` to `.env` only for local use and replace the placeholder tok
 | `NODE_ENV`                     | No       | `development` | `development`, `test`, or `production`.                                                                                                                |
 | `EXTERNAL_AGENT_RUNTIME_TOKEN` | Yes      | None          | Random bearer secret of at least 32 characters.                                                                                                        |
 | `ALLOWED_GATEWAY_ORIGINS`      | No       | Empty         | Comma-separated HTTP(S) browser origins. Requests without an Origin header remain allowed for server-to-server invocation. CORS is not authentication. |
-| `REQUEST_TIMEOUT_MS`           | No       | `15000`       | Per-request timeout between 100 and 120000 milliseconds.                                                                                               |
+| `REQUEST_TIMEOUT_MS`           | No       | `60000`       | Per-request timeout between 100 and 120000 milliseconds. Keep this above the Gemini request timeout.                                                   |
+| `AI_PROVIDER`                  | No       | `gemini`      | `gemini`, or explicit `mock` use during tests/local development. Mock is rejected in production.                                                       |
+| `GEMINI_API_KEY`               | Gemini   | None          | Gemini credential stored only in this deployment's secret manager.                                                                                     |
+| `GEMINI_MODEL`                 | Gemini   | None          | Model available to the configured Gemini API project. No model is hardcoded.                                                                           |
+| `GEMINI_WEB_SEARCH_ENABLED`    | No       | `true`        | Enables Google Search grounding.                                                                                                                       |
+| `GEMINI_REQUEST_TIMEOUT_MS`    | No       | `45000`       | Timeout for the complete two-pass provider workflow.                                                                                                   |
+| `GEMINI_MAX_OUTPUT_TOKENS`     | No       | `1500`        | Maximum output tokens per Gemini call.                                                                                                                 |
+| `GEMINI_MAX_SOURCES`           | No       | `8`           | Maximum safe, deduplicated grounding URLs returned.                                                                                                    |
+| `GEMINI_THINKING_LEVEL`        | No       | `medium`      | Configured SDK thinking level: `minimal`, `low`, `medium`, or `high`.                                                                                  |
 
 Generate a development secret without printing or committing a production credential through your platform's secret manager. The service never prints the configured token.
 
@@ -64,9 +72,17 @@ npm run verify:external-agent
 npm run verify:external-flow
 ```
 
-The verifier starts an isolated local instance on port `5002`, generates an ephemeral token in memory, checks health/authentication/validation/success behavior, confirms tokens are absent from responses and captured logs, and shuts the instance down. Set `EXTERNAL_AGENT_VERIFY_PORT` if port 5002 is occupied.
+The ordinary verifier starts an isolated mock-backed instance on port `5002`, checks health/authentication/validation/success behavior, confirms tokens are absent from responses and captured logs, and never calls Gemini. Set `EXTERNAL_AGENT_VERIFY_PORT` if port 5002 is occupied.
 
-`verify:external-flow` additionally starts the external service and gateway, uses the configured Backend MongoDB, registers the external Agent Passport, issues and resolves a delegated install key, invokes through the normal Runtime Gateway, inspects encrypted persistence and redacted audits, and verifies one-time-key and direct-authentication failures.
+Run the separate live check only when you intend to incur one real research request:
+
+```sh
+npm run verify:gemini-agent
+```
+
+It requires `GEMINI_API_KEY`, `GEMINI_MODEL`, and `EXTERNAL_AGENT_RUNTIME_TOKEN`, and targets `http://127.0.0.1:5002` by default. Set `EXTERNAL_AGENT_VERIFY_BASE_URL` to verify an independently deployed service.
+
+`verify:external-flow` starts the Gemini-backed external service and gateway locally, uses the configured Backend MongoDB, registers the external Agent Passport, issues and resolves a delegated install key, invokes Gemini once through the normal Runtime Gateway, inspects encrypted persistence and redacted audits, and verifies one-time-key and direct-authentication failures. Gemini settings come from `external-agent/.env` or matching shell variables and are passed only to the external-agent instance.
 
 For the manual integrated development flow, configure the same strong token in `external-agent/.env` as `EXTERNAL_AGENT_RUNTIME_TOKEN` and in `Backend/.env` as `EXTERNAL_TEST_AGENT_RUNTIME_TOKEN`. Also set `ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV=true` when using the default loopback URL. This private-URL exception is restricted to the exact configured external health and invocation routes and is disabled outside development.
 
@@ -76,16 +92,19 @@ Build from this directory so the service remains an independent deployment unit:
 
 ```sh
 cd external-agent
-docker build -t external-research-agent:1.0.0 .
+docker build -t external-research-agent:2.0.0 .
 docker run --rm -p 5002:5002 \
   -e EXTERNAL_AGENT_RUNTIME_TOKEN="$EXTERNAL_AGENT_RUNTIME_TOKEN" \
-  external-research-agent:1.0.0
+  -e AI_PROVIDER=gemini \
+  -e GEMINI_API_KEY="$GEMINI_API_KEY" \
+  -e GEMINI_MODEL="$GEMINI_MODEL" \
+  external-research-agent:2.0.0
 ```
 
 For any Node or container hosting platform:
 
 1. Build the `external-agent` directory or run `npm install --omit=dev --ignore-scripts` within it. Repository workspace installs remain locked by the root `package-lock.json`.
-2. Store `EXTERNAL_AGENT_RUNTIME_TOKEN` in the platform's secret manager.
+2. Store `EXTERNAL_AGENT_RUNTIME_TOKEN` and `GEMINI_API_KEY` in the external service's secret manager.
 3. Expose the configured `PORT` over public HTTPS through the platform ingress or load balancer.
 4. Configure the platform health check as `GET /health`.
 5. Do not place the bearer token in image layers, build arguments, URLs, logs, or source control.
@@ -94,12 +113,11 @@ TLS is expected to terminate at the hosting platform or reverse proxy. The Node 
 
 ## Security behavior
 
-Bearer authentication uses a timing-safe digest comparison. The app also applies strict Zod input validation, a 32 KB JSON limit, request timeouts, rate limiting, security headers, optional CORS restrictions, request IDs, centralized production-safe errors, redacted structured logs, and graceful shutdown.
+Bearer authentication uses a timing-safe digest comparison. The app also applies strict Zod input/output validation, a 32 KB JSON limit, request and provider timeouts, cancellation, rate limiting, one bounded transient retry, output/source limits, security headers, optional CORS restrictions, safe request IDs, production-safe errors, redacted structured logs, and graceful shutdown. Google Search results and topics are treated as untrusted data.
 
 ## Known limitations
 
-- Output is deterministic and uses no LLM or live research source.
-- There is no database or service-side invocation persistence in Phase 11A.
+- There is no database or service-side invocation persistence in the external service.
 - The in-memory rate limiter is per process and should be replaced by shared infrastructure for horizontally scaled deployments.
 - HTTPS depends on the deployment platform or reverse proxy.
 - Gateway integration is development-only; production external agents must use public HTTPS endpoints and production credential provisioning policies.

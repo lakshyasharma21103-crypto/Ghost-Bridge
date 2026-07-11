@@ -1,20 +1,26 @@
 const express = require('express');
+const { SERVICE_NAME, SERVICE_VERSION } = require('../constants');
 
-const healthRouter = express.Router();
+function healthRouter(provider) {
+  const router = express.Router();
 
-healthRouter.get('/', (request, response) => {
-  response.json({
-    success: true,
-    data: {
-      service: 'external-research-agent',
-      status: 'healthy',
-      version: '1.0.0',
-    },
-    meta: {
-      requestId: request.requestId,
-    },
+  router.get('/', (request, response) => {
+    response.json({
+      success: true,
+      data: {
+        service: SERVICE_NAME,
+        status: 'healthy',
+        version: SERVICE_VERSION,
+        ai: provider.checkConfiguration(),
+      },
+      meta: {
+        requestId: request.requestId,
+      },
+    });
   });
-});
+
+  return router;
+}
 
 module.exports = {
   healthRouter,

@@ -25,6 +25,7 @@
     "seed:sandbox": "npm run seed:sandbox --workspace backend",
     "verify:sandbox": "npm run verify:sandbox --workspace backend",
     "verify:external-agent": "npm run verify --workspace external-agent",
+    "verify:gemini-agent": "npm run verify:gemini-agent --workspace external-agent",
     "verify:external-flow": "npm run verify:external-flow --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

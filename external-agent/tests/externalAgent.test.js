@@ -4,6 +4,7 @@ const { Writable } = require('node:stream');
 const { after, before, test } = require('node:test');
 const { createApp } = require('../src/app');
 const { readEnvironment } = require('../src/config/env');
+const { MockProvider } = require('../src/providers/mock.provider');
 const { startupErrorLogFields } = require('../src/server');
 const { createLogger, safeLogPayload } = require('../src/utils/logger');
 
@@ -23,6 +24,11 @@ const config = {
   runtimeToken: RUNTIME_TOKEN,
   allowedGatewayOrigins: [],
   requestTimeoutMs: 2_000,
+  aiProvider: 'mock',
+  gemini: {
+    model: undefined,
+    webSearchEnabled: false,
+  },
   jsonBodyLimit: '32kb',
   rateLimitWindowMs: 60_000,
   rateLimitMax: 100,
@@ -73,7 +79,9 @@ function assertStructuredError(result, status, code) {
 }
 
 before(async () => {
-  server = http.createServer(createApp({ config, logger: testLogger }));
+  server = http.createServer(
+    createApp({ config, logger: testLogger, provider: new MockProvider() }),
+  );
   await new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', resolve);
@@ -88,8 +96,65 @@ after(async () => {
 
 test('environment validation requires a strong runtime token', () => {
   assert.throws(
-    () => readEnvironment({ NODE_ENV: 'test', EXTERNAL_AGENT_RUNTIME_TOKEN: 'too-short' }),
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'mock',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: 'too-short',
+      }),
     /EXTERNAL_AGENT_RUNTIME_TOKEN.*32 characters/,
+  );
+});
+
+test('Gemini environment requires an API key', () => {
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_MODEL: 'available-model',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /GEMINI_API_KEY.*required/,
+  );
+});
+
+test('Gemini environment requires a configurable model', () => {
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /GEMINI_MODEL.*required/,
+  );
+});
+
+test('Gemini model rejects resource names that could disclose project identifiers', () => {
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        GEMINI_MODEL: 'projects/private-project/locations/us/models/gemini',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /GEMINI_MODEL.*without project or location identifiers/,
+  );
+});
+
+test('mock provider cannot be selected in production', () => {
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'production',
+        AI_PROVIDER: 'mock',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /AI_PROVIDER.*not allowed in production/,
   );
 });
 
@@ -126,7 +191,12 @@ test('health endpoint identifies the independent external service', async () => 
   assert.deepEqual(result.body.data, {
     service: 'external-research-agent',
     status: 'healthy',
-    version: '1.0.0',
+    version: '2.0.0',
+    ai: {
+      provider: 'mock',
+      configured: true,
+      webSearchEnabled: false,
+    },
   });
   assert.match(result.body.meta.requestId, /^req_/);
 });
@@ -227,7 +297,7 @@ test('JSON body limit rejects oversized payloads with a structured error', async
   assertStructuredError(result, 413, 'PAYLOAD_TOO_LARGE');
 });
 
-test('valid bearer token returns deterministic external research output', async () => {
+test('valid bearer token returns Passport-compatible mock research output', async () => {
   const result = await request('/v1/research/invoke', {
     method: 'POST',
     headers: authorization(),
@@ -240,7 +310,11 @@ test('valid bearer token returns deterministic external research output', async 
     sources: ['https://example.com/external-agent-source'],
     runtime: {
       service: 'external-research-agent',
-      version: '1.0.0',
+      version: '2.0.0',
+      provider: 'mock',
+      model: 'deterministic-test',
+      webSearchUsed: false,
+      sourceCount: 1,
     },
   });
   assert.match(result.body.meta.requestId, /^req_/);

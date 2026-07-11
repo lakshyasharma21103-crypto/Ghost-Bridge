@@ -29,7 +29,7 @@ function startupErrorLogFields(error) {
 async function start(options = {}) {
   const config = options.config || loadEnvironment();
   const activeLogger = options.logger || logger;
-  const app = createApp({ config, logger: activeLogger });
+  const app = createApp({ config, logger: activeLogger, provider: options.provider });
   const server = http.createServer(app);
   server.requestTimeout = config.requestTimeoutMs + 1_000;
   server.headersTimeout = Math.max(server.requestTimeout + 1_000, 10_000);

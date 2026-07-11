@@ -5,8 +5,10 @@ const helmet = require('helmet');
 const { errorHandler } = require('./middleware/errorHandler');
 const { requestId } = require('./middleware/requestId');
 const { requestTimeout } = require('./middleware/requestTimeout');
+const { createAIProvider } = require('./providers');
 const { healthRouter } = require('./routes/health.routes');
 const { researchRouter } = require('./routes/research.routes');
+const { ResearchService } = require('./services/research.service');
 const { RuntimeError } = require('./utils/errors');
 const { logger: defaultLogger } = require('./utils/logger');
 
@@ -23,8 +25,10 @@ function corsOptions(allowedOrigins) {
   };
 }
 
-function createApp({ config, logger = defaultLogger }) {
+function createApp({ config, logger = defaultLogger, provider: suppliedProvider }) {
   if (!config?.runtimeToken) throw new Error('External agent runtime configuration is required.');
+  const provider = suppliedProvider || createAIProvider(config);
+  const researchService = new ResearchService(provider, config);
 
   const app = express();
   app.disable('x-powered-by');
@@ -68,8 +72,8 @@ function createApp({ config, logger = defaultLogger }) {
     }),
   );
 
-  app.use('/health', healthRouter);
-  app.use('/v1/research', researchRouter(config.runtimeToken));
+  app.use('/health', healthRouter(provider));
+  app.use('/v1/research', researchRouter(config.runtimeToken, researchService));
   app.use((_request, _response, next) => {
     next(new RuntimeError(404, 'NOT_FOUND', 'Route not found.'));
   });

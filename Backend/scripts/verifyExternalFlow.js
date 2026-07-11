@@ -1,6 +1,9 @@
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const http = require('node:http');
+const path = require('node:path');
 const { Writable } = require('node:stream');
+const dotenv = require('dotenv');
 
 const externalAgentPort = Number(process.env.EXTERNAL_FLOW_AGENT_PORT || 5002);
 const gatewayPort = Number(process.env.EXTERNAL_FLOW_GATEWAY_PORT || 5014);
@@ -11,6 +14,7 @@ process.env.PORT = String(gatewayPort);
 process.env.EXTERNAL_TEST_AGENT_BASE_URL = `http://127.0.0.1:${externalAgentPort}`;
 process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN = runtimeToken;
 process.env.ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV = 'true';
+process.env.RUNTIME_REQUEST_TIMEOUT_MS = process.env.RUNTIME_REQUEST_TIMEOUT_MS || '70000';
 
 const { createApp } = require('../src/app');
 const { connectDatabase, databaseStatus, disconnectDatabase } = require('../src/config/db');
@@ -22,6 +26,7 @@ const PassportConnection = require('../src/models/PassportConnection');
 const PassportInstallKey = require('../src/models/PassportInstallKey');
 const { decryptPayload, hashKey } = require('../src/utils/crypto');
 const { logger: gatewayLogger } = require('../src/utils/logger');
+const { readEnvironment: readExternalEnvironment } = require('../../external-agent/src/config/env');
 const { createLogger: createExternalLogger } = require('../../external-agent/src/utils/logger');
 const { start: startExternalAgent } = require('../../external-agent/src/server');
 
@@ -83,6 +88,34 @@ function externalLogger() {
   return createExternalLogger({ destination, base: null });
 }
 
+function externalAgentConfig() {
+  const envPath = path.resolve(__dirname, '../../external-agent/.env');
+  const local = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath)) : {};
+  const overrides = {};
+  for (const name of [
+    'GEMINI_API_KEY',
+    'GEMINI_MODEL',
+    'GEMINI_WEB_SEARCH_ENABLED',
+    'GEMINI_REQUEST_TIMEOUT_MS',
+    'GEMINI_MAX_OUTPUT_TOKENS',
+    'GEMINI_MAX_SOURCES',
+    'GEMINI_THINKING_LEVEL',
+  ]) {
+    if (process.env[name] !== undefined) overrides[name] = process.env[name];
+  }
+
+  return readExternalEnvironment({
+    ...local,
+    ...overrides,
+    PORT: String(externalAgentPort),
+    NODE_ENV: 'development',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: runtimeToken,
+    ALLOWED_GATEWAY_ORIGINS: '',
+    REQUEST_TIMEOUT_MS: '60000',
+    AI_PROVIDER: 'gemini',
+  });
+}
+
 async function request(baseUrl, path, options = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method: options.method || 'GET',
@@ -116,6 +149,7 @@ async function verify() {
   const restoreGatewayLogger = captureGatewayLogger();
   let externalRuntime;
   let gatewayServer;
+  let geminiApiKey;
 
   try {
     await connectDatabase();
@@ -125,17 +159,10 @@ async function verify() {
       );
     }
 
+    const agentConfig = externalAgentConfig();
+    geminiApiKey = agentConfig.gemini.apiKey;
     externalRuntime = await startExternalAgent({
-      config: {
-        port: externalAgentPort,
-        nodeEnv: 'test',
-        runtimeToken,
-        allowedGatewayOrigins: [],
-        requestTimeoutMs: 5_000,
-        jsonBodyLimit: '32kb',
-        rateLimitWindowMs: 60_000,
-        rateLimitMax: 100,
-      },
+      config: agentConfig,
       host: '127.0.0.1',
       logger: externalLogger(),
     });
@@ -153,7 +180,9 @@ async function verify() {
       health.service === 'external-research-agent',
       'External health identified the wrong service.',
     );
-    report('external service', 'independent external-research-agent is healthy');
+    assert(health.ai?.provider === 'gemini', 'External health did not identify Gemini.');
+    assert(health.ai?.configured === true, 'External Gemini provider is not configured.');
+    report('external service', 'independent Gemini research agent is healthy');
 
     const partner = success(
       await request(gatewayBaseUrl, '/developer-sandbox/partners', {
@@ -270,6 +299,21 @@ async function verify() {
       invocation.output?.runtime?.service === 'external-research-agent',
       'Invocation output did not prove external service origin.',
     );
+    assert(
+      typeof invocation.output?.summary === 'string' && invocation.output.summary.trim(),
+      'Invocation summary is empty.',
+    );
+    assert(
+      Array.isArray(invocation.output?.sources) &&
+        invocation.output.sources.some((source) => /^https:\/\//i.test(source)),
+      'Invocation did not return a genuine HTTPS grounding source.',
+    );
+    assert(invocation.output.runtime.provider === 'gemini', 'Invocation provider is not Gemini.');
+    assert(invocation.output.runtime.model, 'Invocation model is absent.');
+    assert(
+      invocation.output.runtime.webSearchUsed === true,
+      'Invocation did not report Google Search use.',
+    );
     const storedInvocation = await Invocation.findById(invocation.invocationId).lean();
     assert(storedInvocation?.status === 'completed', 'Completed invocation was not persisted.');
     assert(
@@ -326,7 +370,9 @@ async function verify() {
 
     const persistedSurfaces = {
       passport: storedPassport,
+      installKey: storedKey,
       connection,
+      credential,
       invocation: storedInvocation,
       audits: auditLogs,
     };
@@ -346,9 +392,18 @@ async function verify() {
       !capturedExternalLogs.join('').includes(runtimeToken),
       'Runtime token appeared in external-agent logs.',
     );
+    if (geminiApiKey) {
+      assert(
+        !JSON.stringify(persistedSurfaces).includes(geminiApiKey) &&
+          !capturedApiResponses.join('').includes(geminiApiKey) &&
+          !capturedGatewayLogs.join('').includes(geminiApiKey) &&
+          !capturedExternalLogs.join('').includes(geminiApiKey),
+        'Gemini API key escaped the external provider configuration.',
+      );
+    }
     report(
       'credential security',
-      'token absent from metadata, responses, audits, invocations, and captured logs',
+      'runtime and Gemini credentials absent from persistence, responses, and logs',
     );
 
     console.log('External authenticated Agent Passport flow verification completed successfully.');
