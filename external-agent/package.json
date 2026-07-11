@@ -1,0 +1,28 @@
+{
+  "name": "external-agent",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Independent authenticated external research runtime for Agent Passport interoperability testing.",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "build": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js",
+    "typecheck": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js",
+    "lint": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js",
+    "test": "node --test",
+    "verify": "node scripts/verify.js"
+  },
+  "dependencies": {
+    "cors": "2.8.6",
+    "dotenv": "16.6.1",
+    "express": "4.22.2",
+    "express-rate-limit": "7.5.1",
+    "helmet": "8.2.0",
+    "pino": "9.14.0",
+    "zod": "3.25.76"
+  }
+}
