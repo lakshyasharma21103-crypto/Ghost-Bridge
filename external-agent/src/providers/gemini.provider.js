@@ -1,5 +1,6 @@
-const { GoogleGenAI, ThinkingLevel } = require('@google/genai');
+const { GoogleGenAI } = require('@google/genai');
 const { z } = require('zod');
+const { resolveGeminiThinkingConfiguration, safeModelName } = require('../config/geminiThinking');
 const {
   buildFormattingInstruction,
   buildResearchInput,
@@ -73,9 +74,17 @@ const INTERNAL_PROMPT_MARKERS = [
   'Return only JSON matching the supplied schema.',
 ];
 
-function geminiError(code) {
+function geminiError(code, configuration) {
   const [statusCode, message] = SAFE_ERRORS[code] || SAFE_ERRORS.GEMINI_UNKNOWN_ERROR;
-  return new RuntimeError(statusCode, code, message);
+  const error = new RuntimeError(statusCode, code, message);
+  if (configuration) {
+    error.configuration = Object.freeze({
+      field: configuration.field,
+      model: safeModelName(configuration.model),
+      reason: configuration.reason,
+    });
+  }
+  return error;
 }
 
 function numericStatus(error) {
@@ -94,7 +103,13 @@ function mapGeminiError(error, context = {}) {
 
   const status = numericStatus(error);
   if (status === 401 || status === 403) return geminiError('GEMINI_AUTHENTICATION_FAILED');
-  if (status === 404) return geminiError('GEMINI_CONFIGURATION_ERROR');
+  if (status === 404) {
+    return geminiError('GEMINI_CONFIGURATION_ERROR', {
+      field: 'GEMINI_MODEL',
+      model: safeModelName(context.model),
+      reason: 'was not accepted by Gemini',
+    });
+  }
   if (status === 429) return geminiError('GEMINI_RATE_LIMITED');
   if (status === 408 || status === 504 || error?.name === 'AbortError') {
     return geminiError('GEMINI_REQUEST_TIMEOUT');
@@ -132,16 +147,6 @@ function visibleResponseText(response) {
     .map((part) => part.text)
     .join('\n')
     .trim();
-}
-
-function thinkingLevel(value) {
-  const levels = {
-    minimal: ThinkingLevel.MINIMAL,
-    low: ThinkingLevel.LOW,
-    medium: ThinkingLevel.MEDIUM,
-    high: ThinkingLevel.HIGH,
-  };
-  return levels[value];
 }
 
 function abortableDelay(ms, signal) {
@@ -200,9 +205,10 @@ class GeminiProvider extends AIProvider {
   }
 
   checkConfiguration() {
+    const thinking = resolveGeminiThinkingConfiguration(this.config);
     return {
       provider: 'gemini',
-      configured: Boolean(this.config.apiKey && this.config.model),
+      configured: Boolean(this.config.apiKey && this.config.model && !thinking.issue),
       webSearchEnabled: this.config.webSearchEnabled === true,
     };
   }
@@ -221,9 +227,26 @@ class GeminiProvider extends AIProvider {
   }
 
   async research({ topic, signal }) {
-    if (!this.checkConfiguration().configured || !this.client) {
-      throw geminiError('GEMINI_CONFIGURATION_ERROR');
+    if (!this.config.apiKey) {
+      throw geminiError('GEMINI_CONFIGURATION_ERROR', {
+        field: 'GEMINI_API_KEY',
+        model: safeModelName(this.config.model),
+        reason: 'is not configured',
+      });
     }
+    if (!this.config.model || !this.client) {
+      throw geminiError('GEMINI_CONFIGURATION_ERROR', {
+        field: 'GEMINI_MODEL',
+        model: safeModelName(this.config.model),
+        reason: 'is not configured',
+      });
+    }
+
+    const thinking = resolveGeminiThinkingConfiguration(this.config);
+    if (thinking.issue) throw geminiError('GEMINI_CONFIGURATION_ERROR', thinking.issue);
+    const thinkingOption = thinking.thinkingConfig
+      ? { thinkingConfig: thinking.thinkingConfig }
+      : {};
 
     const timed = createTimedSignal(signal, this.config.requestTimeoutMs);
     const retryBudget = { remaining: 1 };
@@ -241,7 +264,7 @@ class GeminiProvider extends AIProvider {
               systemInstruction: buildResearchInstruction(),
               maxOutputTokens: this.config.maxOutputTokens,
               temperature: 0.2,
-              thinkingConfig: { thinkingLevel: thinkingLevel(this.config.thinkingLevel) },
+              ...thinkingOption,
               ...(this.config.webSearchEnabled ? { tools: [{ googleSearch: {} }] } : {}),
             },
           },
@@ -253,6 +276,7 @@ class GeminiProvider extends AIProvider {
           timedOut: timed.timedOut(),
           stage: 'research',
           webSearchEnabled: this.config.webSearchEnabled,
+          model: this.config.model,
         });
       }
 
@@ -290,7 +314,7 @@ class GeminiProvider extends AIProvider {
               temperature: 0.1,
               responseMimeType: 'application/json',
               responseJsonSchema: SUMMARY_JSON_SCHEMA,
-              thinkingConfig: { thinkingLevel: thinkingLevel(this.config.thinkingLevel) },
+              ...thinkingOption,
             },
           },
           retryBudget,
@@ -301,6 +325,7 @@ class GeminiProvider extends AIProvider {
           timedOut: timed.timedOut(),
           stage: 'formatting',
           webSearchEnabled: false,
+          model: this.config.model,
         });
       }
 

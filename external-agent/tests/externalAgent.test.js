@@ -146,6 +146,74 @@ test('Gemini model rejects resource names that could disclose project identifier
   );
 });
 
+test('Gemini thinking settings are optional and preserve model defaults', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_THINKING_LEVEL: '',
+    GEMINI_THINKING_BUDGET: '',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.thinkingLevel, undefined);
+  assert.equal(parsed.gemini.thinkingBudget, undefined);
+});
+
+test('Gemini 2.5 accepts a non-negative numeric thinking budget', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_THINKING_BUDGET: '256',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.thinkingBudget, 256);
+  assert.equal(parsed.gemini.thinkingLevel, undefined);
+});
+
+test('Gemini environment rejects invalid and model-incompatible thinking fields', () => {
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        GEMINI_MODEL: 'gemini-2.5-flash',
+        GEMINI_THINKING_LEVEL: 'medium',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /GEMINI_THINKING_LEVEL.*not supported.*gemini-2\.5-flash/,
+  );
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        GEMINI_MODEL: 'gemini-3-flash-preview',
+        GEMINI_THINKING_BUDGET: '128',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /GEMINI_THINKING_BUDGET.*not supported.*gemini-3-flash-preview/,
+  );
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        GEMINI_MODEL: 'gemini-2.5-flash',
+        GEMINI_THINKING_BUDGET: '-1',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /GEMINI_THINKING_BUDGET.*non-negative integer.*gemini-2\.5-flash/,
+  );
+});
+
 test('mock provider cannot be selected in production', () => {
   assert.throws(
     () =>

@@ -13,7 +13,7 @@ const { createLogger } = require('../src/utils/logger');
 
 const TEST_CONFIG = Object.freeze({
   apiKey: 'test-placeholder-not-a-real-api-key',
-  model: 'project-configured-model',
+  model: 'gemini-3-flash-preview',
   webSearchEnabled: true,
   requestTimeoutMs: 2_000,
   maxOutputTokens: 1_500,
@@ -80,6 +80,156 @@ test('Gemini provider uses grounded research then strict formatting', async () =
   assert.equal(client.calls[1].config.responseJsonSchema.additionalProperties, false);
   assert.equal(client.calls[0].model, TEST_CONFIG.model);
   assert.equal(client.calls[0].contents.includes('Secure agent interoperability'), true);
+  assert.deepEqual(client.calls[0].config.thinkingConfig, { thinkingLevel: 'MEDIUM' });
+  assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'MEDIUM' });
+});
+
+test('gemini-2.5-flash omits thinkingLevel and uses model defaults when unset', async () => {
+  const client = fakeClient([
+    candidate('Grounded facts.', {
+      sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
+    }),
+    candidate(JSON.stringify({ summary: 'Default thinking result.' })),
+  ]);
+  const provider = new GeminiProvider(
+    {
+      ...TEST_CONFIG,
+      model: 'gemini-2.5-flash',
+      thinkingLevel: undefined,
+      thinkingBudget: undefined,
+    },
+    { client },
+  );
+
+  await provider.research({ topic: 'Model defaults' });
+
+  assert.equal(client.calls.length, 2);
+  for (const call of client.calls) {
+    assert.equal(call.config.thinkingConfig, undefined);
+  }
+});
+
+test('gemini-2.5-flash sends only a numeric thinkingBudget when configured', async () => {
+  const client = fakeClient([
+    candidate('Grounded facts.', {
+      sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
+    }),
+    candidate(JSON.stringify({ summary: 'Budgeted thinking result.' })),
+  ]);
+  const provider = new GeminiProvider(
+    {
+      ...TEST_CONFIG,
+      model: 'gemini-2.5-flash',
+      thinkingLevel: undefined,
+      thinkingBudget: 256,
+    },
+    { client },
+  );
+
+  await provider.research({ topic: 'Budgeted thinking' });
+
+  for (const call of client.calls) {
+    assert.deepEqual(call.config.thinkingConfig, { thinkingBudget: 256 });
+    assert.equal(call.config.thinkingConfig.thinkingLevel, undefined);
+  }
+});
+
+test('model-incompatible thinking settings fail before a Gemini request', async () => {
+  const gemini25Client = fakeClient([]);
+  const gemini25Provider = new GeminiProvider(
+    { ...TEST_CONFIG, model: 'gemini-2.5-flash', thinkingLevel: 'high' },
+    { client: gemini25Client },
+  );
+  await assert.rejects(
+    () => gemini25Provider.research({ topic: 'Invalid level' }),
+    (error) =>
+      error.code === 'GEMINI_CONFIGURATION_ERROR' &&
+      error.details.length === 0 &&
+      error.configuration.field === 'GEMINI_THINKING_LEVEL' &&
+      error.configuration.model === 'gemini-2.5-flash' &&
+      error.configuration.reason.includes('not supported'),
+  );
+  assert.equal(gemini25Client.calls.length, 0);
+
+  const gemini3Client = fakeClient([]);
+  const gemini3Provider = new GeminiProvider(
+    { ...TEST_CONFIG, thinkingBudget: 256 },
+    { client: gemini3Client },
+  );
+  await assert.rejects(
+    () => gemini3Provider.research({ topic: 'Invalid budget' }),
+    (error) =>
+      error.code === 'GEMINI_CONFIGURATION_ERROR' &&
+      error.configuration.field === 'GEMINI_THINKING_BUDGET' &&
+      error.configuration.model === TEST_CONFIG.model &&
+      error.configuration.reason.includes('not supported'),
+  );
+  assert.equal(gemini3Client.calls.length, 0);
+});
+
+test('configuration errors are public-safe while logs keep field, model, and reason', async (context) => {
+  const invalidLevel = 'sensitive-invalid-thinking-value';
+  const apiKey = 'sensitive-test-api-key-that-must-not-be-logged';
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, apiKey, thinkingLevel: invalidLevel },
+    { client: fakeClient([]) },
+  );
+  const logLines = [];
+  const logger = createLogger({
+    base: null,
+    destination: new Writable({
+      write(chunk, _encoding, callback) {
+        logLines.push(chunk.toString());
+        callback();
+      },
+    }),
+  });
+  const runtimeToken = 'test_runtime_secret_0123456789_abcdefghijklmnopqrstuvwxyz';
+  const server = http.createServer(
+    createApp({
+      provider,
+      logger,
+      config: {
+        runtimeToken,
+        allowedGatewayOrigins: [],
+        requestTimeoutMs: 2_000,
+        jsonBodyLimit: '32kb',
+        rateLimitWindowMs: 60_000,
+        rateLimitMax: 10,
+        aiProvider: 'gemini',
+        gemini: { ...TEST_CONFIG, apiKey, thinkingLevel: invalidLevel },
+      },
+    }),
+  );
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  context.after(
+    () => new Promise((resolve) => (server.closeAllConnections?.(), server.close(resolve))),
+  );
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/research/invoke`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${runtimeToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ topic: 'Configuration diagnostics' }),
+  });
+  const text = await response.text();
+  const body = JSON.parse(text);
+  logger.flush?.();
+  const capturedLogs = logLines.join('');
+
+  assert.equal(response.status, 500);
+  assert.equal(body.error.code, 'GEMINI_CONFIGURATION_ERROR');
+  assert.equal(body.error.message, 'The research provider is not configured.');
+  assert.deepEqual(body.error.details, []);
+  assert.equal(text.includes(TEST_CONFIG.model), false);
+  assert.equal(text.includes(invalidLevel), false);
+  assert.match(capturedLogs, /GEMINI_THINKING_LEVEL/);
+  assert.match(capturedLogs, /gemini-3-flash-preview/);
+  assert.match(capturedLogs, /supported by the installed Gemini SDK/);
+  assert.equal(capturedLogs.includes(invalidLevel), false);
+  assert.equal(capturedLogs.includes(apiKey), false);
 });
 
 test('invalid formatter JSON maps to a safe structured-output error', async () => {

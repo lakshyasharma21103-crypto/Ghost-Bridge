@@ -1,6 +1,7 @@
 const path = require('node:path');
 const dotenv = require('dotenv');
 const { z } = require('zod');
+const { resolveGeminiThinkingConfiguration } = require('./geminiThinking');
 
 const booleanValue = (defaultValue) =>
   z.preprocess((value) => {
@@ -26,7 +27,8 @@ const environmentSchema = z
     GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(45_000),
     GEMINI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(128).max(8_192).default(1_500),
     GEMINI_MAX_SOURCES: z.coerce.number().int().min(1).max(20).default(8),
-    GEMINI_THINKING_LEVEL: z.enum(['minimal', 'low', 'medium', 'high']).default('medium'),
+    GEMINI_THINKING_LEVEL: z.any().optional(),
+    GEMINI_THINKING_BUDGET: z.any().optional(),
   })
   .superRefine((environment, context) => {
     if (environment.AI_PROVIDER === 'gemini') {
@@ -52,6 +54,19 @@ const environmentSchema = z
           code: z.ZodIssueCode.custom,
           path: ['GEMINI_MODEL'],
           message: 'must be a Gemini API model ID without project or location identifiers',
+        });
+      }
+
+      const thinking = resolveGeminiThinkingConfiguration({
+        model: environment.GEMINI_MODEL,
+        thinkingLevel: environment.GEMINI_THINKING_LEVEL,
+        thinkingBudget: environment.GEMINI_THINKING_BUDGET,
+      });
+      if (thinking.issue) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [thinking.issue.field],
+          message: `${thinking.issue.reason} for model ${thinking.issue.model}`,
         });
       }
     }
@@ -87,6 +102,12 @@ function readEnvironment(source = process.env) {
     throw new Error(`External agent environment validation failed: ${summary}`);
   }
 
+  const thinking = resolveGeminiThinkingConfiguration({
+    model: result.data.GEMINI_MODEL,
+    thinkingLevel: result.data.GEMINI_THINKING_LEVEL,
+    thinkingBudget: result.data.GEMINI_THINKING_BUDGET,
+  });
+
   return Object.freeze({
     port: result.data.PORT,
     nodeEnv: result.data.NODE_ENV,
@@ -101,7 +122,8 @@ function readEnvironment(source = process.env) {
       requestTimeoutMs: result.data.GEMINI_REQUEST_TIMEOUT_MS,
       maxOutputTokens: result.data.GEMINI_MAX_OUTPUT_TOKENS,
       maxSources: result.data.GEMINI_MAX_SOURCES,
-      thinkingLevel: result.data.GEMINI_THINKING_LEVEL,
+      thinkingLevel: thinking.thinkingLevel,
+      thinkingBudget: thinking.thinkingBudget,
     }),
     jsonBodyLimit: '32kb',
     rateLimitWindowMs: 60_000,

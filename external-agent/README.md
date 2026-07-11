@@ -27,7 +27,8 @@ Copy `.env.example` to `.env` only for local use and replace the placeholder tok
 | `GEMINI_REQUEST_TIMEOUT_MS`    | No       | `45000`       | Timeout for the complete two-pass provider workflow.                                                                                                   |
 | `GEMINI_MAX_OUTPUT_TOKENS`     | No       | `1500`        | Maximum output tokens per Gemini call.                                                                                                                 |
 | `GEMINI_MAX_SOURCES`           | No       | `8`           | Maximum safe, deduplicated grounding URLs returned.                                                                                                    |
-| `GEMINI_THINKING_LEVEL`        | No       | `medium`      | Configured SDK thinking level: `minimal`, `low`, `medium`, or `high`.                                                                                  |
+| `GEMINI_THINKING_LEVEL`        | No       | None          | Gemini 3 thinking level. Accepted values come from the installed SDK; omit it to use the model default.                                                |
+| `GEMINI_THINKING_BUDGET`       | No       | None          | Gemini 2.5 thinking budget as a non-negative integer; omit it to use the model default.                                                                |
 
 Generate a development secret without printing or committing a production credential through your platform's secret manager. The service never prints the configured token.
 
