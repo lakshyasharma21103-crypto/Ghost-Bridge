@@ -3,6 +3,7 @@ const Capability = require('../models/Capability');
 const PassportInstallKey = require('../models/PassportInstallKey');
 const PassportConnection = require('../models/PassportConnection');
 const Credential = require('../models/Credential');
+const { env } = require('../config/env');
 const { createAuditLog } = require('./auditService');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
@@ -668,6 +669,7 @@ async function checkConnectionHealth(connectionId, body, requestId) {
     const remoteResponse = await safeFetchUtility.safeFetch(target.url, {
       method: target.method,
       headers,
+      timeoutMs: env.RUNTIME_REQUEST_TIMEOUT_MS,
       allowDevelopmentDemo: true,
       allowDevelopmentExternalAgent: true,
     });

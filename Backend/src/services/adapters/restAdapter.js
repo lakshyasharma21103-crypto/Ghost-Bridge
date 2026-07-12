@@ -99,7 +99,7 @@ async function invokeRest({ runtime, input, credentialHeaders = {} }) {
 
   const response = await safeFetchUtility.safeFetch(runtime.endpoint, {
     ...outboundOptions(runtime, input, credentialHeaders),
-    timeoutMs: env.RUNTIME_REQUEST_TIMEOUT_MS,
+    timeoutMs: env.RUNTIME_INVOCATION_TIMEOUT_MS,
     allowDevelopmentDemo: true,
     allowDevelopmentExternalAgent: true,
   });

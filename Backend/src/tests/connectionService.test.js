@@ -333,6 +333,10 @@ test('health checks use safeFetch and do not return the remote body or credentia
     assert.equal(JSON.stringify(result).includes('private remote output'), false);
     assert.equal(safeFetchOptions.method, 'GET');
     assert.deepEqual(safeFetchOptions.headers, {});
+    assert.equal(
+      safeFetchOptions.timeoutMs,
+      require('../config/env').env.RUNTIME_REQUEST_TIMEOUT_MS,
+    );
     assert.equal(connection.lastHealthStatus, 'healthy');
   } finally {
     restore(patches);
@@ -360,3 +364,4 @@ test('MCP connections without an explicit HTTP health endpoint do not fake a hea
     restore(patches);
   }
 });
+

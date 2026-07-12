@@ -102,6 +102,7 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
   const audits = [];
   let createdInvocation;
   let outbound;
+  let outboundCallCount = 0;
   patchInvocationContext(patches);
   patch(
     Invocation,
@@ -125,6 +126,7 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
     safeFetchUtility,
     'safeFetch',
     async (url, options) => {
+      outboundCallCount += 1;
       outbound = { url, options };
       return {
         ok: true,
@@ -158,6 +160,11 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
       instruction: 'remaining FIFA matches in the US',
     });
     assert.equal(outbound.options.headers['Content-Type'], 'application/json');
+    assert.equal(
+      outbound.options.timeoutMs,
+      require('../config/env').env.RUNTIME_INVOCATION_TIMEOUT_MS,
+    );
+    assert.equal(outboundCallCount, 1);
     assert.ok(audits.some((audit) => audit.action === 'invocation.completed'));
   } finally {
     restore(patches);

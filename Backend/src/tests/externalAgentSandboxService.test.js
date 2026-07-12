@@ -170,6 +170,8 @@ test('external health check returns safe service identity without using the runt
   try {
     const result = await checkExternalAgentHealth(partner);
     assert.equal(outbound.url, 'http://127.0.0.1:5002/health');
+    assert.equal(outbound.options.timeoutMs, env.RUNTIME_REQUEST_TIMEOUT_MS);
+    assert.notEqual(outbound.options.timeoutMs, env.RUNTIME_INVOCATION_TIMEOUT_MS);
     assert.equal(Object.hasOwn(outbound.options.headers, 'Authorization'), false);
     assert.equal(result.health.healthy, true);
     assert.equal(result.health.service, 'external-research-agent');
