@@ -1,6 +1,12 @@
 const { RuntimeError } = require('../utils/errors');
 const { safeLogPayload } = require('../utils/logger');
 
+const SAFE_GEMINI_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
+const SAFE_TIMEOUT_REASONS = new Set([
+  'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  'GEMINI_DEADLINE_EXCEEDED',
+]);
+
 function normalizeError(error) {
   if (error instanceof RuntimeError) return error;
   if (error?.type === 'entity.too.large') {
@@ -34,6 +40,23 @@ function errorHandler(logger) {
       response.setHeader('WWW-Authenticate', 'Bearer realm="external-research-agent"');
     }
 
+    const sourceDiagnostics =
+      normalized.code === 'GEMINI_SOURCE_EXTRACTION_FAILED'
+        ? {
+            ...(typeof normalized.groundingMetadataPresent === 'boolean'
+              ? { groundingMetadataPresent: normalized.groundingMetadataPresent }
+              : {}),
+            ...(Number.isInteger(normalized.groundingChunkCount) &&
+            normalized.groundingChunkCount >= 0
+              ? { groundingChunkCount: normalized.groundingChunkCount }
+              : {}),
+            ...(Number.isInteger(normalized.webSearchQueryCount) &&
+            normalized.webSearchQueryCount >= 0
+              ? { webSearchQueryCount: normalized.webSearchQueryCount }
+              : {}),
+          }
+        : {};
+
     response.status(normalized.statusCode).json({
       success: false,
       error: {
@@ -41,6 +64,11 @@ function errorHandler(logger) {
         message: normalized.message,
         details: normalized.details,
         requestId: request.requestId,
+        ...(SAFE_GEMINI_OPERATIONS.has(normalized.operation)
+          ? { operation: normalized.operation }
+          : {}),
+        ...(SAFE_TIMEOUT_REASONS.has(normalized.reason) ? { reason: normalized.reason } : {}),
+        ...sourceDiagnostics,
       },
     });
   };

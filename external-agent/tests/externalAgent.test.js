@@ -3,7 +3,7 @@ const http = require('node:http');
 const { Writable } = require('node:stream');
 const { after, before, test } = require('node:test');
 const { createApp } = require('../src/app');
-const { readEnvironment } = require('../src/config/env');
+const { GEMINI_PROCESSING_OVERHEAD_MS, readEnvironment } = require('../src/config/env');
 const { MockProvider } = require('../src/providers/mock.provider');
 const { startupErrorLogFields } = require('../src/server');
 const { createLogger, safeLogPayload } = require('../src/utils/logger');
@@ -130,6 +130,58 @@ test('Gemini environment requires a configurable model', () => {
       }),
     /GEMINI_MODEL.*required/,
   );
+});
+
+test('Gemini stage defaults leave request-level processing overhead', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.researchTimeoutMs, 180_000);
+  assert.equal(parsed.gemini.formattingTimeoutMs, 90_000);
+  assert.ok(
+    parsed.requestTimeoutMs >
+      parsed.gemini.researchTimeoutMs +
+        parsed.gemini.formattingTimeoutMs +
+        GEMINI_PROCESSING_OVERHEAD_MS,
+  );
+});
+
+test('request timeout must exceed combined Gemini stage deadlines and overhead', () => {
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        GEMINI_MODEL: 'gemini-2.5-flash',
+        GEMINI_RESEARCH_TIMEOUT_MS: '180000',
+        GEMINI_FORMATTING_TIMEOUT_MS: '90000',
+        REQUEST_TIMEOUT_MS: '280000',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /REQUEST_TIMEOUT_MS.*combined Gemini stage deadlines plus processing overhead/,
+  );
+});
+
+test('legacy Gemini timeout is used only for absent stage-specific settings', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_REQUEST_TIMEOUT_MS: '40000',
+    GEMINI_RESEARCH_TIMEOUT_MS: '50000',
+    REQUEST_TIMEOUT_MS: '110001',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.researchTimeoutMs, 50_000);
+  assert.equal(parsed.gemini.formattingTimeoutMs, 40_000);
 });
 
 test('Gemini model rejects resource names that could disclose project identifiers', () => {

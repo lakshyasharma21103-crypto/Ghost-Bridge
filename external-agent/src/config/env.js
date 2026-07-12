@@ -3,6 +3,10 @@ const dotenv = require('dotenv');
 const { z } = require('zod');
 const { resolveGeminiThinkingConfiguration } = require('./geminiThinking');
 
+const DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS = 180_000;
+const DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS = 90_000;
+const GEMINI_PROCESSING_OVERHEAD_MS = 10_000;
+
 const booleanValue = (defaultValue) =>
   z.preprocess((value) => {
     if (value === undefined) return defaultValue;
@@ -13,18 +17,39 @@ const booleanValue = (defaultValue) =>
     return value;
   }, z.boolean());
 
+const optionalTimeout = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.coerce.number().int().min(1_000).max(600_000).optional(),
+);
+
+function resolveGeminiTimeouts(environment) {
+  const legacyTimeoutMs = environment.GEMINI_REQUEST_TIMEOUT_MS;
+  return {
+    researchTimeoutMs:
+      environment.GEMINI_RESEARCH_TIMEOUT_MS ??
+      legacyTimeoutMs ??
+      DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
+    formattingTimeoutMs:
+      environment.GEMINI_FORMATTING_TIMEOUT_MS ??
+      legacyTimeoutMs ??
+      DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
+  };
+}
+
 const environmentSchema = z
   .object({
     PORT: z.coerce.number().int().min(1).max(65535).default(5002),
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     EXTERNAL_AGENT_RUNTIME_TOKEN: z.string().min(32, 'must contain at least 32 characters'),
     ALLOWED_GATEWAY_ORIGINS: z.string().default(''),
-    REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(60_000),
+    REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(1_800_000).default(300_000),
     AI_PROVIDER: z.enum(['gemini', 'mock']).default('gemini'),
     GEMINI_API_KEY: z.string().trim().optional(),
     GEMINI_MODEL: z.string().trim().optional(),
     GEMINI_WEB_SEARCH_ENABLED: booleanValue(true),
-    GEMINI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(45_000),
+    GEMINI_RESEARCH_TIMEOUT_MS: optionalTimeout,
+    GEMINI_FORMATTING_TIMEOUT_MS: optionalTimeout,
+    GEMINI_REQUEST_TIMEOUT_MS: optionalTimeout,
     GEMINI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(128).max(8_192).default(1_500),
     GEMINI_MAX_SOURCES: z.coerce.number().int().min(1).max(20).default(8),
     GEMINI_THINKING_LEVEL: z.any().optional(),
@@ -69,6 +94,17 @@ const environmentSchema = z
           message: `${thinking.issue.reason} for model ${thinking.issue.model}`,
         });
       }
+
+      const { researchTimeoutMs, formattingTimeoutMs } = resolveGeminiTimeouts(environment);
+      const practicalProviderDeadlineMs =
+        researchTimeoutMs + formattingTimeoutMs + GEMINI_PROCESSING_OVERHEAD_MS;
+      if (environment.REQUEST_TIMEOUT_MS <= practicalProviderDeadlineMs) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['REQUEST_TIMEOUT_MS'],
+          message: `must be greater than ${practicalProviderDeadlineMs} milliseconds (the combined Gemini stage deadlines plus processing overhead)`,
+        });
+      }
     }
     if (environment.NODE_ENV === 'production' && environment.AI_PROVIDER === 'mock') {
       context.addIssue({
@@ -107,6 +143,7 @@ function readEnvironment(source = process.env) {
     thinkingLevel: result.data.GEMINI_THINKING_LEVEL,
     thinkingBudget: result.data.GEMINI_THINKING_BUDGET,
   });
+  const timeouts = resolveGeminiTimeouts(result.data);
 
   return Object.freeze({
     port: result.data.PORT,
@@ -119,7 +156,8 @@ function readEnvironment(source = process.env) {
       apiKey: result.data.GEMINI_API_KEY,
       model: result.data.GEMINI_MODEL,
       webSearchEnabled: result.data.GEMINI_WEB_SEARCH_ENABLED,
-      requestTimeoutMs: result.data.GEMINI_REQUEST_TIMEOUT_MS,
+      researchTimeoutMs: timeouts.researchTimeoutMs,
+      formattingTimeoutMs: timeouts.formattingTimeoutMs,
       maxOutputTokens: result.data.GEMINI_MAX_OUTPUT_TOKENS,
       maxSources: result.data.GEMINI_MAX_SOURCES,
       thinkingLevel: thinking.thinkingLevel,
@@ -137,6 +175,10 @@ function loadEnvironment() {
 }
 
 module.exports = {
+  DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
+  DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
+  GEMINI_PROCESSING_OVERHEAD_MS,
   loadEnvironment,
   readEnvironment,
+  resolveGeminiTimeouts,
 };

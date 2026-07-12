@@ -27,7 +27,7 @@ function corsOptions(allowedOrigins) {
 
 function createApp({ config, logger = defaultLogger, provider: suppliedProvider }) {
   if (!config?.runtimeToken) throw new Error('External agent runtime configuration is required.');
-  const provider = suppliedProvider || createAIProvider(config);
+  const provider = suppliedProvider || createAIProvider(config, { logger });
   const researchService = new ResearchService(provider, config);
 
   const app = express();

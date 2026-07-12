@@ -8,7 +8,11 @@ const {
   isBlockedResponse,
   mapGeminiError,
 } = require('../src/providers/gemini.provider');
-const { extractGeminiSources, requireGeminiSources } = require('../src/utils/extractGeminiSources');
+const {
+  extractGeminiSources,
+  inspectGeminiResponseShape,
+  requireGeminiSources,
+} = require('../src/utils/extractGeminiSources');
 const { createLogger } = require('../src/utils/logger');
 
 const TEST_CONFIG = Object.freeze({
@@ -20,6 +24,19 @@ const TEST_CONFIG = Object.freeze({
   maxSources: 8,
   thinkingLevel: 'medium',
 });
+
+function memoryLogger() {
+  const entries = [];
+  return {
+    entries,
+    info(fields, message) {
+      entries.push({ level: 'info', fields, message });
+    },
+    warn(fields, message) {
+      entries.push({ level: 'warn', fields, message });
+    },
+  };
+}
 
 function candidate(text, options = {}) {
   return {
@@ -82,6 +99,133 @@ test('Gemini provider uses grounded research then strict formatting', async () =
   assert.equal(client.calls[0].contents.includes('Secure agent interoperability'), true);
   assert.deepEqual(client.calls[0].config.thinkingConfig, { thinkingLevel: 'MEDIUM' });
   assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'MEDIUM' });
+  assert.notEqual(client.calls[0].config.abortSignal, client.calls[1].config.abortSignal);
+  assert.equal(client.calls[0].config.abortSignal instanceof AbortSignal, true);
+  assert.equal(client.calls[1].config.abortSignal instanceof AbortSignal, true);
+});
+
+test('grounded research local timeout is stage-aware and does not begin formatting', async () => {
+  const calls = [];
+  const logger = memoryLogger();
+  const client = {
+    models: {
+      generateContent(parameters) {
+        calls.push(parameters);
+        return new Promise((_resolve, reject) => {
+          parameters.config.abortSignal.addEventListener(
+            'abort',
+            () => reject(parameters.config.abortSignal.reason),
+            { once: true },
+          );
+        });
+      },
+    },
+  };
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, researchTimeoutMs: 10, formattingTimeoutMs: 50 },
+    { client, logger },
+  );
+
+  await assert.rejects(
+    () =>
+      provider.research({
+        topic: 'sensitive research topic that must not be logged',
+        requestId: 'req_research-timeout',
+      }),
+    (error) =>
+      error.code === 'GEMINI_REQUEST_TIMEOUT' &&
+      error.operation === 'grounded_research' &&
+      error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(logger.entries.length, 1);
+  assert.deepEqual(
+    {
+      requestId: logger.entries[0].fields.requestId,
+      operation: logger.entries[0].fields.operation,
+      model: logger.entries[0].fields.model,
+      configuredTimeoutMs: logger.entries[0].fields.configuredTimeoutMs,
+      locallyAborted: logger.entries[0].fields.locallyAborted,
+    },
+    {
+      requestId: 'req_research-timeout',
+      operation: 'grounded_research',
+      model: TEST_CONFIG.model,
+      configuredTimeoutMs: 10,
+      locallyAborted: true,
+    },
+  );
+  assert.equal(Number.isInteger(logger.entries[0].fields.durationMs), true);
+  assert.equal(JSON.stringify(logger.entries).includes('sensitive research topic'), false);
+  assert.equal(JSON.stringify(logger.entries).includes(TEST_CONFIG.apiKey), false);
+});
+
+test('structured formatting local timeout is identified with a fresh controller', async () => {
+  const calls = [];
+  const logger = memoryLogger();
+  const client = {
+    models: {
+      generateContent(parameters) {
+        calls.push(parameters);
+        if (calls.length === 1) {
+          return Promise.resolve(
+            candidate('Grounded facts.', {
+              sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
+            }),
+          );
+        }
+        return new Promise((_resolve, reject) => {
+          parameters.config.abortSignal.addEventListener(
+            'abort',
+            () => reject(parameters.config.abortSignal.reason),
+            { once: true },
+          );
+        });
+      },
+    },
+  };
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, researchTimeoutMs: 50, formattingTimeoutMs: 10 },
+    { client, logger },
+  );
+
+  await assert.rejects(
+    () =>
+      provider.research({
+        topic: 'Formatting timeout',
+        requestId: 'req_formatting-timeout',
+      }),
+    (error) =>
+      error.code === 'GEMINI_REQUEST_TIMEOUT' &&
+      error.operation === 'structured_formatting' &&
+      error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  );
+
+  assert.equal(calls.length, 2);
+  assert.notEqual(calls[0].config.abortSignal, calls[1].config.abortSignal);
+  const operationEntries = logger.entries.filter(
+    (entry) => entry.message === 'Gemini operation completed',
+  );
+  assert.deepEqual(
+    operationEntries.map((entry) => ({
+      operation: entry.fields.operation,
+      configuredTimeoutMs: entry.fields.configuredTimeoutMs,
+      locallyAborted: entry.fields.locallyAborted,
+    })),
+    [
+      {
+        operation: 'grounded_research',
+        configuredTimeoutMs: 50,
+        locallyAborted: false,
+      },
+      {
+        operation: 'structured_formatting',
+        configuredTimeoutMs: 10,
+        locallyAborted: true,
+      },
+    ],
+  );
 });
 
 test('gemini-2.5-flash omits thinkingLevel and uses model defaults when unset', async () => {
@@ -262,6 +406,156 @@ test('source extraction deduplicates normalized grounding URLs', () => {
   ]);
 });
 
+test('documented grounding chunks extract web.uri and web.title', () => {
+  const response = {
+    candidates: [
+      {
+        finishReason: 'STOP',
+        content: { parts: [{ text: 'Grounded text.' }] },
+        groundingMetadata: {
+          webSearchQueries: ['safe query'],
+          groundingChunks: [
+            {
+              web: {
+                uri: 'https://publisher.example/research',
+                title: 'Publisher research',
+              },
+            },
+          ],
+          groundingSupports: [{ segment: { startIndex: 0, endIndex: 8 } }],
+          searchEntryPoint: { renderedContent: 'not logged by diagnostics' },
+        },
+      },
+    ],
+    usageMetadata: { promptTokenCount: 10, toolUsePromptTokenCount: 5 },
+  };
+
+  assert.deepEqual(extractGeminiSources(response), [
+    { title: 'Publisher research', url: 'https://publisher.example/research' },
+  ]);
+  assert.deepEqual(inspectGeminiResponseShape(response), {
+    requestId: undefined,
+    operation: 'grounded_research',
+    model: undefined,
+    candidateCount: 1,
+    candidateFinishReasons: ['STOP'],
+    contentPartCount: 1,
+    groundingMetadataPresent: true,
+    groundingMetadataKeys: [
+      'groundingChunks',
+      'groundingSupports',
+      'searchEntryPoint',
+      'webSearchQueries',
+    ],
+    webSearchQueryCount: 1,
+    groundingChunkCount: 1,
+    groundingSupportCount: 1,
+    searchEntryPointPresent: true,
+    usageMetadataKeys: ['promptTokenCount', 'toolUsePromptTokenCount'],
+  });
+});
+
+test('source extraction inspects all candidates and supports SDK snake-case metadata', () => {
+  const response = {
+    candidates: [
+      {
+        groundingMetadata: {
+          groundingChunks: [{ web: { uri: 'https://one.example/source', title: 'One' } }],
+        },
+      },
+      {
+        grounding_metadata: {
+          grounding_chunks: [
+            { web: { uri: 'https://two.example/source', title: 'Two' } },
+            { web: { uri: 'https://one.example/source', title: 'Duplicate' } },
+          ],
+        },
+      },
+    ],
+  };
+
+  assert.deepEqual(extractGeminiSources(response), [
+    { title: 'One', url: 'https://one.example/source' },
+    { title: 'Two', url: 'https://two.example/source' },
+  ]);
+});
+
+test('Google grounding redirect URLs are preserved as provider-issued references', () => {
+  const redirect =
+    'https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGenuineRedirectToken';
+  const response = candidate('Grounded.', {
+    sources: [{ title: 'Grounded source', uri: redirect }],
+  });
+
+  assert.deepEqual(extractGeminiSources(response), [{ title: 'Grounded source', url: redirect }]);
+});
+
+test('non-web chunks are ignored and model-text URLs are never accepted', () => {
+  const textOnlyUrl = 'https://model-invented.example/not-provider-metadata';
+  const response = {
+    candidates: [
+      {
+        content: { parts: [{ text: `Claim with [source](${textOnlyUrl})` }] },
+        groundingMetadata: {
+          groundingChunks: [
+            { retrievedContext: { uri: 'https://retrieval.example/not-web' } },
+            { maps: { uri: 'https://maps.example/not-web' } },
+          ],
+        },
+      },
+    ],
+  };
+
+  assert.deepEqual(extractGeminiSources(response), []);
+  assert.throws(
+    () => requireGeminiSources(response),
+    (error) =>
+      error.code === 'GEMINI_SOURCE_PARSING_FAILED' &&
+      error.diagnostics.groundingMetadataPresent === true &&
+      error.diagnostics.groundingChunkCount === 2 &&
+      error.diagnostics.rejectedChunkCount === 2 &&
+      error.diagnostics.rejectionReasons.includes('non_web_chunk_ignored'),
+  );
+});
+
+test('grounding metadata present with malformed web chunks is a parsing failure', () => {
+  const response = {
+    candidates: [
+      {
+        finishReason: 'STOP',
+        groundingMetadata: {
+          groundingChunks: [{ web: {} }, { web: { uri: 'not-a-url' } }, null],
+        },
+      },
+    ],
+  };
+
+  assert.throws(
+    () => requireGeminiSources(response),
+    (error) =>
+      error.code === 'GEMINI_SOURCE_PARSING_FAILED' &&
+      error.diagnostics.groundingChunkCount === 3 &&
+      error.diagnostics.chunkShapeKeys.includes('web') &&
+      error.diagnostics.rejectedChunkCount === 3 &&
+      error.diagnostics.rejectionReasons.includes('missing_web_uri') &&
+      error.diagnostics.rejectionReasons.includes('invalid_url'),
+  );
+});
+
+test('completely missing grounding metadata is distinguished safely', () => {
+  const response = candidate('A URL in text is ignored: https://invented.example/source');
+
+  assert.deepEqual(extractGeminiSources(response), []);
+  assert.throws(
+    () => requireGeminiSources(response),
+    (error) =>
+      error.code === 'GEMINI_GROUNDING_METADATA_MISSING' &&
+      error.diagnostics.candidateCount === 1 &&
+      error.diagnostics.groundingMetadataPresent === false &&
+      error.diagnostics.groundingChunkCount === 0,
+  );
+});
+
 test('source extraction rejects unsafe URLs and credential-like query parameters', () => {
   const response = candidate('Grounded.', {
     sources: [
@@ -275,8 +569,60 @@ test('source extraction rejects unsafe URLs and credential-like query parameters
   assert.deepEqual(extractGeminiSources(response, { forbiddenValues: [TEST_CONFIG.apiKey] }), []);
   assert.throws(
     () => requireGeminiSources(response, { forbiddenValues: [TEST_CONFIG.apiKey] }),
-    (error) => error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED',
+    (error) =>
+      error.code === 'GEMINI_SOURCE_PARSING_FAILED' &&
+      error.diagnostics.rejectionReasons.includes('credential_query_parameter') &&
+      error.diagnostics.rejectionReasons.includes('obvious_secret_in_url'),
   );
+});
+
+test('safe response-shape diagnostics never log text, URLs, topics, or secrets', async () => {
+  const logger = memoryLogger();
+  const secretTopic = 'sensitive-topic-that-must-not-be-logged';
+  const sourceUrl = 'https://publisher.example/private-looking-path';
+  const client = fakeClient([
+    {
+      candidates: [
+        {
+          finishReason: 'STOP',
+          content: { parts: [{ text: `private response text about ${secretTopic}` }] },
+          groundingMetadata: {
+            webSearchQueries: ['private query text'],
+            groundingChunks: [{ web: { uri: sourceUrl, title: 'Private title' } }],
+            groundingSupports: [{ segment: { text: 'private support text' } }],
+            searchEntryPoint: { renderedContent: 'private rendered content' },
+          },
+        },
+      ],
+      usageMetadata: { promptTokenCount: 12, toolUsePromptTokenCount: 4 },
+    },
+    candidate(JSON.stringify({ summary: 'Safe summary.' })),
+  ]);
+  const provider = new GeminiProvider(TEST_CONFIG, { client, logger });
+
+  await provider.research({ topic: secretTopic, requestId: 'req_safe-shape' });
+
+  const shapeLog = logger.entries.find(
+    (entry) => entry.message === 'Gemini grounded research response shape',
+  );
+  assert.ok(shapeLog);
+  assert.equal(shapeLog.fields.requestId, 'req_safe-shape');
+  assert.equal(shapeLog.fields.groundingMetadataPresent, true);
+  assert.equal(shapeLog.fields.groundingChunkCount, 1);
+  assert.equal(shapeLog.fields.webSearchQueryCount, 1);
+  const serializedLogs = JSON.stringify(logger.entries);
+  for (const forbidden of [
+    secretTopic,
+    TEST_CONFIG.apiKey,
+    sourceUrl,
+    'private response text',
+    'private query text',
+    'Private title',
+    'private support text',
+    'private rendered content',
+  ]) {
+    assert.equal(serializedLogs.includes(forbidden), false);
+  }
 });
 
 test('missing grounding metadata fails without fabricated citations', async () => {
@@ -286,7 +632,12 @@ test('missing grounding metadata fails without fabricated citations', async () =
 
   await assert.rejects(
     () => provider.research({ topic: 'Secure agents' }),
-    (error) => error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED',
+    (error) =>
+      error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED' &&
+      error.internalCode === 'GEMINI_GROUNDING_METADATA_MISSING' &&
+      error.operation === 'grounded_research' &&
+      error.groundingMetadataPresent === false &&
+      error.groundingChunkCount === 0,
   );
 });
 
@@ -297,9 +648,34 @@ test('timeout and rate-limit failures map to stable safe codes', () => {
   );
 
   assert.equal(timeout.code, 'GEMINI_REQUEST_TIMEOUT');
+  assert.equal(timeout.reason, 'LOCAL_PROVIDER_DEADLINE_EXCEEDED');
   assert.equal(timeout.message.includes('secret'), false);
   assert.equal(rateLimited.code, 'GEMINI_RATE_LIMITED');
   assert.equal(rateLimited.statusCode, 503);
+});
+
+test('Gemini deadline responses preserve only safe upstream timeout diagnostics', () => {
+  const raw = Object.assign(
+    new Error(
+      JSON.stringify({
+        error: {
+          code: 504,
+          status: 'DEADLINE_EXCEEDED',
+          message: 'raw response with secret-token-value',
+        },
+      }),
+    ),
+    { name: 'ApiError', status: 504 },
+  );
+
+  const mapped = mapGeminiError(raw, { operation: 'grounded_research' });
+
+  assert.equal(mapped.code, 'GEMINI_REQUEST_TIMEOUT');
+  assert.equal(mapped.reason, 'GEMINI_DEADLINE_EXCEEDED');
+  assert.equal(mapped.operation, 'grounded_research');
+  assert.equal(mapped.providerHttpStatus, 504);
+  assert.equal(mapped.providerStatus, 'DEADLINE_EXCEEDED');
+  assert.equal(JSON.stringify(mapped).includes('secret-token-value'), false);
 });
 
 test('model and Google Search request failures map to configuration and search codes', () => {

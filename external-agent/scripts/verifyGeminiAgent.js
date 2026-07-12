@@ -11,6 +11,7 @@ const baseUrl = (process.env.EXTERNAL_AGENT_VERIFY_BASE_URL || 'http://127.0.0.1
   '',
 );
 const webSearchEnabled = !/^false$/i.test(process.env.GEMINI_WEB_SEARCH_ENABLED || 'true');
+const verifierTimeoutMs = Number(process.env.REQUEST_TIMEOUT_MS || 300_000) + 10_000;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -28,7 +29,7 @@ async function verify() {
   assert(/^https?:\/\//i.test(baseUrl), 'EXTERNAL_AGENT_VERIFY_BASE_URL must use HTTP(S).');
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 70_000);
+  const timer = setTimeout(() => controller.abort(), verifierTimeoutMs);
   timer.unref?.();
 
   let response;
@@ -58,7 +59,31 @@ async function verify() {
     throw new Error('The external agent returned unreadable JSON.');
   }
 
-  assert(response.ok, `The external agent returned HTTP ${response.status}.`);
+  if (!response.ok) {
+    const error = body?.error || {};
+    throw new Error(
+      [
+        'The external agent research request failed.',
+        `HTTP status: ${response.status}`,
+        `Application error code: ${error.code || '[unavailable]'}`,
+        `Safe message: ${error.message || '[unavailable]'}`,
+        `Operation: ${error.operation || '[unavailable]'}`,
+        `Safe timeout reason: ${error.reason || '[unavailable]'}`,
+        `Grounding metadata present: ${
+          typeof error.groundingMetadataPresent === 'boolean'
+            ? error.groundingMetadataPresent
+            : '[unavailable]'
+        }`,
+        `Grounding chunk count: ${
+          Number.isInteger(error.groundingChunkCount) ? error.groundingChunkCount : '[unavailable]'
+        }`,
+        `Web search query count: ${
+          Number.isInteger(error.webSearchQueryCount) ? error.webSearchQueryCount : '[unavailable]'
+        }`,
+        `Request ID: ${error.requestId || response.headers.get('x-request-id') || '[unavailable]'}`,
+      ].join('\n'),
+    );
+  }
   assert(
     typeof body?.response?.summary === 'string' && body.response.summary.trim(),
     'Summary is empty.',
