@@ -64,6 +64,7 @@ export function Layout() {
 function getPageName(pathname) {
   if (pathname === '/') return 'Overview';
   if (pathname === '/partner') return 'Dashboard';
+  if (pathname === '/operations') return 'Operations';
   if (pathname === '/passports/new') return 'Create Passport';
   if (pathname.startsWith('/passports')) return 'Passports';
   if (pathname.startsWith('/install-keys')) return 'Install Keys';

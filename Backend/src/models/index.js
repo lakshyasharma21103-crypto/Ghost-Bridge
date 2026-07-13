@@ -6,6 +6,7 @@ const PassportConnection = require('./PassportConnection');
 const Credential = require('./Credential');
 const Invocation = require('./Invocation');
 const AuditLog = require('./AuditLog');
+const OperationalAlert = require('./OperationalAlert');
 
 module.exports = {
   Partner,
@@ -16,4 +17,5 @@ module.exports = {
   Credential,
   Invocation,
   AuditLog,
+  OperationalAlert,
 };

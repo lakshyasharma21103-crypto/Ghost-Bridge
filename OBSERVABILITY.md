@@ -40,6 +40,12 @@ Native installation is visible as `install_key_resolution`, `passport_retrieval`
 does not report success if required identity, auth, runtime, installation policy, or capability schema
 metadata is incomplete.
 
+Phase 13A2 persists only the following safe timing subset on Invocation records:
+`connection_lookup`, `capability_resolution`, `policy_check`, `credential_load`, `request_mapping`,
+`external_runtime_invocation`, `response_validation`, `invocation_persistence`, and
+`audit_persistence`. Each entry contains only stage, duration, and outcome, and the array is strictly
+bounded. The other diagnostic stages remain structured-log events and are not scraped for metrics.
+
 External-agent stages are `request_validation`, `runtime_authentication`, `grounded_research`,
 `grounding_source_extraction`, `structured_formatting`, `response_validation`, and
 `response_serialization`. Stage completion/failure events include a monotonic `durationMs`.

@@ -23,6 +23,8 @@ function errorFields(error) {
 }
 
 function createObserver(context = {}, activeLogger = defaultLogger) {
+  const onStageMetric =
+    typeof context.onStageMetric === 'function' ? context.onStageMetric : undefined;
   const base = definedFields({
     service: SERVICE,
     environment: env.NODE_ENV,
@@ -46,7 +48,16 @@ function createObserver(context = {}, activeLogger = defaultLogger) {
   }
 
   function child(fields = {}) {
-    return createObserver({ ...base, ...definedFields(fields) }, activeLogger);
+    return createObserver({ ...base, onStageMetric, ...definedFields(fields) }, activeLogger);
+  }
+
+  function recordStageMetric(stage, status, durationMs) {
+    if (!onStageMetric) return;
+    try {
+      onStageMetric({ stage, status, durationMs });
+    } catch {
+      // Metrics are best-effort and must never change the runtime result.
+    }
   }
 
   async function stage(stageName, operation, fields = {}) {
@@ -54,12 +65,14 @@ function createObserver(context = {}, activeLogger = defaultLogger) {
     emit('info', 'runtime.stage.started', { ...fields, stage: stageName, status: 'started' });
     try {
       const result = await operation();
+      const durationMs = Math.max(0, Math.round((performance.now() - startedAt) * 100) / 100);
       emit('info', 'runtime.stage.completed', {
         ...fields,
         stage: stageName,
         status: 'completed',
-        durationMs: Math.max(0, Math.round((performance.now() - startedAt) * 100) / 100),
+        durationMs,
       });
+      recordStageMetric(stageName, 'completed', durationMs);
       return result;
     } catch (error) {
       const durationMs = Math.max(0, Math.round((performance.now() - startedAt) * 100) / 100);
@@ -80,6 +93,7 @@ function createObserver(context = {}, activeLogger = defaultLogger) {
         status: 'failed',
         durationMs,
       });
+      recordStageMetric(stageName, 'failed', durationMs);
       throw error;
     }
   }

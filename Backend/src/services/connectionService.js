@@ -748,6 +748,7 @@ async function checkConnectionHealth(connectionId, body, requestId) {
       allowDevelopmentExternalAgent: true,
     });
     connection.lastHealthStatus = remoteResponse.ok ? 'healthy' : 'unhealthy';
+    connection.lastHealthCheckedAt = checkedAt;
     await connection.save();
     await createAuditLog(
       'user',
@@ -776,6 +777,7 @@ async function checkConnectionHealth(connectionId, body, requestId) {
     };
   } catch (error) {
     connection.lastHealthStatus = 'unreachable';
+    connection.lastHealthCheckedAt = checkedAt;
     await connection.save();
     await createAuditLog(
       'user',

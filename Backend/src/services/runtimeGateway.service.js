@@ -14,6 +14,7 @@ const { ErrorCodes } = require('../utils/errorCodes');
 const { redactSecrets } = require('../utils/redact');
 const { createObserver, errorFields } = require('../utils/observability');
 const { isRetryableError } = require('../utils/retryability');
+const { OPERATION_STAGE_NAMES, MAX_INVOCATION_STAGE_METRICS } = require('../constants/operations');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
@@ -167,7 +168,39 @@ function invocationErrorPayload(error) {
     causeCode: error.cause?.code,
     causeName: error.cause?.name,
     durationMs: error.durationMs,
+    providerHttpStatus: error.providerHttpStatus,
   });
+}
+
+function stageMetricCollector(metrics) {
+  const allowed = new Set(OPERATION_STAGE_NAMES);
+  return (metric) => {
+    if (
+      metrics.length >= MAX_INVOCATION_STAGE_METRICS ||
+      !allowed.has(metric?.stage) ||
+      !['completed', 'failed'].includes(metric?.status) ||
+      !Number.isFinite(metric?.durationMs)
+    ) {
+      return;
+    }
+    metrics.push({
+      stage: metric.stage,
+      status: metric.status,
+      durationMs: Math.max(0, Math.round(metric.durationMs * 100) / 100),
+    });
+  };
+}
+
+async function persistStageMetrics(invocation, stageMetrics) {
+  if (!invocation) return undefined;
+  invocation.stageMetrics = stageMetrics.slice(0, MAX_INVOCATION_STAGE_METRICS);
+  try {
+    await invocation.save();
+    return undefined;
+  } catch (error) {
+    // Operational timing persistence is best-effort and cannot change the invocation outcome.
+    return error;
+  }
 }
 
 function adapterResultOrThrow(result, runtimeType) {
@@ -252,17 +285,20 @@ async function loadInvocationContext(connectionId, capabilityName, actor, observ
 
 async function invoke(connectionId, capabilityName, input, actor = {}) {
   const startedAt = Date.now();
-  let observer =
-    actor.observer ||
-    createObserver(
-      {
-        traceId: actor.traceId,
-        requestId: actor.requestId,
-        connectionId,
-        capabilityName,
-      },
-      actor.logger,
-    );
+  const stageMetrics = [];
+  const onStageMetric = stageMetricCollector(stageMetrics);
+  let observer = actor.observer
+    ? actor.observer.child({ onStageMetric })
+    : createObserver(
+        {
+          traceId: actor.traceId,
+          requestId: actor.requestId,
+          connectionId,
+          capabilityName,
+          onStageMetric,
+        },
+        actor.logger,
+      );
   let invocation;
   let context;
   let auditActor;
@@ -286,12 +322,14 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       Invocation.create({
         connectionId: context.connection._id,
         passportId: context.passport._id,
+        receivingWorkspaceId: context.connection.receivingWorkspaceId,
         capability: context.capability.name,
         inputSummary: redactSecrets(input),
         status: 'running',
         runtimeType: context.connection.runtimeType,
         traceId: actor.traceId,
         requestId: actor.requestId,
+        stageMetrics,
       }),
     );
     observer = observer.child({ invocationId: idOf(invocation) });
@@ -361,6 +399,13 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         },
       ),
     );
+    const stageMetricError = await persistStageMetrics(invocation, stageMetrics);
+    if (stageMetricError) {
+      observer.emit('warn', 'persistence.stage_metrics.failed', {
+        ...errorFields(stageMetricError),
+        status: 'failed',
+      });
+    }
 
     observer.emit('info', 'persistence.invocation.completed', {
       status: 'completed',
@@ -411,6 +456,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
               capability: context.capability.name,
               runtimeType: context.connection.runtimeType,
               errorCode: runtimeError.code,
+              providerHttpStatus: runtimeError.providerHttpStatus,
               retryable: runtimeError.retryable,
               durationMs: invocation.durationMs,
             },
@@ -423,6 +469,11 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         );
       } catch (auditError) {
         runtimeError.auditErrorCode = auditError.code || ErrorCodes.INTERNAL_SERVER_ERROR;
+      }
+      const stageMetricError = await persistStageMetrics(invocation, stageMetrics);
+      if (stageMetricError) {
+        runtimeError.stageMetricErrorCode =
+          stageMetricError.code || ErrorCodes.INTERNAL_SERVER_ERROR;
       }
     }
     observer.emit('error', 'runtime.invocation.failed', {
@@ -626,4 +677,6 @@ module.exports = {
   serializeInvocation,
   adapterResultOrThrow,
   assertConnectionOwnership,
+  invocationErrorPayload,
+  stageMetricCollector,
 };

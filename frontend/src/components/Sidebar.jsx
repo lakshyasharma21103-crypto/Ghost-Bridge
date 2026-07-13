@@ -10,6 +10,7 @@ import {
   KeyRound,
   Link2,
   Menu,
+  Gauge,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -21,6 +22,7 @@ import { useAppState } from '../app/AppState.jsx';
 
 const primaryItems = [
   { label: 'Overview', path: '/', icon: Home, end: true },
+  { label: 'Operations', path: '/operations', icon: Gauge },
   { label: 'Passports', path: '/passports', icon: ShieldCheck },
   { label: 'Install Keys', path: '/install-keys/resolve', icon: KeyRound, match: '/install-keys' },
   { label: 'Connections', path: '/connections', icon: Link2 },

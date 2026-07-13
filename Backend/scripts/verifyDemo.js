@@ -6,7 +6,11 @@ process.env.PORT = process.env.DEMO_VERIFY_PORT || '5011';
 const { env } = require('../src/config/env');
 const { createApp } = require('../src/app');
 const { connectDatabase, databaseStatus, disconnectDatabase } = require('../src/config/db');
-const { createOrRefreshFlowAiDemoPartner, buildFlowAiDemoPassport, FLOWAI_DEMO_PARTNER_AGENT_ID } = require('../src/services/demoService');
+const {
+  createOrRefreshFlowAiDemoPartner,
+  buildFlowAiDemoPassport,
+  FLOWAI_DEMO_PARTNER_AGENT_ID,
+} = require('../src/services/demoService');
 const Partner = require('../src/models/Partner');
 const PassportInstallKey = require('../src/models/PassportInstallKey');
 const Credential = require('../src/models/Credential');
@@ -92,7 +96,9 @@ async function verify() {
 
   await connectDatabase();
   if (databaseStatus() !== 'connected') {
-    throw new DemoVerificationError('MongoDB is unavailable. Check the local database configuration.');
+    throw new DemoVerificationError(
+      'MongoDB is unavailable. Check the local database configuration.',
+    );
   }
 
   const server = http.createServer(createApp());
@@ -192,6 +198,69 @@ async function verify() {
     assert.ok(auditList.items.some((item) => item.action === 'install_key.consumed'));
     assert.ok(auditList.items.some((item) => item.action === 'invocation.completed'));
 
+    const operationsIdentity = { ...identity, window: '24h' };
+    const operationsSummary = success(
+      await request(baseUrl, `/operations/summary?${query(operationsIdentity)}`, {
+        label: 'operations summary',
+      }),
+      'operations summary',
+    );
+    assert.equal(operationsSummary.readiness.status, 'ready');
+    assert.ok(operationsSummary.passports.active >= 1);
+    assert.ok(operationsSummary.connections.active >= 1);
+    assert.ok(operationsSummary.invocations.successful >= 1);
+    assert.ok(operationsSummary.installations.keysResolved >= 1);
+
+    const operationsLatency = success(
+      await request(baseUrl, `/operations/latency?${query(operationsIdentity)}`, {
+        label: 'operations latency',
+      }),
+      'operations latency',
+    );
+    assert.ok(operationsLatency.overall.count >= 1);
+    assert.ok(
+      operationsLatency.stages.some((item) => item.stage === 'external_runtime_invocation'),
+    );
+
+    const operationsErrors = success(
+      await request(baseUrl, `/operations/errors?${query(operationsIdentity)}`, {
+        label: 'operations errors',
+      }),
+      'operations errors',
+    );
+    assert.ok(Array.isArray(operationsErrors.groups));
+
+    const operationsFunnel = success(
+      await request(baseUrl, `/operations/passport-funnel?${query(operationsIdentity)}`, {
+        label: 'operations funnel',
+      }),
+      'operations funnel',
+    );
+    const funnelCounts = Object.fromEntries(
+      operationsFunnel.steps.map((item) => [item.key, item.count]),
+    );
+    assert.ok(funnelCounts.keysResolved >= 1);
+    assert.ok(funnelCounts.firstSuccessfulInvocation >= 1);
+
+    const operationsAlerts = success(
+      await request(baseUrl, `/operations/alerts?${query(identity)}`, {
+        label: 'operations alerts',
+      }),
+      'operations alerts',
+    );
+    assert.ok(Array.isArray(operationsAlerts.items));
+    assert.equal(
+      JSON.stringify({
+        operationsSummary,
+        operationsLatency,
+        operationsErrors,
+        operationsFunnel,
+        operationsAlerts,
+      }).includes(TOPIC),
+      false,
+    );
+    report('operations', 'workspace metrics, latency, funnel, errors, and alerts are tenant-safe');
+
     const [storedInvocation, storedCredential, storedKey] = await Promise.all([
       Invocation.findById(invoked.invocationId).lean(),
       Credential.findOne({ connectionId: resolved.connectionId }).lean(),
@@ -244,7 +313,9 @@ async function main() {
   try {
     await verify();
   } catch (error) {
-    fail(error instanceof DemoVerificationError ? error.message : 'Unable to complete the demo flow.');
+    fail(
+      error instanceof DemoVerificationError ? error.message : 'Unable to complete the demo flow.',
+    );
   } finally {
     await disconnectDatabase().catch(() => undefined);
   }

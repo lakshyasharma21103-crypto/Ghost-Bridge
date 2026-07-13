@@ -1,0 +1,1182 @@
+const AgentPassport = require('../models/AgentPassport');
+const AuditLog = require('../models/AuditLog');
+const Invocation = require('../models/Invocation');
+const OperationalAlert = require('../models/OperationalAlert');
+const PassportConnection = require('../models/PassportConnection');
+const PassportInstallKey = require('../models/PassportInstallKey');
+const { databaseStatus } = require('../config/db');
+const { env } = require('../config/env');
+const { runtimeConfigurationStatus } = require('../controllers/healthController');
+const { AppError } = require('../utils/AppError');
+const { ErrorCodes } = require('../utils/errorCodes');
+const {
+  OPERATION_WINDOWS,
+  OPERATION_STAGE_NAMES,
+  MAX_LATENCY_SAMPLE_SIZE,
+} = require('../constants/operations');
+const packageMetadata = require('../../package.json');
+
+const ALERT_WINDOW = '24h';
+const SAFE_HEALTH_STATUSES = new Set(['healthy', 'unhealthy', 'unreachable']);
+const SAFE_ALERT_STATUSES = new Set(['active', 'acknowledged', 'resolved']);
+
+function validationError(path, message) {
+  return new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Request validation failed.', [
+    { path, message },
+  ]);
+}
+
+function requireIdentity(input) {
+  const receivingWorkspaceId = String(input?.receivingWorkspaceId || '').trim();
+  const receivingUserId = String(input?.receivingUserId || '').trim();
+  if (!receivingWorkspaceId || !receivingUserId) {
+    throw validationError(
+      !receivingWorkspaceId ? 'receivingWorkspaceId' : 'receivingUserId',
+      `${!receivingWorkspaceId ? 'receivingWorkspaceId' : 'receivingUserId'} is required.`,
+    );
+  }
+  return { receivingWorkspaceId, receivingUserId };
+}
+
+function parseWindow(value = '24h', now = new Date()) {
+  const key = String(value || '24h');
+  const durationMs = OPERATION_WINDOWS[key];
+  if (!durationMs) {
+    throw validationError(
+      'window',
+      `window must be one of: ${Object.keys(OPERATION_WINDOWS).join(', ')}.`,
+    );
+  }
+  const until = new Date(now);
+  return {
+    key,
+    since: new Date(until.getTime() - durationMs),
+    until,
+    durationMs,
+    hours: durationMs / (60 * 60 * 1000),
+  };
+}
+
+function pageFromInput(input = {}) {
+  const page = Number(input.page || 1);
+  const limit = Number(input.limit || 25);
+  if (!Number.isInteger(page) || page < 1)
+    throw validationError('page', 'page must be a positive integer.');
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw validationError('limit', 'limit must be an integer between 1 and 100.');
+  }
+  return { page, limit, skip: (page - 1) * limit };
+}
+
+function round(value, places = 2) {
+  if (!Number.isFinite(value)) return 0;
+  const factor = 10 ** places;
+  return Math.round(value * factor) / factor;
+}
+
+function rate(numerator, denominator) {
+  return denominator > 0 ? round((numerator / denominator) * 100) : 0;
+}
+
+function percentile(sortedValues, target) {
+  if (!sortedValues.length) return null;
+  if (sortedValues.length === 1) return sortedValues[0];
+  const position = (sortedValues.length - 1) * target;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sortedValues[lower];
+  return round(
+    sortedValues[lower] + (sortedValues[upper] - sortedValues[lower]) * (position - lower),
+  );
+}
+
+function latencyStatistics(values) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) {
+    return {
+      count: 0,
+      averageMs: null,
+      minMs: null,
+      maxMs: null,
+      p50Ms: null,
+      p95Ms: null,
+      p99Ms: null,
+    };
+  }
+  return {
+    count: sorted.length,
+    averageMs: round(sorted.reduce((total, value) => total + value, 0) / sorted.length),
+    minMs: sorted[0],
+    maxMs: sorted[sorted.length - 1],
+    p50Ms: percentile(sorted, 0.5),
+    p95Ms: percentile(sorted, 0.95),
+    p99Ms: percentile(sorted, 0.99),
+  };
+}
+
+function windowView(window) {
+  return { key: window.key, from: window.since, to: window.until };
+}
+
+async function connectionIdsForWorkspace(receivingWorkspaceId) {
+  return PassportConnection.distinct('_id', { receivingWorkspaceId });
+}
+
+function invocationMatch(receivingWorkspaceId, connectionIds, since, extra = {}) {
+  return {
+    $and: [
+      {
+        $or: [
+          { receivingWorkspaceId },
+          ...(connectionIds.length ? [{ connectionId: { $in: connectionIds } }] : []),
+        ],
+      },
+      { createdAt: { $gte: since } },
+      extra,
+    ],
+  };
+}
+
+async function invocationSummary(receivingWorkspaceId, connectionIds, window) {
+  const [result = { totals: [], runtimes: [] }] = await Invocation.aggregate([
+    { $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since) },
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              successful: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+              failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
+              running: { $sum: { $cond: [{ $eq: ['$status', 'running'] }, 1, 0] } },
+              queued: { $sum: { $cond: [{ $eq: ['$status', 'queued'] }, 1, 0] } },
+              retryableFailures: {
+                $sum: {
+                  $cond: [
+                    { $and: [{ $eq: ['$status', 'failed'] }, { $eq: ['$error.retryable', true] }] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ],
+        runtimes: [{ $group: { _id: '$runtimeType', count: { $sum: 1 } } }, { $sort: { _id: 1 } }],
+      },
+    },
+  ]);
+  const totals = result.totals?.[0] || {};
+  return {
+    total: totals.total || 0,
+    successful: totals.successful || 0,
+    failed: totals.failed || 0,
+    running: totals.running || 0,
+    queued: totals.queued || 0,
+    retryableFailures: totals.retryableFailures || 0,
+    nonRetryableFailures: Math.max(0, (totals.failed || 0) - (totals.retryableFailures || 0)),
+    successRatePercent: rate(totals.successful || 0, totals.total || 0),
+    failureRatePercent: rate(totals.failed || 0, totals.total || 0),
+    ratePerHour: round((totals.total || 0) / window.hours),
+    byRuntime: Object.fromEntries(
+      (result.runtimes || []).map((item) => [item._id || 'unknown', item.count]),
+    ),
+  };
+}
+
+function safeFailure(invocation) {
+  return {
+    invocationId: String(invocation._id || invocation.id),
+    connectionId: String(invocation.connectionId || ''),
+    runtimeType: invocation.runtimeType || 'unknown',
+    durationMs: Number.isFinite(invocation.durationMs) ? invocation.durationMs : null,
+    errorCode: invocation.error?.code || 'UNKNOWN',
+    stage: OPERATION_STAGE_NAMES.includes(invocation.error?.stage)
+      ? invocation.error.stage
+      : 'unknown',
+    retryable: invocation.error?.retryable === true,
+    providerHttpStatus: Number.isInteger(invocation.error?.providerHttpStatus)
+      ? invocation.error.providerHttpStatus
+      : null,
+    traceId: invocation.traceId || null,
+    createdAt: invocation.createdAt,
+  };
+}
+
+function errorCategory(errorCode, providerHttpStatus) {
+  const code = String(errorCode || 'UNKNOWN').toUpperCase();
+  if (/TIMEOUT|ETIMEDOUT/.test(code) || [504].includes(providerHttpStatus)) return 'timeout';
+  if (/AUTHENTICATION|CREDENTIAL|UNAUTHORIZED/.test(code) || providerHttpStatus === 401)
+    return 'authentication';
+  if (/FORBIDDEN|POLICY/.test(code) || providerHttpStatus === 403) return 'policy_denial';
+  if (/SCHEMA|INPUT_INVALID|OUTPUT_INVALID|VALIDATION/.test(code)) return 'schema_validation';
+  if (providerHttpStatus === 429 || /RATE_LIMIT/.test(code)) return 'provider_rate_limited';
+  if ([502, 503].includes(providerHttpStatus) || /UNAVAILABLE|SAFE_FETCH_FAILED/.test(code))
+    return 'provider_unavailable';
+  if (/SOURCE|VERIFICATION/.test(code)) return 'source_verification';
+  if (/UNSAFE_URL|SSRF/.test(code)) return 'unsafe_url';
+  if (/MONGO|DATABASE/.test(code)) return 'database';
+  if (/INSTALL_KEY/.test(code)) return 'install_key';
+  return 'runtime';
+}
+
+async function recentFailures(receivingWorkspaceId, connectionIds, window, limit = 10) {
+  const rows = await Invocation.find(
+    invocationMatch(receivingWorkspaceId, connectionIds, window.since, { status: 'failed' }),
+  )
+    .select(
+      '_id connectionId runtimeType durationMs traceId error.code error.stage error.retryable error.providerHttpStatus createdAt',
+    )
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .lean();
+  return rows.map(safeFailure);
+}
+
+async function connectionSummary(receivingWorkspaceId, window, connectionIds = []) {
+  const [[counts = {}], healthFailures] = await Promise.all([
+    PassportConnection.aggregate([
+      { $match: { receivingWorkspaceId } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          active: { $sum: { $cond: [{ $eq: ['$status', 'connected'] }, 1, 0] } },
+          pendingAuth: { $sum: { $cond: [{ $eq: ['$status', 'pending_auth'] }, 1, 0] } },
+          disconnected: { $sum: { $cond: [{ $eq: ['$status', 'disconnected'] }, 1, 0] } },
+          error: { $sum: { $cond: [{ $eq: ['$status', 'error'] }, 1, 0] } },
+          healthy: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'connected'] },
+                    { $eq: ['$lastHealthStatus', 'healthy'] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          unhealthy: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'connected'] },
+                    { $in: ['$lastHealthStatus', ['unhealthy', 'unreachable']] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]),
+    AuditLog.countDocuments({
+      'metadata.receivingWorkspaceId': receivingWorkspaceId,
+      action: 'connection.health_checked',
+      'metadata.result': { $in: ['unhealthy', 'unreachable'] },
+      ...(window ? { createdAt: { $gte: window.since } } : {}),
+    }),
+  ]);
+  const items = await PassportConnection.find({ receivingWorkspaceId, status: 'connected' })
+    .select(
+      '_id status runtimeType lastHealthStatus lastHealthCheckedAt resolvedPassportSnapshot.agent.name updatedAt',
+    )
+    .sort({ lastHealthCheckedAt: -1, updatedAt: -1 })
+    .limit(12)
+    .lean();
+  const itemIds = items.map((item) => item._id);
+  const failureRows = itemIds.length
+    ? await Invocation.aggregate([
+        {
+          $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since, {
+            status: 'failed',
+            connectionId: { $in: itemIds },
+          }),
+        },
+        { $group: { _id: '$connectionId', count: { $sum: 1 } } },
+      ])
+    : [];
+  const failuresByConnection = new Map(failureRows.map((row) => [String(row._id), row.count]));
+  const active = counts.active || 0;
+  const healthy = counts.healthy || 0;
+  const unhealthy = counts.unhealthy || 0;
+  return {
+    total: counts.total || 0,
+    active,
+    pendingAuth: counts.pendingAuth || 0,
+    disconnected: counts.disconnected || 0,
+    error: counts.error || 0,
+    healthCheckFailures: healthFailures,
+    health: { healthy, unhealthy, unknown: Math.max(0, active - healthy - unhealthy) },
+    items: items.map((item) => ({
+      connectionId: String(item._id),
+      agentName: item.resolvedPassportSnapshot?.agent?.name || 'Unnamed agent',
+      runtimeType: item.runtimeType,
+      status: item.status,
+      healthStatus: SAFE_HEALTH_STATUSES.has(item.lastHealthStatus)
+        ? item.lastHealthStatus
+        : 'unknown',
+      checkedAt: item.lastHealthCheckedAt || null,
+      recentFailureCount: failuresByConnection.get(String(item._id)) || 0,
+    })),
+  };
+}
+
+async function passportSummary(receivingWorkspaceId, window) {
+  const [counts = {}] = await PassportConnection.aggregate([
+    { $match: { receivingWorkspaceId } },
+    { $group: { _id: '$passportId' } },
+    {
+      $lookup: {
+        from: AgentPassport.collection.name,
+        localField: '_id',
+        foreignField: '_id',
+        as: 'passport',
+      },
+    },
+    { $unwind: { path: '$passport', preserveNullAndEmptyArrays: true } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        valid: { $sum: { $cond: [{ $eq: ['$passport.status', 'valid'] }, 1, 0] } },
+        invalid: { $sum: { $cond: [{ $eq: ['$passport.status', 'invalid'] }, 1, 0] } },
+        suspended: { $sum: { $cond: [{ $eq: ['$passport.status', 'suspended'] }, 1, 0] } },
+        draft: { $sum: { $cond: [{ $eq: ['$passport.status', 'draft'] }, 1, 0] } },
+        updatedDuringWindow: {
+          $sum: {
+            $cond: [{ $gte: ['$passport.updatedAt', window.since] }, 1, 0],
+          },
+        },
+      },
+    },
+  ]);
+  const total = counts.total || 0;
+  const known =
+    (counts.valid || 0) + (counts.invalid || 0) + (counts.suspended || 0) + (counts.draft || 0);
+  return {
+    total,
+    valid: counts.valid || 0,
+    active: counts.valid || 0,
+    invalid: counts.invalid || 0,
+    suspended: counts.suspended || 0,
+    draft: counts.draft || 0,
+    unknown: Math.max(0, total - known),
+    updatedDuringWindow: counts.updatedDuringWindow || 0,
+  };
+}
+
+async function installationFunnel(receivingWorkspaceId, connectionIds, window) {
+  const [resolvedKeys, [connectionCounts = {}], firstSuccessRows, auditRows] = await Promise.all([
+    PassportInstallKey.countDocuments({
+      usedByWorkspaceId: receivingWorkspaceId,
+      status: 'used',
+      usedAt: { $gte: window.since },
+    }),
+    PassportConnection.aggregate([
+      { $match: { receivingWorkspaceId, createdAt: { $gte: window.since } } },
+      {
+        $group: {
+          _id: null,
+          connectionsCreated: { $sum: 1 },
+          passportsValidated: {
+            $sum: {
+              $cond: [{ $ne: [{ $type: '$resolvedPassportSnapshot.agent.id' }, 'missing'] }, 1, 0],
+            },
+          },
+          capabilityMetadataImported: {
+            $sum: {
+              $cond: [
+                {
+                  $gt: [{ $size: { $ifNull: ['$resolvedPassportSnapshot.capabilities', []] } }, 0],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          runtimeResolved: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $in: ['$runtimeType', ['rest', 'mcp']] },
+                    { $gt: [{ $strLenCP: { $ifNull: ['$runtimeEndpoint', ''] } }, 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          delegatedApplicable: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: [
+                    '$resolvedPassportSnapshot.installation.installMode',
+                    'delegated_runtime_access',
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          delegatedCredentialConfigured: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $eq: [
+                        '$resolvedPassportSnapshot.installation.installMode',
+                        'delegated_runtime_access',
+                      ],
+                    },
+                    { $ne: [{ $type: '$credentialId' }, 'missing'] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          connectionsVerified: { $sum: { $cond: [{ $eq: ['$status', 'connected'] }, 1, 0] } },
+        },
+      },
+    ]),
+    Invocation.aggregate([
+      {
+        $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since, {
+          status: 'completed',
+        }),
+      },
+      { $group: { _id: '$connectionId' } },
+      { $count: 'count' },
+    ]),
+    AuditLog.aggregate([
+      {
+        $match: {
+          'metadata.receivingWorkspaceId': receivingWorkspaceId,
+          action: 'install_key.resolve_denied',
+          createdAt: { $gte: window.since },
+        },
+      },
+      { $group: { _id: '$metadata.reason', count: { $sum: 1 } } },
+    ]),
+  ]);
+  const denialCounts = Object.fromEntries(
+    auditRows.map((row) => [row._id || 'unknown', row.count]),
+  );
+  const resolutionFailures = auditRows.reduce((sum, row) => sum + row.count, 0);
+  const attempts = resolvedKeys + resolutionFailures;
+  const created = connectionCounts.connectionsCreated || 0;
+  const steps = [
+    ['keysResolved', resolvedKeys],
+    ['passportsValidated', connectionCounts.passportsValidated || 0],
+    ['capabilityMetadataImported', connectionCounts.capabilityMetadataImported || 0],
+    ['runtimeResolved', connectionCounts.runtimeResolved || 0],
+    ['delegatedCredentialConfigured', connectionCounts.delegatedCredentialConfigured || 0],
+    ['connectionsCreated', created],
+    ['connectionsVerified', connectionCounts.connectionsVerified || 0],
+    ['firstSuccessfulInvocation', firstSuccessRows[0]?.count || 0],
+  ].map(([key, count]) => ({ key, count }));
+  return {
+    steps,
+    totals: {
+      resolutionAttempts: attempts,
+      resolutionFailures,
+      resolutionSuccessRatePercent: rate(resolvedKeys, attempts),
+      reusedKeyRejections: denialCounts.INSTALL_KEY_ALREADY_USED || 0,
+      expiredKeyRejections: denialCounts.INSTALL_KEY_EXPIRED || 0,
+      delegatedApplicable: connectionCounts.delegatedApplicable || 0,
+    },
+    unavailable: {
+      keysIssued:
+        'Install keys are partner-scoped before resolution and cannot be attributed to a receiving workspace.',
+      keysExpired: 'Unresolved expired keys are not attributable to a receiving workspace.',
+    },
+  };
+}
+
+async function getLatency(input) {
+  const identity = requireIdentity(input);
+  const window = parseWindow(input?.window);
+  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
+  const match = invocationMatch(identity.receivingWorkspaceId, connectionIds, window.since, {
+    status: 'completed',
+    durationMs: { $type: 'number' },
+  });
+  const [rows, total] = await Promise.all([
+    Invocation.aggregate([
+      { $match: match },
+      { $sort: { createdAt: -1 } },
+      { $limit: MAX_LATENCY_SAMPLE_SIZE },
+      { $project: { _id: 0, durationMs: 1, stageMetrics: 1 } },
+    ]),
+    Invocation.countDocuments(match),
+  ]);
+  const stageValues = new Map(OPERATION_STAGE_NAMES.map((stage) => [stage, []]));
+  for (const row of rows) {
+    for (const metric of (row.stageMetrics || []).slice(0, 16)) {
+      if (stageValues.has(metric.stage) && Number.isFinite(metric.durationMs)) {
+        stageValues.get(metric.stage).push(metric.durationMs);
+      }
+    }
+  }
+  return {
+    window: windowView(window),
+    sample: {
+      size: rows.length,
+      total,
+      limit: MAX_LATENCY_SAMPLE_SIZE,
+      truncated: total > rows.length,
+      method: 'Most recent completed invocations; linear-interpolated percentiles.',
+    },
+    overall: latencyStatistics(rows.map((row) => row.durationMs)),
+    stages: [...stageValues.entries()]
+      .map(([stage, values]) => ({ stage, ...latencyStatistics(values) }))
+      .filter((item) => item.count > 0),
+  };
+}
+
+async function getErrors(input) {
+  const identity = requireIdentity(input);
+  const window = parseWindow(input?.window);
+  const pagination = pageFromInput(input);
+  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
+  const match = invocationMatch(identity.receivingWorkspaceId, connectionIds, window.since, {
+    status: 'failed',
+  });
+  const [facet = { groups: [], meta: [], totals: [] }] = await Invocation.aggregate([
+    { $match: match },
+    {
+      $lookup: {
+        from: PassportConnection.collection.name,
+        localField: 'connectionId',
+        foreignField: '_id',
+        as: 'connectionHealth',
+        pipeline: [{ $project: { _id: 0, lastHealthStatus: 1 } }],
+      },
+    },
+    {
+      $set: {
+        connectionHealthState: {
+          $ifNull: [{ $arrayElemAt: ['$connectionHealth.lastHealthStatus', 0] }, 'unknown'],
+        },
+      },
+    },
+    {
+      $facet: {
+        groups: [
+          {
+            $group: {
+              _id: {
+                code: { $ifNull: ['$error.code', 'UNKNOWN'] },
+                stage: { $ifNull: ['$error.stage', 'unknown'] },
+                retryable: { $eq: ['$error.retryable', true] },
+                providerHttpStatus: { $ifNull: ['$error.providerHttpStatus', null] },
+                runtimeType: { $ifNull: ['$runtimeType', 'unknown'] },
+                connectionHealthState: '$connectionHealthState',
+              },
+              count: { $sum: 1 },
+              latestAt: { $max: '$createdAt' },
+            },
+          },
+          { $sort: { count: -1, latestAt: -1 } },
+          { $skip: pagination.skip },
+          { $limit: pagination.limit },
+        ],
+        meta: [
+          {
+            $group: {
+              _id: {
+                code: '$error.code',
+                stage: '$error.stage',
+                retryable: '$error.retryable',
+                providerHttpStatus: '$error.providerHttpStatus',
+                runtimeType: '$runtimeType',
+                connectionHealthState: '$connectionHealthState',
+              },
+            },
+          },
+          { $count: 'totalGroups' },
+        ],
+        totals: [
+          {
+            $group: {
+              _id: null,
+              failures: { $sum: 1 },
+              retryable: { $sum: { $cond: [{ $eq: ['$error.retryable', true] }, 1, 0] } },
+              provider429: { $sum: { $cond: [{ $eq: ['$error.providerHttpStatus', 429] }, 1, 0] } },
+              providerUnavailable: {
+                $sum: { $cond: [{ $in: ['$error.providerHttpStatus', [503, 504]] }, 1, 0] },
+              },
+            },
+          },
+        ],
+      },
+    },
+  ]);
+  const totals = facet.totals?.[0] || {};
+  return {
+    window: windowView(window),
+    totals: {
+      failures: totals.failures || 0,
+      retryable: totals.retryable || 0,
+      provider429: totals.provider429 || 0,
+      providerUnavailable: totals.providerUnavailable || 0,
+    },
+    groups: (facet.groups || []).map((group) => ({
+      errorCode: group._id.code,
+      category: errorCategory(group._id.code, group._id.providerHttpStatus),
+      stage: OPERATION_STAGE_NAMES.includes(group._id.stage) ? group._id.stage : 'unknown',
+      retryable: group._id.retryable,
+      providerHttpStatus: Number.isInteger(group._id.providerHttpStatus)
+        ? group._id.providerHttpStatus
+        : null,
+      runtimeType: group._id.runtimeType,
+      connectionHealthState: SAFE_HEALTH_STATUSES.has(group._id.connectionHealthState)
+        ? group._id.connectionHealthState
+        : 'unknown',
+      count: group.count,
+      percentageOfFailures: rate(group.count, totals.failures || 0),
+      latestAt: group.latestAt,
+    })),
+    pagination: {
+      page: pagination.page,
+      limit: pagination.limit,
+      totalGroups: facet.meta?.[0]?.totalGroups || 0,
+    },
+    recentFailures: await recentFailures(identity.receivingWorkspaceId, connectionIds, window),
+  };
+}
+
+function alertRulesFromSignals(signals) {
+  const rules = [];
+  const add = (condition, rule) => {
+    if (condition) rules.push(rule);
+  };
+  add(signals.readiness.status !== 'ready', {
+    type: 'gateway_not_ready',
+    severity: 'critical',
+    title: 'Gateway is not ready',
+    summary: 'Database or runtime configuration readiness is unavailable.',
+    metricName: 'gateway_readiness',
+    observedValue: signals.readiness.status,
+    thresholdValue: 'ready',
+    safeValues: {
+      database: signals.readiness.database,
+      runtimeConfiguration: signals.readiness.runtimeConfiguration,
+    },
+  });
+  add(
+    signals.invocations.total >= env.OPS_ALERT_FAILURE_RATE_MIN_INVOCATIONS &&
+      signals.invocations.failureRatePercent >= env.OPS_ALERT_FAILURE_RATE_PERCENT,
+    {
+      type: 'high_invocation_failure_rate',
+      severity: 'critical',
+      title: 'Invocation failure rate is high',
+      summary: `Failures reached the configured ${env.OPS_ALERT_FAILURE_RATE_PERCENT}% threshold.`,
+      metricName: 'invocation_failure_rate_percent',
+      observedValue: signals.invocations.failureRatePercent,
+      thresholdValue: env.OPS_ALERT_FAILURE_RATE_PERCENT,
+      safeValues: {
+        total: signals.invocations.total,
+        failed: signals.invocations.failed,
+        failureRatePercent: signals.invocations.failureRatePercent,
+      },
+    },
+  );
+  add(
+    signals.connections.active > 0 &&
+      signals.connections.health.healthy === 0 &&
+      signals.connections.health.unhealthy > 0,
+    {
+      type: 'all_connections_unhealthy',
+      severity: 'critical',
+      title: 'All checked active connections are unhealthy',
+      summary: 'No checked active connection is currently healthy.',
+      metricName: 'healthy_active_connections',
+      observedValue: signals.connections.health.healthy,
+      thresholdValue: 1,
+      safeValues: {
+        active: signals.connections.active,
+        unhealthy: signals.connections.health.unhealthy,
+      },
+    },
+  );
+  add(signals.errors.credentialFailures > 0, {
+    type: 'credential_decryption_failures',
+    severity: 'critical',
+    title: 'Credential decryption failures detected',
+    summary: 'One or more invocations failed while loading protected credentials.',
+    metricName: 'credential_failures',
+    observedValue: signals.errors.credentialFailures,
+    thresholdValue: 1,
+    safeValues: { count: signals.errors.credentialFailures },
+  });
+  add(signals.audit.authFailures >= env.OPS_ALERT_AUTH_FAILURE_COUNT, {
+    type: 'repeated_auth_failures',
+    severity: 'critical',
+    title: 'Repeated authorization failures detected',
+    summary: `Authorization denials reached the configured count of ${env.OPS_ALERT_AUTH_FAILURE_COUNT}.`,
+    metricName: 'authorization_failures',
+    observedValue: signals.audit.authFailures,
+    thresholdValue: env.OPS_ALERT_AUTH_FAILURE_COUNT,
+    safeValues: { count: signals.audit.authFailures },
+  });
+  add(signals.errors.providerErrors >= env.OPS_ALERT_PROVIDER_ERROR_COUNT, {
+    type: 'provider_errors',
+    severity: 'warning',
+    title: 'Provider throttling or availability errors detected',
+    summary: `HTTP 429/503/504 failures reached the configured count of ${env.OPS_ALERT_PROVIDER_ERROR_COUNT}.`,
+    metricName: 'provider_errors',
+    observedValue: signals.errors.providerErrors,
+    thresholdValue: env.OPS_ALERT_PROVIDER_ERROR_COUNT,
+    safeValues: { count: signals.errors.providerErrors },
+  });
+  add(signals.errors.timeoutFailures >= env.OPS_ALERT_PROVIDER_ERROR_COUNT, {
+    type: 'runtime_timeouts',
+    severity: 'warning',
+    title: 'Repeated Runtime Gateway timeouts detected',
+    summary: `Timeout failures reached the configured count of ${env.OPS_ALERT_PROVIDER_ERROR_COUNT}.`,
+    metricName: 'runtime_timeouts',
+    observedValue: signals.errors.timeoutFailures,
+    thresholdValue: env.OPS_ALERT_PROVIDER_ERROR_COUNT,
+    safeValues: { count: signals.errors.timeoutFailures },
+  });
+  add(signals.latency.p95Ms !== null && signals.latency.p95Ms >= env.OPS_ALERT_P95_LATENCY_MS, {
+    type: 'high_p95_latency',
+    severity: 'warning',
+    title: 'Invocation p95 latency is high',
+    summary: `P95 latency exceeded the configured ${env.OPS_ALERT_P95_LATENCY_MS} ms threshold.`,
+    metricName: 'p95_latency_ms',
+    observedValue: signals.latency.p95Ms,
+    thresholdValue: env.OPS_ALERT_P95_LATENCY_MS,
+    safeValues: { p95Ms: signals.latency.p95Ms },
+  });
+  add(
+    signals.funnel.totals.resolutionAttempts >= 4 &&
+      rate(signals.funnel.totals.reusedKeyRejections, signals.funnel.totals.resolutionAttempts) >=
+        env.OPS_ALERT_INSTALL_FAILURE_PERCENT,
+    {
+      type: 'reused_install_keys',
+      severity: 'warning',
+      title: 'Reused install-key rejections are elevated',
+      summary: `Reused-key rejections reached the configured ${env.OPS_ALERT_INSTALL_FAILURE_PERCENT}% threshold.`,
+      metricName: 'reused_key_rejection_rate_percent',
+      observedValue: rate(
+        signals.funnel.totals.reusedKeyRejections,
+        signals.funnel.totals.resolutionAttempts,
+      ),
+      thresholdValue: env.OPS_ALERT_INSTALL_FAILURE_PERCENT,
+      safeValues: {
+        attempts: signals.funnel.totals.resolutionAttempts,
+        reusedKeyRejections: signals.funnel.totals.reusedKeyRejections,
+      },
+    },
+  );
+  add(signals.connections.health.unhealthy > 0, {
+    type: 'unhealthy_connections',
+    severity: 'warning',
+    title: 'Unhealthy connections require attention',
+    summary: 'At least one active connection is unhealthy or unreachable.',
+    metricName: 'unhealthy_connections',
+    observedValue: signals.connections.health.unhealthy,
+    thresholdValue: 1,
+    safeValues: { count: signals.connections.health.unhealthy },
+  });
+  add(
+    signals.funnel.totals.resolutionAttempts >= 4 &&
+      100 - signals.funnel.totals.resolutionSuccessRatePercent >=
+        env.OPS_ALERT_INSTALL_FAILURE_PERCENT,
+    {
+      type: 'install_resolution_failures',
+      severity: 'warning',
+      title: 'Install resolution failure rate is high',
+      summary: `Install failures reached the configured ${env.OPS_ALERT_INSTALL_FAILURE_PERCENT}% threshold.`,
+      metricName: 'install_failure_rate_percent',
+      observedValue: 100 - signals.funnel.totals.resolutionSuccessRatePercent,
+      thresholdValue: env.OPS_ALERT_INSTALL_FAILURE_PERCENT,
+      safeValues: {
+        attempts: signals.funnel.totals.resolutionAttempts,
+        failures: signals.funnel.totals.resolutionFailures,
+      },
+    },
+  );
+  add(signals.invocations.total > 0 && signals.invocations.successful === 0, {
+    type: 'no_successful_invocations',
+    severity: 'info',
+    title: 'No successful invocations in the last 24 hours',
+    summary: 'Invocation activity exists, but none completed successfully.',
+    metricName: 'successful_invocations',
+    observedValue: signals.invocations.successful,
+    thresholdValue: 1,
+    safeValues: { total: signals.invocations.total },
+  });
+  add(signals.connections.health.unknown > 0, {
+    type: 'connections_health_unknown',
+    severity: 'info',
+    title: 'Some active connection health is unknown',
+    summary: 'Run connection health checks to establish current status.',
+    metricName: 'unknown_health_connections',
+    observedValue: signals.connections.health.unknown,
+    thresholdValue: 1,
+    safeValues: { count: signals.connections.health.unknown },
+  });
+  return rules;
+}
+
+async function alertErrorSignals(receivingWorkspaceId, connectionIds, window) {
+  const [row = {}] = await Invocation.aggregate([
+    {
+      $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since, {
+        status: 'failed',
+      }),
+    },
+    {
+      $group: {
+        _id: null,
+        providerErrors: {
+          $sum: { $cond: [{ $in: ['$error.providerHttpStatus', [429, 503, 504]] }, 1, 0] },
+        },
+        credentialFailures: {
+          $sum: {
+            $cond: [
+              {
+                $or: [
+                  { $eq: ['$error.stage', 'credential_decryption'] },
+                  {
+                    $in: [
+                      '$error.code',
+                      ['ENCRYPTION_CONFIGURATION_INVALID', 'CREDENTIAL_EXPIRED'],
+                    ],
+                  },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+        timeoutFailures: {
+          $sum: {
+            $cond: [
+              {
+                $or: [
+                  { $regexMatch: { input: { $ifNull: ['$error.code', ''] }, regex: /TIMEOUT/i } },
+                  { $eq: ['$error.providerHttpStatus', 504] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]);
+  return {
+    providerErrors: row.providerErrors || 0,
+    credentialFailures: row.credentialFailures || 0,
+    timeoutFailures: row.timeoutFailures || 0,
+  };
+}
+
+async function alertAuditSignals(receivingWorkspaceId, window) {
+  const [row = {}] = await AuditLog.aggregate([
+    {
+      $match: {
+        'metadata.receivingWorkspaceId': receivingWorkspaceId,
+        createdAt: { $gte: window.since },
+        'metadata.errorCode': { $in: ['AUTHENTICATION_REQUIRED', 'FORBIDDEN'] },
+      },
+    },
+    { $group: { _id: null, authFailures: { $sum: 1 } } },
+  ]);
+  return { authFailures: row.authFailures || 0 };
+}
+
+async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date()) {
+  const existing = await OperationalAlert.find({ receivingWorkspaceId }).lean();
+  const byType = new Map(existing.map((alert) => [alert.type, alert]));
+  const activeTypes = new Set(rules.map((rule) => rule.type));
+  const operations = [];
+  for (const rule of rules) {
+    const current = byType.get(rule.type);
+    const dedupeKey = `${receivingWorkspaceId}:${rule.type}`;
+    if (!current) {
+      operations.push({
+        updateOne: {
+          filter: { dedupeKey },
+          update: {
+            $setOnInsert: {
+              receivingWorkspaceId,
+              type: rule.type,
+              dedupeKey,
+              occurrenceCount: 1,
+              firstSeenAt: now,
+            },
+            $set: {
+              severity: rule.severity,
+              status: 'active',
+              title: rule.title,
+              summary: rule.summary,
+              metricName: rule.metricName,
+              observedValue: rule.observedValue,
+              thresholdValue: rule.thresholdValue,
+              safeValues: rule.safeValues,
+              lastSeenAt: now,
+            },
+          },
+          upsert: true,
+        },
+      });
+    } else if (current.status === 'resolved') {
+      operations.push({
+        updateOne: {
+          filter: { _id: current._id, status: 'resolved' },
+          update: {
+            $set: {
+              severity: rule.severity,
+              status: 'active',
+              title: rule.title,
+              summary: rule.summary,
+              metricName: rule.metricName,
+              observedValue: rule.observedValue,
+              thresholdValue: rule.thresholdValue,
+              safeValues: rule.safeValues,
+              lastSeenAt: now,
+            },
+            $unset: { acknowledgedAt: 1, acknowledgedByUserId: 1, resolvedAt: 1 },
+            $inc: { occurrenceCount: 1 },
+          },
+        },
+      });
+    } else {
+      operations.push({
+        updateOne: {
+          filter: { _id: current._id },
+          update: {
+            $set: {
+              severity: rule.severity,
+              title: rule.title,
+              summary: rule.summary,
+              metricName: rule.metricName,
+              observedValue: rule.observedValue,
+              thresholdValue: rule.thresholdValue,
+              safeValues: rule.safeValues,
+              lastSeenAt: now,
+            },
+          },
+        },
+      });
+    }
+  }
+  for (const current of existing) {
+    if (!activeTypes.has(current.type) && current.status !== 'resolved') {
+      operations.push({
+        updateOne: {
+          filter: { _id: current._id, status: { $ne: 'resolved' } },
+          update: { $set: { status: 'resolved', resolvedAt: now } },
+        },
+      });
+    }
+  }
+  if (operations.length) await OperationalAlert.bulkWrite(operations, { ordered: false });
+}
+
+async function evaluateWorkspaceAlerts(receivingWorkspaceId, connectionIds, now = new Date()) {
+  const window = parseWindow(ALERT_WINDOW, now);
+  const [connections, invocations, funnel, latency, errors, audit] = await Promise.all([
+    connectionSummary(receivingWorkspaceId, window, connectionIds),
+    invocationSummary(receivingWorkspaceId, connectionIds, window),
+    installationFunnel(receivingWorkspaceId, connectionIds, window),
+    getLatency({
+      receivingWorkspaceId,
+      receivingUserId: 'system-alert-evaluator',
+      window: ALERT_WINDOW,
+    }),
+    alertErrorSignals(receivingWorkspaceId, connectionIds, window),
+    alertAuditSignals(receivingWorkspaceId, window),
+  ]);
+  const database = databaseStatus();
+  const runtimeConfiguration = runtimeConfigurationStatus();
+  const signals = {
+    readiness: {
+      status: database === 'connected' && runtimeConfiguration === 'valid' ? 'ready' : 'not_ready',
+      database,
+      runtimeConfiguration,
+    },
+    connections,
+    invocations,
+    funnel,
+    latency: latency.overall,
+    errors,
+    audit,
+  };
+  await syncOperationalAlerts(receivingWorkspaceId, alertRulesFromSignals(signals), now);
+}
+
+async function alertCounts(receivingWorkspaceId) {
+  const rows = await OperationalAlert.aggregate([
+    { $match: { receivingWorkspaceId, status: { $in: ['active', 'acknowledged'] } } },
+    { $group: { _id: '$severity', count: { $sum: 1 } } },
+  ]);
+  const counts = Object.fromEntries(rows.map((row) => [row._id, row.count]));
+  return {
+    active: rows.reduce((sum, row) => sum + row.count, 0),
+    critical: counts.critical || 0,
+    warning: counts.warning || 0,
+    info: counts.info || 0,
+  };
+}
+
+async function getSummary(input) {
+  const identity = requireIdentity(input);
+  const window = parseWindow(input?.window);
+  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
+  const [passports, connections, invocations, failures, funnel] = await Promise.all([
+    passportSummary(identity.receivingWorkspaceId, window),
+    connectionSummary(identity.receivingWorkspaceId, window, connectionIds),
+    invocationSummary(identity.receivingWorkspaceId, connectionIds, window),
+    recentFailures(identity.receivingWorkspaceId, connectionIds, window),
+    installationFunnel(identity.receivingWorkspaceId, connectionIds, window),
+  ]);
+  await evaluateWorkspaceAlerts(identity.receivingWorkspaceId, connectionIds);
+  const database = databaseStatus();
+  const runtimeConfiguration = runtimeConfigurationStatus();
+  const funnelCounts = Object.fromEntries(funnel.steps.map((step) => [step.key, step.count]));
+  return {
+    window: windowView(window),
+    readiness: {
+      service: 'agent-passport-runtime-gateway',
+      version: packageMetadata.version,
+      status: database === 'connected' && runtimeConfiguration === 'valid' ? 'ready' : 'not_ready',
+      database,
+      runtimeConfiguration,
+    },
+    passports,
+    connections,
+    invocations: { ...invocations, recentFailures: failures },
+    installations: {
+      keysIssued: null,
+      keysIssuedAvailability: 'unavailable',
+      keysResolved: funnelCounts.keysResolved || 0,
+      expiredKeys: null,
+      expiredKeysAvailability: 'unavailable',
+      expiredKeyRejections: funnel.totals.expiredKeyRejections,
+      reusedKeyRejections: funnel.totals.reusedKeyRejections,
+      resolutionAttempts: funnel.totals.resolutionAttempts,
+      resolutionFailures: funnel.totals.resolutionFailures,
+      resolutionSuccessRatePercent: funnel.totals.resolutionSuccessRatePercent,
+      connectionsCreated: funnelCounts.connectionsCreated || 0,
+      verifiedConnections: funnelCounts.connectionsVerified || 0,
+    },
+    alerts: await alertCounts(identity.receivingWorkspaceId),
+  };
+}
+
+async function getPassportFunnel(input) {
+  const identity = requireIdentity(input);
+  const window = parseWindow(input?.window);
+  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
+  return {
+    window: windowView(window),
+    ...(await installationFunnel(identity.receivingWorkspaceId, connectionIds, window)),
+  };
+}
+
+function serializeAlert(alert) {
+  return {
+    alertId: String(alert._id || alert.id),
+    type: alert.type,
+    severity: alert.severity,
+    status: alert.status,
+    title: alert.title,
+    summary: alert.summary,
+    metricName: alert.metricName,
+    observedValue: alert.observedValue,
+    thresholdValue: alert.thresholdValue,
+    safeValues: alert.safeValues || {},
+    occurrenceCount: alert.occurrenceCount,
+    firstSeenAt: alert.firstSeenAt,
+    lastSeenAt: alert.lastSeenAt,
+    acknowledgedAt: alert.acknowledgedAt || null,
+    acknowledgedByUserId: alert.acknowledgedByUserId || null,
+    resolvedAt: alert.resolvedAt || null,
+  };
+}
+
+async function listAlerts(input) {
+  const identity = requireIdentity(input);
+  const pagination = pageFromInput(input);
+  const filter = { receivingWorkspaceId: identity.receivingWorkspaceId };
+  if (input?.status) {
+    if (!SAFE_ALERT_STATUSES.has(input.status)) {
+      throw validationError('status', 'status must be active, acknowledged, or resolved.');
+    }
+    filter.status = input.status;
+  } else {
+    filter.status = { $in: ['active', 'acknowledged'] };
+  }
+  const [items, total] = await Promise.all([
+    OperationalAlert.find(filter)
+      .sort({ severity: 1, lastSeenAt: -1 })
+      .skip(pagination.skip)
+      .limit(pagination.limit)
+      .lean(),
+    OperationalAlert.countDocuments(filter),
+  ]);
+  return {
+    items: items.map(serializeAlert),
+    pagination: { page: pagination.page, limit: pagination.limit, total },
+  };
+}
+
+async function acknowledgeAlert(alertId, input) {
+  const identity = requireIdentity(input);
+  const now = new Date();
+  const alert = await OperationalAlert.findOneAndUpdate(
+    {
+      _id: alertId,
+      receivingWorkspaceId: identity.receivingWorkspaceId,
+      status: { $in: ['active', 'acknowledged'] },
+    },
+    {
+      $set: {
+        status: 'acknowledged',
+        acknowledgedAt: now,
+        acknowledgedByUserId: identity.receivingUserId,
+      },
+    },
+    { new: true, runValidators: true },
+  ).lean();
+  if (!alert) throw new AppError(404, ErrorCodes.NOT_FOUND, 'Operational alert was not found.');
+  return serializeAlert(alert);
+}
+
+module.exports = {
+  requireIdentity,
+  parseWindow,
+  rate,
+  percentile,
+  latencyStatistics,
+  alertRulesFromSignals,
+  syncOperationalAlerts,
+  getSummary,
+  getLatency,
+  getErrors,
+  getPassportFunnel,
+  listAlerts,
+  acknowledgeAlert,
+};

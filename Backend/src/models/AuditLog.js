@@ -16,5 +16,6 @@ const auditLogSchema = new mongoose.Schema(
 );
 
 auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
+auditLogSchema.index({ 'metadata.receivingWorkspaceId': 1, action: 1, createdAt: -1 });
 
 module.exports = mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema);

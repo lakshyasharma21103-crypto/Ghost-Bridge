@@ -22,6 +22,7 @@ test('the dashboard route map includes every Agent Passport Runtime Gateway page
   const routes = [
     ['/', 'Landing'],
     ['/partner', 'PartnerDashboard'],
+    ['/operations', 'Operations'],
     ['/passports/new', 'CreatePassport'],
     ['/passports', 'PassportsList'],
     ['/passports/:passportId', 'PassportDetail'],
@@ -62,6 +63,23 @@ test('the install-key UI uses a copy-once component and does not retain the raw 
 
   assert.match(issueKey, /<CopyOnceBox[\s\S]*value=\{issued\.key\}/);
   assert.match(issueKey, /setIssued\(\(current\) => \(\{ \.\.\.current, key: null \}\)\)/);
+});
+
+test('Operations uses tenant-scoped aggregate APIs and renders only safe operational fields', () => {
+  const operations = read('src/pages/Operations.jsx');
+
+  assert.match(operations, /\/operations\/summary/);
+  assert.match(operations, /\/operations\/latency/);
+  assert.match(operations, /\/operations\/errors/);
+  assert.match(operations, /\/operations\/passport-funnel/);
+  assert.match(operations, /\/operations\/alerts/);
+  assert.match(operations, /receivingWorkspaceId/);
+  assert.match(operations, /No active operational alerts\./);
+  assert.match(operations, /No failed invocations for this window\./);
+  assert.doesNotMatch(
+    operations,
+    /inputSummary|\.output\b|sourceUrl|Authorization|encryptedPayload|accessToken|installKey|apiKey/,
+  );
 });
 
 test('Developer Sandbox is backend-environment gated and loads seeded sandboxes in memory', () => {

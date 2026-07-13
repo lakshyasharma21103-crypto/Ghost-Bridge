@@ -32,7 +32,7 @@ function parseResponseBody(bodyText) {
   }
 }
 
-function extractOutput(runtime, parsedBody) {
+function extractOutput(runtime, parsedBody, providerHttpStatus) {
   if (!runtime.outputField) return parsedBody;
   if (
     !isRecord(parsedBody) ||
@@ -48,6 +48,7 @@ function extractOutput(runtime, parsedBody) {
           message: `Remote response did not include "${runtime.outputField}".`,
         },
       ],
+      { providerHttpStatus },
     );
   }
   return parsedBody[runtime.outputField];
@@ -129,6 +130,7 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
           remoteStatus: response.status,
         },
       ],
+      { providerHttpStatus: response.status },
     );
   }
 
@@ -138,7 +140,9 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
   return {
     ok: true,
     status: response.status,
-    output: await runStage('response_mapping', async () => extractOutput(runtime, parsedBody)),
+    output: await runStage('response_mapping', async () =>
+      extractOutput(runtime, parsedBody, response.status),
+    ),
   };
 }
 

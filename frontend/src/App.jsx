@@ -14,6 +14,7 @@ import { ResolvePassportKey } from './pages/ResolvePassportKey.jsx';
 import { Settings } from './pages/Settings.jsx';
 import { TestInvocation } from './pages/TestInvocation.jsx';
 import { DeveloperSandbox } from './pages/DeveloperSandbox.jsx';
+import { Operations } from './pages/Operations.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -24,6 +25,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<Landing />} />
         <Route path="/partner" element={<PartnerDashboard />} />
+        <Route path="/operations" element={<Operations />} />
         <Route path="/passports/new" element={<CreatePassport />} />
         <Route path="/passports" element={<PassportsList />} />
         <Route path="/passports/:passportId" element={<PassportDetail />} />
@@ -38,11 +40,13 @@ export default function App() {
         <Route
           path="/developer-sandbox"
           element={
-            sandboxReady
-              ? sandboxEnabled
-                ? <DeveloperSandbox />
-                : <Navigate to="/" replace />
-              : null
+            sandboxReady ? (
+              sandboxEnabled ? (
+                <DeveloperSandbox />
+              ) : (
+                <Navigate to="/" replace />
+              )
+            ) : null
           }
         />
       </Route>
