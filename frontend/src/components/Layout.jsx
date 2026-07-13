@@ -1,33 +1,77 @@
-import { Layers3 } from 'lucide-react';
-import { Outlet, useLocation } from 'react-router-dom';
-import { Sidebar } from './Sidebar.jsx';
+import { ChevronDown, CircleHelp } from 'lucide-react';
+import { Link, Outlet, useLocation } from 'react-router-dom';
 import { useAppState } from '../app/AppState.jsx';
+import { Sidebar } from './Sidebar.jsx';
 
 export function Layout() {
-  const { identity } = useAppState();
+  const { identity, serverEnvironment } = useAppState();
   const location = useLocation();
-  const isLanding = location.pathname === '/';
+  const gatewayReady = serverEnvironment && serverEnvironment !== 'unavailable';
 
   return (
-    <div className="flex min-h-screen bg-slate-100 text-slate-950">
+    <div className="console-shell">
       <Sidebar />
-      <main className="min-w-0 flex-1">
-        <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur lg:px-8">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">Agent Passport Runtime Gateway</p>
-              <p className="mt-0.5 hidden text-xs text-slate-500 sm:block">One key to discover, connect, and invoke any compatible AI agent.</p>
+      <div className="console-workspace">
+        <header className="console-topbar">
+          <p className="console-topbar-title">{getPageName(location.pathname)}</p>
+          <div className="console-topbar-actions">
+            <div
+              className="gateway-indicator"
+              aria-label={gatewayReady ? 'Gateway online' : 'Gateway unavailable'}
+            >
+              <span
+                className={`gateway-dot ${gatewayReady ? 'gateway-dot-online' : serverEnvironment === null ? 'gateway-dot-loading' : 'gateway-dot-offline'}`}
+              />
+              <span>
+                {gatewayReady
+                  ? 'Gateway online'
+                  : serverEnvironment === null
+                    ? 'Checking gateway'
+                    : 'Gateway unavailable'}
+              </span>
             </div>
-            <div className="hidden items-center gap-2 border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 md:flex">
-              <Layers3 className="h-3.5 w-3.5 text-cyan-700" aria-hidden="true" />
-              <span className="max-w-48 truncate">{identity.receivingWorkspaceId || 'workspace not set'}</span>
-            </div>
+            <Link
+              to="/settings"
+              className="workspace-selector"
+              aria-label="Open workspace settings"
+            >
+              <span className="workspace-selector-label">Workspace</span>
+              <span className="workspace-selector-value">
+                {identity.receivingWorkspaceId || 'Not configured'}
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+            </Link>
+            <Link
+              to="/settings"
+              className="topbar-help"
+              aria-label="Help and settings"
+              title="Help and settings"
+            >
+              <CircleHelp className="h-[18px] w-[18px]" aria-hidden="true" />
+            </Link>
           </div>
         </header>
-        <div className={`mx-auto ${isLanding ? 'max-w-none px-0 py-0' : 'max-w-7xl px-5 py-7 lg:px-8 lg:py-8'}`}>
-          <Outlet />
-        </div>
-      </main>
+        <main className="console-content">
+          <div className="console-content-inner">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   );
+}
+
+function getPageName(pathname) {
+  if (pathname === '/') return 'Overview';
+  if (pathname === '/partner') return 'Dashboard';
+  if (pathname === '/passports/new') return 'Create Passport';
+  if (pathname.startsWith('/passports')) return 'Passports';
+  if (pathname.startsWith('/install-keys')) return 'Install Keys';
+  if (pathname.startsWith('/connections')) return 'Connections';
+  if (pathname.startsWith('/invoke')) return 'Test Invocation';
+  if (pathname.startsWith('/invocations')) return 'Invocations';
+  if (pathname.startsWith('/audit')) return 'Audit Logs';
+  if (pathname.startsWith('/developer-sandbox')) return 'Developer Sandbox';
+  if (pathname.startsWith('/settings')) return 'Settings';
+  return 'Agent Passport';
 }
