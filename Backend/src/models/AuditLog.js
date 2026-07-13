@@ -9,6 +9,8 @@ const auditLogSchema = new mongoose.Schema(
     entityId: { type: String, trim: true, index: true },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
     requestId: { type: String, trim: true, index: true },
+    traceId: { type: String, trim: true, index: true },
+    invocationId: { type: String, trim: true, index: true },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );

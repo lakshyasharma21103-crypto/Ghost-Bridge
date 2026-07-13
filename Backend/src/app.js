@@ -9,7 +9,8 @@ const { errorHandler } = require('./middleware/errorHandler');
 const { notFound } = require('./middleware/notFound');
 const { requestId } = require('./middleware/requestId');
 const { router } = require('./routes');
-const { logger } = require('./utils/logger');
+const { createObserver } = require('./utils/observability');
+const { performance } = require('node:perf_hooks');
 
 function createApp() {
   const app = express();
@@ -23,18 +24,21 @@ function createApp() {
   app.use(express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT }));
   app.use(requestId);
   app.use((request, response, next) => {
-    const started = Date.now();
+    const started = performance.now();
+    request.observer = createObserver({ traceId: request.traceId, requestId: request.requestId });
+    request.observer.emit('info', 'request.received', {
+      method: request.method,
+      path: request.path,
+      status: 'received',
+    });
     response.on('finish', () => {
-      logger.info(
-        {
-          requestId: request.requestId,
-          method: request.method,
-          path: request.path,
-          statusCode: response.statusCode,
-          durationMs: Date.now() - started,
-        },
-        'HTTP request completed',
-      );
+      request.observer.emit('info', 'request.completed', {
+        method: request.method,
+        path: request.path,
+        status: response.statusCode >= 400 ? 'failed' : 'completed',
+        statusCode: response.statusCode,
+        durationMs: Math.max(0, Math.round((performance.now() - started) * 100) / 100),
+      });
     });
     next();
   });

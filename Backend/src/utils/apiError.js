@@ -1,6 +1,7 @@
 const { AppError } = require('./AppError');
 const { ErrorCodes } = require('./errorCodes');
 const { redactSecrets, redactString } = require('./redact');
+const { isRetryableError } = require('./retryability');
 
 function normalizeDetails(details) {
   if (details == null) return [];
@@ -15,8 +16,10 @@ function normalizeError(error) {
   return new AppError(500, ErrorCodes.INTERNAL_SERVER_ERROR, 'An unexpected error occurred');
 }
 
-function toApiErrorResponse(error, requestId) {
+function toApiErrorResponse(error, identifiers = {}) {
+  const context = typeof identifiers === 'string' ? { requestId: identifiers } : identifiers;
   const appError = normalizeError(error);
+  appError.retryable = isRetryableError(appError);
   return {
     statusCode: appError.statusCode,
     body: {
@@ -25,7 +28,9 @@ function toApiErrorResponse(error, requestId) {
         code: appError.code,
         message: redactString(appError.message),
         details: redactSecrets(normalizeDetails(appError.details)),
-        ...(requestId ? { requestId: redactString(requestId) } : {}),
+        ...(context.traceId ? { traceId: redactString(context.traceId) } : {}),
+        ...(context.requestId ? { requestId: redactString(context.requestId) } : {}),
+        retryable: appError.retryable,
       },
     },
     appError,

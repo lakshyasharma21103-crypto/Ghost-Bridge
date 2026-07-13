@@ -6,11 +6,13 @@ const { errorHandler } = require('./middleware/errorHandler');
 const { requestId } = require('./middleware/requestId');
 const { requestTimeout } = require('./middleware/requestTimeout');
 const { createAIProvider } = require('./providers');
-const { healthRouter } = require('./routes/health.routes');
+const { healthRouter, readinessHandler } = require('./routes/health.routes');
 const { researchRouter } = require('./routes/research.routes');
 const { ResearchService } = require('./services/research.service');
 const { RuntimeError } = require('./utils/errors');
 const { logger: defaultLogger } = require('./utils/logger');
+const { createObserver } = require('./utils/observability');
+const { performance } = require('node:perf_hooks');
 
 function corsOptions(allowedOrigins) {
   const allowed = new Set(allowedOrigins);
@@ -22,6 +24,7 @@ function corsOptions(allowedOrigins) {
       }
       callback(new RuntimeError(403, 'ORIGIN_NOT_ALLOWED', 'Origin is not allowed.'));
     },
+    exposedHeaders: ['X-Trace-Id', 'X-Request-Id'],
   };
 }
 
@@ -34,26 +37,37 @@ function createApp({ config, logger = defaultLogger, provider: suppliedProvider 
   app.disable('x-powered-by');
 
   app.use(requestId);
+  app.use((request, response, next) => {
+    const startedAt = performance.now();
+    request.observer = createObserver(
+      {
+        environment: config.nodeEnv,
+        traceId: request.traceId,
+        requestId: request.requestId,
+        invocationId: request.invocationId,
+      },
+      logger,
+    );
+    request.observer.emit('info', 'request.received', {
+      method: request.method,
+      path: request.path,
+      status: 'received',
+    });
+    response.on('finish', () => {
+      request.observer.emit('info', 'request.completed', {
+        method: request.method,
+        path: request.path,
+        status: response.statusCode >= 400 ? 'failed' : 'completed',
+        statusCode: response.statusCode,
+        durationMs: Math.max(0, Math.round((performance.now() - startedAt) * 100) / 100),
+      });
+    });
+    next();
+  });
   app.use(helmet());
   app.use(cors(corsOptions(config.allowedGatewayOrigins || [])));
   app.use(requestTimeout(config.requestTimeoutMs));
   app.use(express.json({ limit: config.jsonBodyLimit, strict: true }));
-  app.use((request, response, next) => {
-    const startedAt = Date.now();
-    response.on('finish', () => {
-      logger.info(
-        {
-          requestId: request.requestId,
-          method: request.method,
-          path: request.path,
-          statusCode: response.statusCode,
-          durationMs: Date.now() - startedAt,
-        },
-        'External agent request completed',
-      );
-    });
-    next();
-  });
 
   app.use(
     '/v1',
@@ -72,7 +86,8 @@ function createApp({ config, logger = defaultLogger, provider: suppliedProvider 
     }),
   );
 
-  app.use('/health', healthRouter(provider));
+  app.use('/health', healthRouter(provider, config));
+  app.get('/ready', readinessHandler(provider, config));
   app.use('/v1/research', researchRouter(config.runtimeToken, researchService));
   app.use((_request, _response, next) => {
     next(new RuntimeError(404, 'NOT_FOUND', 'Route not found.'));

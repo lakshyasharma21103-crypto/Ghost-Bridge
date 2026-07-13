@@ -131,7 +131,9 @@ function inspectGeminiResponseShape(response, context = {}) {
   );
 
   return {
+    ...(context.traceId ? { traceId: context.traceId } : {}),
     requestId: context.requestId,
+    ...(context.invocationId ? { invocationId: context.invocationId } : {}),
     operation: 'grounded_research',
     model: context.model,
     candidateCount: candidates.length,

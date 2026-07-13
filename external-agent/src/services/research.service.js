@@ -20,15 +20,28 @@ class ResearchService {
     this.config = config;
   }
 
-  async researchTopic({ topic, requestId, signal }) {
+  async researchTopic({ topic, requestId, traceId, invocationId, observer, signal }) {
     const normalizedTopic = String(topic).trim().replace(/\s+/g, ' ');
-    const result = providerResultSchema.parse(
-      await this.provider.research({ topic: normalizedTopic, requestId, signal }),
+    const providerResult = await observer.stage('grounded_research', () =>
+      this.provider.research({
+        topic: normalizedTopic,
+        requestId,
+        traceId,
+        invocationId,
+        observer,
+        signal,
+      }),
+    );
+    const result = await observer.stage('response_validation', async () =>
+      providerResultSchema.parse(providerResult),
+    );
+    const sources = await observer.stage('grounding_source_extraction', async () =>
+      result.sourceReferences.map((source) => source.url),
     );
 
-    return {
+    return observer.stage('structured_formatting', async () => ({
       summary: result.summary,
-      sources: result.sourceReferences.map((source) => source.url),
+      sources,
       runtime: {
         service: SERVICE_NAME,
         version: SERVICE_VERSION,
@@ -40,7 +53,7 @@ class ResearchService {
         webSearchUsed: result.webSearchUsed,
         sourceCount: result.sourceReferences.length,
       },
-    };
+    }));
   }
 }
 

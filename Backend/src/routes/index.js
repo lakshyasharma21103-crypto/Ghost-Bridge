@@ -1,6 +1,6 @@
 const express = require('express');
 const { env } = require('../config/env');
-const { healthRouter } = require('./healthRoutes');
+const { healthRouter, readinessRouter } = require('./healthRoutes');
 const { passportRouter } = require('./passportRoutes');
 const { partnerRouter } = require('./partnerRoutes');
 const { connectionRouter } = require('./connectionRoutes');
@@ -24,7 +24,9 @@ router.get('/', (_request, response) => {
 });
 
 router.use('/health', healthRouter);
+router.use('/ready', readinessRouter);
 router.use(`${API_PREFIX}/health`, healthRouter);
+router.use(`${API_PREFIX}/ready`, readinessRouter);
 router.use(`${API_PREFIX}/passports`, passportRouter);
 router.use(`${API_PREFIX}/partner`, partnerRouter);
 router.use(`${API_PREFIX}/connections`, connectionRouter);

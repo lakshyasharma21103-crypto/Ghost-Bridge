@@ -14,6 +14,11 @@ async function invokeConnection(request, response, next) {
       receivingUserId: request.body?.receivingUserId,
       enforceConnectionOwnership: true,
       requestId: request.requestId,
+      traceId: request.traceId,
+      observer: request.observer,
+      onInvocationCreated(invocationId) {
+        response.setHeader('X-Invocation-Id', invocationId);
+      },
     });
     response.json({ success: true, data });
   } catch (error) {

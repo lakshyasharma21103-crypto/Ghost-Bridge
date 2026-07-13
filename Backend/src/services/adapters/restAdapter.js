@@ -88,7 +88,7 @@ function outboundOptions(runtime, input, credentialHeaders) {
   };
 }
 
-async function invokeRest({ runtime, input, credentialHeaders = {} }) {
+async function invokeRest({ runtime, input, credentialHeaders = {}, observability = {} }) {
   if (!runtime?.endpoint) {
     throw new AppError(
       500,
@@ -97,12 +97,25 @@ async function invokeRest({ runtime, input, credentialHeaders = {} }) {
     );
   }
 
-  const response = await safeFetchUtility.safeFetch(runtime.endpoint, {
-    ...outboundOptions(runtime, input, credentialHeaders),
-    timeoutMs: env.RUNTIME_INVOCATION_TIMEOUT_MS,
-    allowDevelopmentDemo: true,
-    allowDevelopmentExternalAgent: true,
-  });
+  const runStage = (name, operation) =>
+    observability.observer ? observability.observer.stage(name, operation) : operation();
+  const mappedOptions = await runStage('request_mapping', async () =>
+    outboundOptions(runtime, input, credentialHeaders),
+  );
+  const response = await runStage('external_runtime_invocation', () =>
+    safeFetchUtility.safeFetch(runtime.endpoint, {
+      ...mappedOptions,
+      headers: {
+        ...mappedOptions.headers,
+        ...(observability.traceId ? { 'x-trace-id': observability.traceId } : {}),
+        ...(observability.requestId ? { 'x-request-id': observability.requestId } : {}),
+        ...(observability.invocationId ? { 'x-invocation-id': observability.invocationId } : {}),
+      },
+      timeoutMs: env.RUNTIME_INVOCATION_TIMEOUT_MS,
+      allowDevelopmentDemo: true,
+      allowDevelopmentExternalAgent: true,
+    }),
+  );
 
   if (!response.ok) {
     throw new AppError(
@@ -119,11 +132,13 @@ async function invokeRest({ runtime, input, credentialHeaders = {} }) {
     );
   }
 
-  const parsedBody = parseResponseBody(response.bodyText);
+  const parsedBody = await runStage('response_validation', async () =>
+    parseResponseBody(response.bodyText),
+  );
   return {
     ok: true,
     status: response.status,
-    output: extractOutput(runtime, parsedBody),
+    output: await runStage('response_mapping', async () => extractOutput(runtime, parsedBody)),
   };
 }
 

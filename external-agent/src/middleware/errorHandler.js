@@ -1,5 +1,6 @@
 const { RuntimeError } = require('../utils/errors');
 const { safeLogPayload } = require('../utils/logger');
+const { isRetryableError } = require('../utils/retryability');
 
 const SAFE_GEMINI_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
 const SAFE_TIMEOUT_REASONS = new Set([
@@ -26,10 +27,19 @@ function errorHandler(logger) {
     }
 
     const normalized = normalizeError(error);
+    normalized.retryable = isRetryableError(normalized);
+    request.observer?.emit('error', 'request.failed', {
+      status: 'failed',
+      statusCode: normalized.statusCode,
+      errorCode: normalized.code,
+      stage: normalized.stage,
+      retryable: normalized.retryable,
+    });
     if (!(error instanceof RuntimeError) || normalized.statusCode >= 500) {
       logger.error(
         {
           requestId: request.requestId,
+          traceId: request.traceId,
           error: safeLogPayload(error),
         },
         'External agent request failed',
@@ -63,7 +73,10 @@ function errorHandler(logger) {
         code: normalized.code,
         message: normalized.message,
         details: normalized.details,
+        traceId: request.traceId,
         requestId: request.requestId,
+        retryable: normalized.retryable,
+        ...(normalized.stage ? { stage: normalized.stage } : {}),
         ...(SAFE_GEMINI_OPERATIONS.has(normalized.operation)
           ? { operation: normalized.operation }
           : {}),

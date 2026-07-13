@@ -7,12 +7,7 @@ const PassportConnection = require('../models/PassportConnection');
 const Credential = require('../models/Credential');
 const AuditLog = require('../models/AuditLog');
 const safeFetchUtility = require('../utils/safeFetch');
-const {
-  generateInstallKey,
-  hashKey,
-  encryptPayload,
-  decryptPayload,
-} = require('../utils/crypto');
+const { generateInstallKey, hashKey, encryptPayload, decryptPayload } = require('../utils/crypto');
 const { ErrorCodes } = require('../utils/errorCodes');
 const {
   resolveInstallKey,
@@ -65,6 +60,10 @@ function passport(status = 'valid') {
       outputField: 'response',
       supportsStreaming: false,
       supportsLongRunningTasks: false,
+    },
+    install: {
+      supportedModes: ['delegated_runtime_access', 'auth_required'],
+      requiresUserConsent: true,
     },
     health: { endpoint: 'https://example.com/health' },
   };
@@ -131,24 +130,44 @@ test('delegated install key is consumed once and creates an encrypted connected 
   });
 
   patch(PassportInstallKey, 'findOne', async () => installKey, patches);
-  patch(PassportInstallKey, 'findOneAndUpdate', async (_filter, update) => {
-    Object.assign(installKey, update.$set);
-    return installKey;
-  }, patches);
+  patch(
+    PassportInstallKey,
+    'findOneAndUpdate',
+    async (_filter, update) => {
+      Object.assign(installKey, update.$set);
+      return installKey;
+    },
+    patches,
+  );
   patch(AgentPassport, 'findOne', async () => passport(), patches);
   patch(Capability, 'find', capabilitiesQuery, patches);
-  patch(PassportConnection, 'create', async (doc) => {
-    createdConnection = connectionDocument(doc);
-    return createdConnection;
-  }, patches);
-  patch(Credential, 'create', async (doc) => {
-    createdCredential = { _id: 'credential_123', ...doc };
-    return createdCredential;
-  }, patches);
-  patch(AuditLog, 'create', async (payload) => {
-    audits.push(payload);
-    return payload;
-  }, patches);
+  patch(
+    PassportConnection,
+    'create',
+    async (doc) => {
+      createdConnection = connectionDocument(doc);
+      return createdConnection;
+    },
+    patches,
+  );
+  patch(
+    Credential,
+    'create',
+    async (doc) => {
+      createdCredential = { _id: 'credential_123', ...doc };
+      return createdCredential;
+    },
+    patches,
+  );
+  patch(
+    AuditLog,
+    'create',
+    async (payload) => {
+      audits.push(payload);
+      return payload;
+    },
+    patches,
+  );
 
   try {
     const result = await resolveInstallKey({ key: rawKey, ...identity() }, 'req_test');
@@ -176,7 +195,11 @@ test('used, expired, and revoked install keys fail with structured error codes',
   const cases = [
     { status: 'used', code: ErrorCodes.INSTALL_KEY_ALREADY_USED },
     { status: 'revoked', code: ErrorCodes.INSTALL_KEY_REVOKED },
-    { status: 'active', expiresAt: new Date(Date.now() - 1_000), code: ErrorCodes.INSTALL_KEY_EXPIRED },
+    {
+      status: 'active',
+      expiresAt: new Date(Date.now() - 1_000),
+      code: ErrorCodes.INSTALL_KEY_EXPIRED,
+    },
   ];
 
   for (const item of cases) {
@@ -225,19 +248,34 @@ test('auth_required resolution creates a pending_auth connection without a crede
   const installKey = activeInstallKey(rawKey);
 
   patch(PassportInstallKey, 'findOne', async () => installKey, patches);
-  patch(PassportInstallKey, 'findOneAndUpdate', async (_filter, update) => {
-    Object.assign(installKey, update.$set);
-    return installKey;
-  }, patches);
+  patch(
+    PassportInstallKey,
+    'findOneAndUpdate',
+    async (_filter, update) => {
+      Object.assign(installKey, update.$set);
+      return installKey;
+    },
+    patches,
+  );
   patch(AgentPassport, 'findOne', async () => passport(), patches);
   patch(Capability, 'find', capabilitiesQuery, patches);
-  patch(PassportConnection, 'create', async (doc) => {
-    createdConnection = connectionDocument(doc);
-    return createdConnection;
-  }, patches);
-  patch(Credential, 'create', async () => {
-    credentialCreated = true;
-  }, patches);
+  patch(
+    PassportConnection,
+    'create',
+    async (doc) => {
+      createdConnection = connectionDocument(doc);
+      return createdConnection;
+    },
+    patches,
+  );
+  patch(
+    Credential,
+    'create',
+    async () => {
+      credentialCreated = true;
+    },
+    patches,
+  );
   patch(AuditLog, 'create', async (payload) => payload, patches);
 
   try {
@@ -273,14 +311,24 @@ test('a receiving platform can add an encrypted credential to a pending connecti
   });
 
   patch(PassportConnection, 'findOne', async () => connection, patches);
-  patch(Credential, 'create', async (doc) => {
-    createdCredential = { _id: 'credential_123', ...doc };
-    return createdCredential;
-  }, patches);
-  patch(AuditLog, 'create', async (payload) => {
-    audits.push(payload);
-    return payload;
-  }, patches);
+  patch(
+    Credential,
+    'create',
+    async (doc) => {
+      createdCredential = { _id: 'credential_123', ...doc };
+      return createdCredential;
+    },
+    patches,
+  );
+  patch(
+    AuditLog,
+    'create',
+    async (payload) => {
+      audits.push(payload);
+      return payload;
+    },
+    patches,
+  );
 
   try {
     const result = await storeConnectionCredential(
@@ -320,10 +368,15 @@ test('health checks use safeFetch and do not return the remote body or credentia
   let safeFetchOptions;
 
   patch(PassportConnection, 'findOne', async () => connection, patches);
-  patch(safeFetchUtility, 'safeFetch', async (_url, options) => {
-    safeFetchOptions = options;
-    return { ok: true, status: 204, bodyText: 'private remote output' };
-  }, patches);
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async (_url, options) => {
+      safeFetchOptions = options;
+      return { ok: true, status: 204, bodyText: 'private remote output' };
+    },
+    patches,
+  );
   patch(AuditLog, 'create', async (payload) => payload, patches);
 
   try {
@@ -364,4 +417,3 @@ test('MCP connections without an explicit HTTP health endpoint do not fake a hea
     restore(patches);
   }
 });
-

@@ -103,6 +103,19 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
   let createdInvocation;
   let outbound;
   let outboundCallCount = 0;
+  let attachedInvocationId;
+  const diagnostics = [];
+  const diagnosticLogger = {
+    info(fields) {
+      diagnostics.push(fields);
+    },
+    warn(fields) {
+      diagnostics.push(fields);
+    },
+    error(fields) {
+      diagnostics.push(fields);
+    },
+  };
   patchInvocationContext(patches);
   patch(
     Invocation,
@@ -147,6 +160,11 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
       {
         actorId: 'user_123',
         requestId: 'req_test',
+        traceId: 'trace_test-observability',
+        logger: diagnosticLogger,
+        onInvocationCreated(value) {
+          attachedInvocationId = value;
+        },
       },
     );
 
@@ -160,12 +178,38 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
       instruction: 'remaining FIFA matches in the US',
     });
     assert.equal(outbound.options.headers['Content-Type'], 'application/json');
+    assert.equal(outbound.options.headers['x-trace-id'], 'trace_test-observability');
+    assert.equal(outbound.options.headers['x-request-id'], 'req_test');
+    assert.equal(outbound.options.headers['x-invocation-id'], 'invocation_123');
+    assert.equal(attachedInvocationId, 'invocation_123');
     assert.equal(
       outbound.options.timeoutMs,
       require('../config/env').env.RUNTIME_INVOCATION_TIMEOUT_MS,
     );
     assert.equal(outboundCallCount, 1);
     assert.ok(audits.some((audit) => audit.action === 'invocation.completed'));
+    const completedStages = diagnostics.filter(
+      (entry) => entry.event === 'runtime.stage.completed',
+    );
+    for (const stage of [
+      'request_validation',
+      'connection_lookup',
+      'capability_resolution',
+      'policy_check',
+      'credential_load',
+      'credential_decryption',
+      'request_mapping',
+      'external_runtime_invocation',
+      'response_validation',
+      'response_mapping',
+      'invocation_persistence',
+      'audit_persistence',
+    ]) {
+      const entry = completedStages.find((item) => item.stage === stage);
+      assert.ok(entry, `missing completed stage ${stage}`);
+      assert.equal(typeof entry.durationMs, 'number');
+    }
+    assert.equal(JSON.stringify(diagnostics).includes('remaining FIFA matches'), false);
   } finally {
     restore(patches);
   }

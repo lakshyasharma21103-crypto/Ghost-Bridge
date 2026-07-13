@@ -18,6 +18,7 @@ const corsOptions = {
     callback(new Error('Origin is not allowed by CORS'));
   },
   credentials: true,
+  exposedHeaders: ['X-Trace-Id', 'X-Request-Id'],
 };
 
 const helmetOptions = {

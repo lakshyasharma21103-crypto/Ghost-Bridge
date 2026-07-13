@@ -20,7 +20,10 @@ function researchRouter(runtimeToken, researchService) {
   const router = express.Router();
 
   router.post('/invoke', authenticateRuntime(runtimeToken), async (request, response, next) => {
-    const parsed = invocationSchema.safeParse(request.body);
+    request.observer?.emit('info', 'external_agent.invocation.started', { status: 'started' });
+    const parsed = await request.observer.stage('request_validation', async () =>
+      invocationSchema.safeParse(request.body),
+    );
     if (!parsed.success) {
       next(
         new RuntimeError(
@@ -37,16 +40,30 @@ function researchRouter(runtimeToken, researchService) {
       const result = await researchService.researchTopic({
         topic: parsed.data.topic,
         requestId: request.requestId,
+        traceId: request.traceId,
+        invocationId: request.invocationId,
+        observer: request.observer,
         signal: request.runtimeAbortSignal,
       });
       if (response.writableEnded || response.destroyed) return;
-      response.json({
-        response: result,
-        meta: {
-          requestId: request.requestId,
-        },
+      await request.observer.stage('response_serialization', async () => {
+        response.json({
+          response: result,
+          meta: {
+            traceId: request.traceId,
+            requestId: request.requestId,
+          },
+        });
+      });
+      request.observer?.emit('info', 'external_agent.invocation.completed', {
+        status: 'completed',
       });
     } catch (error) {
+      request.observer?.emit('error', 'external_agent.invocation.failed', {
+        status: 'failed',
+        errorCode: error.code,
+        stage: error.stage,
+      });
       next(error);
     }
   });

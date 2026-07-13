@@ -444,9 +444,14 @@ async function verify() {
     report('resolution', 'connected connection created with encrypted delegated credential');
 
     beginStage(state, 'gateway_invocation');
-    const invocation = success(
-      await request(gatewayBaseUrl, `/connections/${resolved.connectionId}/invoke`, {
+    const traceId = `trace_${crypto.randomUUID()}`;
+    const requestId = `req_${crypto.randomUUID()}`;
+    const invocationResult = await request(
+      gatewayBaseUrl,
+      `/connections/${resolved.connectionId}/invoke`,
+      {
         method: 'POST',
+        headers: { 'X-Trace-Id': traceId, 'X-Request-Id': requestId },
         body: {
           capability: 'research_topic',
           input: { topic: TOPIC },
@@ -456,10 +461,20 @@ async function verify() {
         label: 'gateway invocation',
         timeoutMs: VERIFICATION_REQUEST_TIMEOUT_MS,
         connectionId: resolved.connectionId,
-      }),
-      'gateway invocation',
-      { connectionId: resolved.connectionId },
+      },
     );
+    const invocation = success(invocationResult, 'gateway invocation', {
+      connectionId: resolved.connectionId,
+    });
+    assert(
+      invocationResult.response.headers.get('x-trace-id') === traceId,
+      'Gateway trace ID was not preserved.',
+    );
+    assert(
+      invocationResult.response.headers.get('x-request-id') === requestId,
+      'Gateway request ID was not preserved.',
+    );
+    assert(invocation.invocationId, 'Gateway invocation ID is missing.');
     assert(invocation.status === 'completed', 'Gateway invocation did not complete.');
     assert(
       invocation.output?.runtime?.service === 'external-research-agent',
@@ -498,6 +513,11 @@ async function verify() {
     beginStage(state, 'invocation_persistence');
     const storedInvocation = await Invocation.findById(invocation.invocationId).lean();
     assert(storedInvocation?.status === 'completed', 'Completed invocation was not persisted.');
+    assert(storedInvocation.traceId === traceId, 'Persisted invocation trace ID does not match.');
+    assert(
+      storedInvocation.requestId === requestId,
+      'Persisted invocation request ID does not match.',
+    );
     assert(
       !JSON.stringify(storedInvocation).includes(runtimeToken),
       'Invocation contains runtime token.',
@@ -505,6 +525,22 @@ async function verify() {
     report(
       'runtime gateway invocation',
       'bearer-authenticated external response completed and persisted',
+    );
+    assert(
+      capturedGatewayLogs.join('').includes(traceId),
+      'Gateway diagnostics do not contain the invocation trace ID.',
+    );
+    assert(
+      capturedExternalLogs.join('').includes(traceId),
+      'External-agent diagnostics do not contain the gateway trace ID.',
+    );
+    assert(
+      capturedExternalLogs.join('').includes(invocation.invocationId),
+      'External-agent diagnostics do not contain the invocation ID.',
+    );
+    report(
+      'trace propagation',
+      'traceId, requestId, and invocationId correlated across both services',
     );
 
     beginStage(state, 'audit_persistence');

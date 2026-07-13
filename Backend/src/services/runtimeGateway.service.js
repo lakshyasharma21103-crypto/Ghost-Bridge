@@ -12,6 +12,8 @@ const {
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { redactSecrets } = require('../utils/redact');
+const { createObserver, errorFields } = require('../utils/observability');
+const { isRetryableError } = require('../utils/retryability');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
@@ -34,6 +36,7 @@ function actorFor(connection, actor = {}) {
     actorType: actor.actorType === 'system' ? 'system' : 'user',
     actorId: actor.actorId || connection.receivingUserId,
     requestId: actor.requestId,
+    traceId: actor.traceId,
   };
 }
 
@@ -133,6 +136,8 @@ function serializeInvocation(invocation) {
     error: invocation.error,
     durationMs: invocation.durationMs,
     runtimeType: invocation.runtimeType,
+    traceId: invocation.traceId,
+    requestId: invocation.requestId,
     createdAt: invocation.createdAt,
     updatedAt: invocation.updatedAt,
   };
@@ -144,14 +149,24 @@ function normalizedError(error) {
     500,
     ErrorCodes.INTERNAL_SERVER_ERROR,
     'Runtime Gateway could not complete the invocation.',
+    [],
+    { cause: error },
   );
 }
 
 function invocationErrorPayload(error) {
   return redactSecrets({
     code: error.code || ErrorCodes.INTERNAL_SERVER_ERROR,
+    internalCode: error.internalCode,
     message: error.message || 'Runtime invocation failed.',
     details: Array.isArray(error.details) ? error.details : [],
+    operation: error.operation,
+    stage: error.stage,
+    retryable: isRetryableError(error),
+    timeoutReason: error.timeoutReason || error.reason,
+    causeCode: error.cause?.code,
+    causeName: error.cause?.name,
+    durationMs: error.durationMs,
   });
 }
 
@@ -183,70 +198,106 @@ async function loadConnection(connectionId) {
   return connection;
 }
 
-async function loadInvocationContext(connectionId, capabilityName, actor) {
-  const connection = await loadConnection(connectionId);
-  assertConnectionOwnership(connection, actor);
-  if (connection.status !== 'connected') {
-    throw new AppError(
-      409,
-      ErrorCodes.CONNECTION_PENDING_AUTH,
-      'Passport connection must be connected before it can be invoked.',
-    );
-  }
-  if (connection.installScope && connection.installScope !== 'invoke') {
-    throw new AppError(
-      403,
-      ErrorCodes.FORBIDDEN,
-      'This connection was not granted invocation scope.',
-    );
-  }
+async function loadInvocationContext(connectionId, capabilityName, actor, observer) {
+  const connection = await observer.stage('connection_lookup', () => loadConnection(connectionId));
+  await observer.stage('policy_check', async () => {
+    assertConnectionOwnership(connection, actor);
+    if (connection.status !== 'connected') {
+      throw new AppError(
+        409,
+        ErrorCodes.CONNECTION_PENDING_AUTH,
+        'Passport connection must be connected before it can be invoked.',
+      );
+    }
+    if (connection.installScope && connection.installScope !== 'invoke') {
+      throw new AppError(
+        403,
+        ErrorCodes.FORBIDDEN,
+        'This connection was not granted invocation scope.',
+      );
+    }
+  });
 
-  const [passport, capability] = await Promise.all([
-    AgentPassport.findOne({ _id: connection.passportId }),
-    Capability.findOne({ passportId: connection.passportId, name: capabilityName }),
-  ]);
+  const [passport, capability] = await observer.stage('capability_resolution', () =>
+    Promise.all([
+      AgentPassport.findOne({ _id: connection.passportId }),
+      Capability.findOne({ passportId: connection.passportId, name: capabilityName }),
+    ]),
+  );
 
-  if (!passport || passport.status !== 'valid') {
-    throw new AppError(
-      409,
-      ErrorCodes.PASSPORT_UNAVAILABLE,
-      'Agent Passport is not available for invocation.',
-    );
-  }
-  if (!capability) {
-    throw new AppError(404, ErrorCodes.CAPABILITY_NOT_FOUND, 'Agent capability was not found.');
-  }
-  if (!capability.enabled) {
-    throw new AppError(409, ErrorCodes.CAPABILITY_DISABLED, 'Agent capability is disabled.');
-  }
-  if (connection.runtimeType !== passport.runtime.type) {
-    throw new AppError(
-      409,
-      ErrorCodes.RUNTIME_CONFIGURATION_INVALID,
-      'Connection runtime does not match the Agent Passport runtime.',
-    );
-  }
-
+  await observer.stage('policy_check', async () => {
+    if (!passport || passport.status !== 'valid') {
+      throw new AppError(
+        409,
+        ErrorCodes.PASSPORT_UNAVAILABLE,
+        'Agent Passport is not available for invocation.',
+      );
+    }
+    if (!capability) {
+      throw new AppError(404, ErrorCodes.CAPABILITY_NOT_FOUND, 'Agent capability was not found.');
+    }
+    if (!capability.enabled) {
+      throw new AppError(409, ErrorCodes.CAPABILITY_DISABLED, 'Agent capability is disabled.');
+    }
+    if (connection.runtimeType !== passport.runtime.type) {
+      throw new AppError(
+        409,
+        ErrorCodes.RUNTIME_CONFIGURATION_INVALID,
+        'Connection runtime does not match the Agent Passport runtime.',
+      );
+    }
+  });
   return { connection, passport, capability };
 }
 
 async function invoke(connectionId, capabilityName, input, actor = {}) {
-  const normalizedCapabilityName = requireString(capabilityName, 'capability');
-  const context = await loadInvocationContext(connectionId, normalizedCapabilityName, actor);
-  validateCapabilityInput(context.capability, input);
-
-  const invocation = await Invocation.create({
-    connectionId: context.connection._id,
-    passportId: context.passport._id,
-    capability: context.capability.name,
-    inputSummary: redactSecrets(input),
-    status: 'running',
-    runtimeType: context.connection.runtimeType,
-  });
   const startedAt = Date.now();
-  const auditActor = actorFor(context.connection, actor);
-
+  let observer =
+    actor.observer ||
+    createObserver(
+      {
+        traceId: actor.traceId,
+        requestId: actor.requestId,
+        connectionId,
+        capabilityName,
+      },
+      actor.logger,
+    );
+  let invocation;
+  let context;
+  let auditActor;
+  observer.emit('info', 'runtime.invocation.started', { status: 'started' });
   try {
+    const normalizedCapabilityName = await observer.stage('request_validation', async () =>
+      requireString(capabilityName, 'capability'),
+    );
+    context = await loadInvocationContext(connectionId, normalizedCapabilityName, actor, observer);
+    observer = observer.child({
+      connectionId: idOf(context.connection),
+      agentId: idOf(context.passport),
+      capabilityId: idOf(context.capability),
+      capabilityName: context.capability.name,
+    });
+    await observer.stage('request_validation', async () =>
+      validateCapabilityInput(context.capability, input),
+    );
+
+    invocation = await observer.stage('invocation_persistence', () =>
+      Invocation.create({
+        connectionId: context.connection._id,
+        passportId: context.passport._id,
+        capability: context.capability.name,
+        inputSummary: redactSecrets(input),
+        status: 'running',
+        runtimeType: context.connection.runtimeType,
+        traceId: actor.traceId,
+        requestId: actor.requestId,
+      }),
+    );
+    observer = observer.child({ invocationId: idOf(invocation) });
+    actor.onInvocationCreated?.(idOf(invocation));
+    auditActor = actorFor(context.connection, actor);
+
     const adapter = adapters[context.connection.runtimeType];
     if (!adapter || typeof adapter.invoke !== 'function') {
       throw new AppError(
@@ -263,38 +314,64 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       const credentialHeaders = await credentialHeadersForConnection(
         context.connection,
         context.passport.auth,
+        { observer },
       );
       result = await adapter.invoke({
         runtime: context.passport.runtime,
         input,
         credentialHeaders,
+        observability: {
+          observer,
+          traceId: actor.traceId,
+          requestId: actor.requestId,
+          invocationId: idOf(invocation),
+        },
       });
     }
     adapterResultOrThrow(result, context.connection.runtimeType);
-    validateCapabilityOutput(context.capability, result.output);
+    await observer.stage('response_validation', async () =>
+      validateCapabilityOutput(context.capability, result.output),
+    );
 
     invocation.status = 'completed';
     invocation.output = redactSecrets(result.output);
     invocation.durationMs = Date.now() - startedAt;
-    await invocation.save();
-    await createAuditLog(
-      auditActor.actorType,
-      auditActor.actorId,
-      'invocation.completed',
-      'Invocation',
-      idOf(invocation),
-      {
-        connectionId: idOf(context.connection),
-        passportId: idOf(context.passport),
-        receivingWorkspaceId: context.connection.receivingWorkspaceId,
-        receivingUserId: context.connection.receivingUserId,
-        capability: context.capability.name,
-        runtimeType: context.connection.runtimeType,
-        remoteStatus: result.status,
-        durationMs: invocation.durationMs,
-      },
-      auditActor.requestId,
+    await observer.stage('invocation_persistence', () => invocation.save());
+    await observer.stage('audit_persistence', () =>
+      createAuditLog(
+        auditActor.actorType,
+        auditActor.actorId,
+        'invocation.completed',
+        'Invocation',
+        idOf(invocation),
+        {
+          connectionId: idOf(context.connection),
+          passportId: idOf(context.passport),
+          receivingWorkspaceId: context.connection.receivingWorkspaceId,
+          receivingUserId: context.connection.receivingUserId,
+          capability: context.capability.name,
+          runtimeType: context.connection.runtimeType,
+          remoteStatus: result.status,
+          durationMs: invocation.durationMs,
+        },
+        {
+          requestId: auditActor.requestId,
+          traceId: auditActor.traceId,
+          invocationId: idOf(invocation),
+        },
+      ),
     );
+
+    observer.emit('info', 'persistence.invocation.completed', {
+      status: 'completed',
+      durationMs: invocation.durationMs,
+    });
+    observer.emit('info', 'persistence.audit.completed', { status: 'completed' });
+    observer.emit('info', 'runtime.invocation.completed', {
+      status: 'completed',
+      statusCode: result.status,
+      durationMs: invocation.durationMs,
+    });
 
     return {
       ...serializeInvocation(invocation),
@@ -303,28 +380,58 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     };
   } catch (error) {
     const runtimeError = normalizedError(error);
-    invocation.status = 'failed';
-    invocation.error = invocationErrorPayload(runtimeError);
-    invocation.durationMs = Date.now() - startedAt;
-    await invocation.save();
-    await createAuditLog(
-      auditActor.actorType,
-      auditActor.actorId,
-      'invocation.failed',
-      'Invocation',
-      idOf(invocation),
-      {
-        connectionId: idOf(context.connection),
-        passportId: idOf(context.passport),
-        receivingWorkspaceId: context.connection.receivingWorkspaceId,
-        receivingUserId: context.connection.receivingUserId,
-        capability: context.capability.name,
-        runtimeType: context.connection.runtimeType,
-        errorCode: runtimeError.code,
-        durationMs: invocation.durationMs,
-      },
-      auditActor.requestId,
-    );
+    runtimeError.retryable = isRetryableError(runtimeError);
+    runtimeError.traceId ||= actor.traceId;
+    runtimeError.requestId ||= actor.requestId;
+    runtimeError.connectionId ||= connectionId;
+    if (invocation) {
+      runtimeError.invocationId ||= idOf(invocation);
+      invocation.status = 'failed';
+      invocation.error = invocationErrorPayload(runtimeError);
+      invocation.durationMs = Date.now() - startedAt;
+      try {
+        await observer.stage('invocation_persistence', () => invocation.save());
+      } catch (persistenceError) {
+        runtimeError.persistenceErrorCode =
+          persistenceError.code || ErrorCodes.INTERNAL_SERVER_ERROR;
+      }
+      try {
+        await observer.stage('audit_persistence', () =>
+          createAuditLog(
+            auditActor.actorType,
+            auditActor.actorId,
+            'invocation.failed',
+            'Invocation',
+            idOf(invocation),
+            {
+              connectionId: idOf(context.connection),
+              passportId: idOf(context.passport),
+              receivingWorkspaceId: context.connection.receivingWorkspaceId,
+              receivingUserId: context.connection.receivingUserId,
+              capability: context.capability.name,
+              runtimeType: context.connection.runtimeType,
+              errorCode: runtimeError.code,
+              retryable: runtimeError.retryable,
+              durationMs: invocation.durationMs,
+            },
+            {
+              requestId: auditActor.requestId,
+              traceId: auditActor.traceId,
+              invocationId: idOf(invocation),
+            },
+          ),
+        );
+      } catch (auditError) {
+        runtimeError.auditErrorCode = auditError.code || ErrorCodes.INTERNAL_SERVER_ERROR;
+      }
+    }
+    observer.emit('error', 'runtime.invocation.failed', {
+      ...errorFields(runtimeError),
+      stage: runtimeError.stage,
+      status: 'failed',
+      invocationId: runtimeError.invocationId,
+      durationMs: Date.now() - startedAt,
+    });
     throw runtimeError;
   }
 }

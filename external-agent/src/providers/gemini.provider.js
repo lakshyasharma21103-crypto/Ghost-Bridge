@@ -13,6 +13,7 @@ const {
 } = require('../utils/extractGeminiSources');
 const { logger: defaultLogger } = require('../utils/logger');
 const { AIProvider } = require('./ai-provider.interface');
+const { SERVICE_VERSION } = require('../constants');
 
 const DEFAULT_RESEARCH_TIMEOUT_MS = 180_000;
 const DEFAULT_FORMATTING_TIMEOUT_MS = 90_000;
@@ -370,10 +371,33 @@ class GeminiProvider extends AIProvider {
     }
   }
 
-  async runOperation({ requestId, operation, timeoutMs, parentSignal, retryBudget, parameters }) {
+  async runOperation({
+    traceId,
+    requestId,
+    invocationId,
+    operation,
+    timeoutMs,
+    parentSignal,
+    retryBudget,
+    parameters,
+  }) {
     const timed = createTimedSignal(parentSignal, timeoutMs);
     const startedAt = Date.now();
     let operationError;
+
+    this.logger.info(
+      {
+        event: 'gemini.operation.started',
+        version: SERVICE_VERSION,
+        timestamp: new Date().toISOString(),
+        traceId,
+        requestId: safeRequestId(requestId),
+        invocationId,
+        operation,
+        status: 'started',
+      },
+      'Gemini operation started',
+    );
 
     try {
       return await this.generate(parameters(timed.signal), retryBudget, timed.signal);
@@ -387,8 +411,14 @@ class GeminiProvider extends AIProvider {
       });
     } finally {
       const diagnostic = {
+        event: operationError ? 'gemini.operation.failed' : 'gemini.operation.completed',
+        version: SERVICE_VERSION,
+        timestamp: new Date().toISOString(),
+        traceId,
         requestId: safeRequestId(requestId),
+        invocationId,
         operation,
+        status: operationError ? 'failed' : 'completed',
         model: safeModelName(this.config.model),
         durationMs: Date.now() - startedAt,
         configuredTimeoutMs: timeoutMs,
@@ -405,7 +435,7 @@ class GeminiProvider extends AIProvider {
     }
   }
 
-  async research({ topic, requestId, signal }) {
+  async research({ topic, traceId, requestId, invocationId, signal }) {
     if (!this.config.apiKey) {
       throw geminiError('GEMINI_CONFIGURATION_ERROR', {
         field: 'GEMINI_API_KEY',
@@ -431,7 +461,9 @@ class GeminiProvider extends AIProvider {
 
     try {
       const researchResponse = await this.runOperation({
+        traceId,
         requestId,
+        invocationId,
         operation: 'grounded_research',
         timeoutMs: this.researchTimeoutMs,
         parentSignal: signal,
@@ -452,10 +484,19 @@ class GeminiProvider extends AIProvider {
       });
 
       const responseShape = inspectGeminiResponseShape(researchResponse, {
+        traceId,
         requestId: safeRequestId(requestId),
+        invocationId,
         model: safeModelName(this.config.model),
       });
-      this.logger.info(responseShape, 'Gemini grounded research response shape');
+      this.logger.info(
+        {
+          ...responseShape,
+          event: 'gemini.response_shape.inspected',
+          timestamp: new Date().toISOString(),
+        },
+        'Gemini grounded research response shape',
+      );
 
       if (isBlockedResponse(researchResponse)) throw geminiError('GEMINI_RESPONSE_BLOCKED');
       const groundedText = visibleResponseText(researchResponse);
@@ -473,6 +514,8 @@ class GeminiProvider extends AIProvider {
             forbiddenValues: [this.config.apiKey],
             diagnosticContext: {
               requestId: safeRequestId(requestId),
+              traceId,
+              invocationId,
               model: safeModelName(this.config.model),
             },
           });
@@ -482,7 +525,12 @@ class GeminiProvider extends AIProvider {
             error?.code === 'GEMINI_SOURCE_PARSING_FAILED'
           ) {
             this.logger.warn(
-              { ...error.diagnostics, internalCode: error.code },
+              {
+                ...error.diagnostics,
+                event: 'gemini.source_extraction.failed',
+                internalCode: error.code,
+                timestamp: new Date().toISOString(),
+              },
               'Gemini grounding source extraction failed',
             );
           }
@@ -491,7 +539,9 @@ class GeminiProvider extends AIProvider {
       }
 
       const formattingResponse = await this.runOperation({
+        traceId,
         requestId,
+        invocationId,
         operation: 'structured_formatting',
         timeoutMs: this.formattingTimeoutMs,
         parentSignal: signal,

@@ -7,6 +7,9 @@ const { GEMINI_PROCESSING_OVERHEAD_MS, readEnvironment } = require('../src/confi
 const { MockProvider } = require('../src/providers/mock.provider');
 const { startupErrorLogFields } = require('../src/server');
 const { createLogger, safeLogPayload } = require('../src/utils/logger');
+const { redactSecrets } = require('../src/utils/redact');
+const { isRetryableError } = require('../src/utils/retryability');
+const { readinessHandler } = require('../src/routes/health.routes');
 
 const RUNTIME_TOKEN = 'test_runtime_secret_0123456789_abcdefghijklmnopqrstuvwxyz';
 const INCORRECT_TOKEN = 'incorrect_runtime_secret_0123456789_abcdefghijklmnopqrstuvwxyz';
@@ -321,6 +324,47 @@ test('health endpoint identifies the independent external service', async () => 
   assert.match(result.body.meta.requestId, /^req_/);
 });
 
+test('readiness reports configuration without invoking the provider', async () => {
+  const result = await request('/ready');
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.data.status, 'ready');
+  assert.deepEqual(result.body.data.ai, { provider: 'mock', configured: true });
+  assert.deepEqual(result.body.data.runtimeAuthentication, { configured: true });
+  assert.equal(JSON.stringify(result.body).includes(RUNTIME_TOKEN), false);
+});
+
+test('readiness fails safely when provider configuration is unavailable and performs no AI request', () => {
+  let researchCalls = 0;
+  const provider = {
+    checkConfiguration() {
+      return { provider: 'gemini', configured: false };
+    },
+    research() {
+      researchCalls += 1;
+    },
+  };
+  const response = {
+    statusCode: 200,
+    payload: undefined,
+    status(value) {
+      this.statusCode = value;
+      return this;
+    },
+    json(value) {
+      this.payload = value;
+      return this;
+    },
+  };
+  readinessHandler(provider, { runtimeToken: RUNTIME_TOKEN })(
+    { traceId: 'trace_ready-test', requestId: 'req_ready-test' },
+    response,
+  );
+  assert.equal(response.statusCode, 503);
+  assert.equal(response.payload.data.ai.provider, 'gemini');
+  assert.equal(response.payload.data.ai.configured, false);
+  assert.equal(researchCalls, 0);
+});
+
 test('missing bearer token returns the structured authentication error', async () => {
   const result = await request('/v1/research/invoke', {
     method: 'POST',
@@ -418,9 +462,16 @@ test('JSON body limit rejects oversized payloads with a structured error', async
 });
 
 test('valid bearer token returns Passport-compatible mock research output', async () => {
+  const traceId = 'trace_external-flow-test';
+  const requestId = 'req_external-flow-test';
   const result = await request('/v1/research/invoke', {
     method: 'POST',
-    headers: authorization(),
+    headers: {
+      ...authorization(),
+      'X-Trace-Id': traceId,
+      'X-Request-Id': requestId,
+      'X-Invocation-Id': 'invocation-safe-123',
+    },
     body: { topic: '  latest AI infrastructure trends  ' },
   });
 
@@ -437,8 +488,37 @@ test('valid bearer token returns Passport-compatible mock research output', asyn
       sourceCount: 1,
     },
   });
-  assert.match(result.body.meta.requestId, /^req_/);
+  assert.equal(result.body.meta.traceId, traceId);
+  assert.equal(result.body.meta.requestId, requestId);
+  assert.equal(result.response.headers.get('x-trace-id'), traceId);
+  assert.equal(result.response.headers.get('x-request-id'), requestId);
   assert.equal(result.text.includes(RUNTIME_TOKEN), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  const diagnostics = logLines.join('');
+  assert.match(diagnostics, new RegExp(traceId));
+  assert.equal(diagnostics.includes('latest AI infrastructure trends'), false);
+  assert.equal(diagnostics.includes('External agent result for:'), false);
+});
+
+test('invalid and oversized trace identifiers are replaced safely', async () => {
+  const oversized = `trace_${'x'.repeat(200)}`;
+  const result = await request('/health', { headers: { 'X-Trace-Id': oversized } });
+  const returned = result.response.headers.get('x-trace-id');
+  assert.notEqual(returned, oversized);
+  assert.match(returned, /^trace_/);
+});
+
+test('external retryability and recursive redaction cover safe diagnostics', () => {
+  assert.equal(isRetryableError({ code: 'GEMINI_RATE_LIMITED' }), true);
+  assert.equal(isRetryableError({ code: 'RUNTIME_AUTHENTICATION_FAILED' }), false);
+  const secret = 'external-secret-12345678';
+  const redacted = redactSecrets({
+    headers: { Authorization: `Bearer ${secret}` },
+    nested: [{ apiKey: secret, encryptedPayload: { token: secret } }],
+    url: `https://example.test/?runtimeToken=${secret}`,
+    error: Object.assign(new Error(`failed while handling prompt ${secret}`), { topic: secret }),
+  });
+  assert.equal(JSON.stringify(redacted).includes(secret), false);
 });
 
 test('invalid JSON returns a production-safe structured error', async () => {

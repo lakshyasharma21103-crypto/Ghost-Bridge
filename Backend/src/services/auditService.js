@@ -3,7 +3,16 @@ const { redactSecrets } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 
-function auditLogPayload(actorType, actorId, action, entityType, entityId, metadata = {}, requestId) {
+function auditLogPayload(
+  actorType,
+  actorId,
+  action,
+  entityType,
+  entityId,
+  metadata = {},
+  identifiers,
+) {
+  const context = typeof identifiers === 'string' ? { requestId: identifiers } : identifiers || {};
   return {
     actorType,
     actorId,
@@ -11,12 +20,30 @@ function auditLogPayload(actorType, actorId, action, entityType, entityId, metad
     entityType,
     entityId,
     metadata: redactSecrets(metadata),
-    requestId,
+    requestId: context.requestId,
+    traceId: context.traceId,
+    invocationId: context.invocationId,
   };
 }
 
-async function createAuditLog(actorType, actorId, action, entityType, entityId, metadata = {}, requestId) {
-  const payload = auditLogPayload(actorType, actorId, action, entityType, entityId, metadata, requestId);
+async function createAuditLog(
+  actorType,
+  actorId,
+  action,
+  entityType,
+  entityId,
+  metadata = {},
+  identifiers,
+) {
+  const payload = auditLogPayload(
+    actorType,
+    actorId,
+    action,
+    entityType,
+    entityId,
+    metadata,
+    identifiers,
+  );
   return AuditLog.create(payload);
 }
 
@@ -52,6 +79,8 @@ function serializeAuditLog(log) {
     entityId: log.entityId,
     metadata: redactSecrets(log.metadata || {}),
     requestId: log.requestId,
+    traceId: log.traceId,
+    invocationId: log.invocationId,
     createdAt: log.createdAt,
   };
 }

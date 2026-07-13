@@ -22,6 +22,8 @@ const { AppError } = require('../utils/AppError');
 const { toApiErrorResponse } = require('../utils/apiError');
 const { errorHandler } = require('../middleware/errorHandler');
 const { requestId } = require('../middleware/requestId');
+const { isRetryableError } = require('../utils/retryability');
+const { getHealth, getReadiness } = require('../controllers/healthController');
 
 test('install keys are generated securely and hashes do not contain raw keys', () => {
   const first = generateInstallKey();
@@ -144,7 +146,10 @@ test('missing encryption key fails clearly outside development', () => {
   });
 
   assert.notEqual(result.status, 0);
-  assert.match(`${result.stderr}${result.stdout}`, /CREDENTIAL_ENCRYPTION_KEY is required outside development/);
+  assert.match(
+    `${result.stderr}${result.stdout}`,
+    /CREDENTIAL_ENCRYPTION_KEY is required outside development/,
+  );
 });
 
 test('audit log payload redacts sensitive metadata before storage', () => {
@@ -201,7 +206,12 @@ test('API error responses never include stack traces', () => {
     },
   };
 
-  errorHandler(new Error('Bearer very-secret-token'), { requestId: 'req_test' }, response, () => {});
+  errorHandler(
+    new Error('Bearer very-secret-token'),
+    { requestId: 'req_test' },
+    response,
+    () => {},
+  );
   const serialized = JSON.stringify(response.payload);
 
   assert.equal(response.statusCode, 500);
@@ -232,6 +242,76 @@ test('request IDs reject secret-shaped external values', () => {
   assert.notEqual(request.requestId, rawInstallKey);
   assert.match(request.requestId, /^req_[A-Za-z0-9-]{36}$/);
   assert.equal(response.headers['X-Request-Id'], request.requestId);
+  assert.match(request.traceId, /^trace_/);
+});
+
+test('valid trace IDs are preserved and oversized trace IDs are replaced', () => {
+  function run(traceId) {
+    const response = {
+      headers: {},
+      setHeader(name, value) {
+        this.headers[name] = value;
+      },
+    };
+    const request = {
+      header(name) {
+        return name === 'X-Trace-Id' ? traceId : undefined;
+      },
+    };
+    requestId(request, response, () => {});
+    return { request, response };
+  }
+  const preserved = run('trace_safe-operation-123');
+  assert.equal(preserved.request.traceId, 'trace_safe-operation-123');
+  assert.equal(preserved.response.headers['X-Trace-Id'], 'trace_safe-operation-123');
+  const replaced = run(`trace_${'x'.repeat(200)}`);
+  assert.notEqual(replaced.request.traceId, `trace_${'x'.repeat(200)}`);
+  assert.match(replaced.request.traceId, /^trace_/);
+});
+
+test('retryability classification is deterministic', () => {
+  assert.equal(isRetryableError({ code: 'SAFE_FETCH_TIMEOUT' }), true);
+  assert.equal(isRetryableError({ statusCode: 503 }), true);
+  assert.equal(isRetryableError({ code: ErrorCodes.INSTALL_KEY_INVALID, statusCode: 400 }), false);
+  assert.equal(isRetryableError({ code: ErrorCodes.CAPABILITY_INPUT_INVALID }), false);
+});
+
+test('health is dependency-free while readiness fails safely without a database', () => {
+  function response() {
+    return {
+      statusCode: 200,
+      payload: undefined,
+      status(value) {
+        this.statusCode = value;
+        return this;
+      },
+      json(value) {
+        this.payload = value;
+        return this;
+      },
+    };
+  }
+  const health = response();
+  getHealth({}, health);
+  assert.equal(health.statusCode, 200);
+  assert.equal(health.payload.data.status, 'ok');
+  const ready = response();
+  getReadiness({}, ready);
+  assert.equal(ready.statusCode, 503);
+  assert.equal(ready.payload.data.status, 'not_ready');
+  assert.equal(JSON.stringify(ready.payload).includes('mongodb://'), false);
+});
+
+test('redaction covers nested camelCase credentials, Authorization, and URL query secrets', () => {
+  const secret = 'sensitive-value-12345678';
+  const redacted = redactSecrets({
+    nested: [{ partnerApiKey: secret, decryptedPayload: { runtimeToken: secret } }],
+    headers: { Authorization: `Bearer ${secret}` },
+    note: `https://example.test/path?installKey=${secret}&token=${secret}`,
+    serialized: JSON.stringify({ accessToken: secret }),
+    error: Object.assign(new Error(`provider failed for prompt ${secret}`), { topic: secret }),
+  });
+  assert.equal(JSON.stringify(redacted).includes(secret), false);
 });
 
 test('safe URL parser accepts public HTTPS URLs', () => {

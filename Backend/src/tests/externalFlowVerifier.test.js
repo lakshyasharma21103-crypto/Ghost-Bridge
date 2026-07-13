@@ -15,7 +15,10 @@ const { generateInstallKey, generatePartnerApiKey } = require('../utils/crypto')
 test('runtime invocation timeout accepts at least 360000 milliseconds and rejects non-positive values', () => {
   const valid = spawnSync(
     process.execPath,
-    ['-e', "console.log(require('./src/config/env').env.RUNTIME_INVOCATION_TIMEOUT_MS)"],
+    [
+      '-e',
+      "process.stdout.write(String(require('./src/config/env').env.RUNTIME_INVOCATION_TIMEOUT_MS))",
+    ],
     {
       cwd: path.resolve(__dirname, '../..'),
       env: { ...process.env, NODE_ENV: 'development', RUNTIME_INVOCATION_TIMEOUT_MS: '360000' },
@@ -23,7 +26,7 @@ test('runtime invocation timeout accepts at least 360000 milliseconds and reject
     },
   );
   assert.equal(valid.status, 0);
-  assert.equal(valid.stdout.trim(), '360000');
+  assert.equal(Number(valid.stdout.trim()), 360_000);
 
   const invalid = spawnSync(process.execPath, ['-e', "require('./src/config/env')"], {
     cwd: path.resolve(__dirname, '../..'),

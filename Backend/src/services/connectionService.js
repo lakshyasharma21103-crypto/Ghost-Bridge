@@ -9,6 +9,7 @@ const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { hashKey, decryptPayload, encryptPayload } = require('../utils/crypto');
 const safeFetchUtility = require('../utils/safeFetch');
+const { createObserver } = require('../utils/observability');
 const { runtimeSupport } = require('./adapters');
 
 const INSTALL_KEY_PATTERN = /^agentpass_install_[A-Za-z0-9_-]{32,}$/;
@@ -160,7 +161,7 @@ function safeConnectionView(connection, options = {}) {
   return result;
 }
 
-async function auditKeyResolutionFailure(installKey, identity, requestId, reason) {
+async function auditKeyResolutionFailure(installKey, identity, identifiers, reason) {
   if (!installKey) return;
   await createAuditLog(
     'user',
@@ -174,7 +175,7 @@ async function auditKeyResolutionFailure(installKey, identity, requestId, reason
       receivingUserId: identity.receivingUserId,
       reason,
     },
-    requestId,
+    identifiers,
   );
 }
 
@@ -186,55 +187,108 @@ async function markKeyExpired(installKey) {
   );
 }
 
-async function resolveInstallKey(input, requestId) {
-  const rawKey = requireString(input?.key, 'key');
-  const identity = requireReceivingIdentity(input);
-  if (!INSTALL_KEY_PATTERN.test(rawKey)) {
-    throw new AppError(
-      400,
-      ErrorCodes.INSTALL_KEY_INVALID,
-      'Agent Passport Install Key format is invalid.',
-      [{ path: 'key', message: 'key must be an Agent Passport Install Key.' }],
-    );
-  }
+async function resolveInstallKey(input, requestContext) {
+  const context =
+    typeof requestContext === 'string' ? { requestId: requestContext } : requestContext || {};
+  const requestId = context.requestId;
+  const auditIdentifiers = { requestId, traceId: context.traceId };
+  const observer = context.observer || createObserver({ traceId: context.traceId, requestId });
+  const { identity, keyHash, installKey } = await observer.stage(
+    'install_key_resolution',
+    async () => {
+      const nextRawKey = requireString(input?.key, 'key');
+      const nextIdentity = requireReceivingIdentity(input);
+      if (!INSTALL_KEY_PATTERN.test(nextRawKey)) {
+        throw new AppError(
+          400,
+          ErrorCodes.INSTALL_KEY_INVALID,
+          'Agent Passport Install Key format is invalid.',
+          [{ path: 'key', message: 'key must be an Agent Passport Install Key.' }],
+        );
+      }
+      const nextKeyHash = hashKey(nextRawKey);
+      const nextInstallKey = await PassportInstallKey.findOne({ keyHash: nextKeyHash });
+      if (
+        !nextInstallKey ||
+        nextInstallKey.status !== 'active' ||
+        new Date(nextInstallKey.expiresAt).getTime() <= Date.now()
+      ) {
+        if (nextInstallKey && new Date(nextInstallKey.expiresAt).getTime() <= Date.now()) {
+          await markKeyExpired(nextInstallKey);
+        }
+        const error = installKeyError(nextInstallKey);
+        await auditKeyResolutionFailure(nextInstallKey, nextIdentity, auditIdentifiers, error.code);
+        throw error;
+      }
+      return {
+        identity: nextIdentity,
+        keyHash: nextKeyHash,
+        installKey: nextInstallKey,
+      };
+    },
+  );
 
-  const keyHash = hashKey(rawKey);
-  const installKey = await PassportInstallKey.findOne({ keyHash });
-  if (
-    !installKey ||
-    installKey.status !== 'active' ||
-    new Date(installKey.expiresAt).getTime() <= Date.now()
-  ) {
-    if (installKey && new Date(installKey.expiresAt).getTime() <= Date.now()) {
-      await markKeyExpired(installKey);
+  const [passport, capabilities] = await observer.stage('passport_retrieval', () =>
+    Promise.all([
+      AgentPassport.findOne({ _id: installKey.passportId }),
+      Capability.find({ passportId: installKey.passportId }).sort({ name: 1 }).lean(),
+    ]),
+  );
+
+  await observer.stage('passport_validation', async () => {
+    if (!passport || passport.status !== 'valid') {
+      const error = new AppError(
+        409,
+        ErrorCodes.PASSPORT_UNAVAILABLE,
+        'Agent Passport is not available for installation.',
+      );
+      await auditKeyResolutionFailure(
+        installKey,
+        identity,
+        auditIdentifiers,
+        passport?.status || 'not_found',
+      );
+      throw error;
     }
-    const error = installKeyError(installKey);
-    await auditKeyResolutionFailure(installKey, identity, requestId, error.code);
-    throw error;
-  }
+    if (
+      !passport.agent?.id ||
+      !passport.runtime?.type ||
+      !passport.auth?.type ||
+      !passport.install
+    ) {
+      throw new AppError(
+        409,
+        ErrorCodes.PASSPORT_UNAVAILABLE,
+        'Agent Passport metadata is incomplete.',
+      );
+    }
+  });
 
-  const [passport, capabilities] = await Promise.all([
-    AgentPassport.findOne({ _id: installKey.passportId }),
-    Capability.find({ passportId: installKey.passportId }).sort({ name: 1 }).lean(),
-  ]);
+  await observer.stage('capability_import', async () => {
+    if (
+      !capabilities.length ||
+      capabilities.some((item) => !item.name || !item.inputSchema || !item.outputSchema)
+    ) {
+      throw new AppError(
+        409,
+        ErrorCodes.PASSPORT_UNAVAILABLE,
+        'Agent Passport capability metadata is incomplete.',
+      );
+    }
+  });
 
-  if (!passport || passport.status !== 'valid') {
-    const error = new AppError(
-      409,
-      ErrorCodes.PASSPORT_UNAVAILABLE,
-      'Agent Passport is not available for installation.',
-    );
-    await auditKeyResolutionFailure(
-      installKey,
-      identity,
-      requestId,
-      passport?.status || 'not_found',
-    );
-    throw error;
-  }
+  await observer.stage('runtime_configuration_resolution', async () => {
+    if (!passport.runtime?.endpoint || !passport.runtime?.method) {
+      throw new AppError(
+        409,
+        ErrorCodes.RUNTIME_CONFIGURATION_INVALID,
+        'Agent runtime configuration is incomplete.',
+      );
+    }
+  });
 
-  let runtimeGrant;
-  if (installKey.installMode === 'delegated_runtime_access') {
+  const runtimeGrant = await observer.stage('delegated_credential_resolution', async () => {
+    if (installKey.installMode !== 'delegated_runtime_access') return undefined;
     if (!installKey.encryptedRuntimeGrant) {
       throw new AppError(
         409,
@@ -253,7 +307,7 @@ async function resolveInstallKey(input, requestId) {
       );
     }
     try {
-      runtimeGrant = decryptPayload(installKey.encryptedRuntimeGrant);
+      return decryptPayload(installKey.encryptedRuntimeGrant);
     } catch {
       throw new AppError(
         500,
@@ -261,7 +315,7 @@ async function resolveInstallKey(input, requestId) {
         'Delegated runtime access could not be prepared securely.',
       );
     }
-  }
+  });
 
   const now = new Date();
   const consumedKey = await PassportInstallKey.findOneAndUpdate(
@@ -285,7 +339,7 @@ async function resolveInstallKey(input, requestId) {
   if (!consumedKey) {
     const currentKey = await PassportInstallKey.findOne({ keyHash });
     const error = installKeyError(currentKey);
-    await auditKeyResolutionFailure(currentKey, identity, requestId, error.code);
+    await auditKeyResolutionFailure(currentKey, identity, auditIdentifiers, error.code);
     throw error;
   }
 
@@ -299,17 +353,19 @@ async function resolveInstallKey(input, requestId) {
   snapshot.installation.credentialType =
     consumedKey.installMode === 'delegated_runtime_access' ? 'delegated_runtime_access' : undefined;
 
-  const connection = await PassportConnection.create({
-    passportId: passport._id,
-    partnerId: passport.partnerId,
-    receivingWorkspaceId: identity.receivingWorkspaceId,
-    receivingUserId: identity.receivingUserId,
-    installScope: consumedKey.scope,
-    status: connectionStatus,
-    resolvedPassportSnapshot: snapshot,
-    runtimeType: passport.runtime.type,
-    runtimeEndpoint: passport.runtime.endpoint,
-  });
+  const connection = await observer.stage('connection_creation', () =>
+    PassportConnection.create({
+      passportId: passport._id,
+      partnerId: passport.partnerId,
+      receivingWorkspaceId: identity.receivingWorkspaceId,
+      receivingUserId: identity.receivingUserId,
+      installScope: consumedKey.scope,
+      status: connectionStatus,
+      resolvedPassportSnapshot: snapshot,
+      runtimeType: passport.runtime.type,
+      runtimeEndpoint: passport.runtime.endpoint,
+    }),
+  );
 
   let credential;
   if (runtimeGrant) {
@@ -323,6 +379,17 @@ async function resolveInstallKey(input, requestId) {
     connection.credentialId = credential._id;
     await connection.save();
   }
+
+  await observer.stage('connection_verification', async () => {
+    const expectedStatus = runtimeGrant ? 'connected' : connectionStatus;
+    if (connection.status !== expectedStatus || (runtimeGrant && !connection.credentialId)) {
+      throw new AppError(
+        500,
+        ErrorCodes.INTERNAL_SERVER_ERROR,
+        'Connection could not be verified after installation.',
+      );
+    }
+  });
 
   await createAuditLog(
     'user',
@@ -338,7 +405,7 @@ async function resolveInstallKey(input, requestId) {
       installMode: consumedKey.installMode,
       scope: consumedKey.scope,
     },
-    requestId,
+    auditIdentifiers,
   );
   await createAuditLog(
     'user',
@@ -354,7 +421,7 @@ async function resolveInstallKey(input, requestId) {
       installMode: consumedKey.installMode,
       scope: consumedKey.scope,
     },
-    requestId,
+    auditIdentifiers,
   );
   if (credential) {
     await createAuditLog(
@@ -370,7 +437,7 @@ async function resolveInstallKey(input, requestId) {
         type: credential.type,
         expiresAt: credential.expiresAt,
       },
-      requestId,
+      auditIdentifiers,
     );
   }
 
@@ -575,71 +642,78 @@ function credentialHeader(header, value, scheme) {
 }
 
 async function credentialHeadersForConnection(connection, passportAuth, options = {}) {
+  const runStage = (name, operation) =>
+    options.observer ? options.observer.stage(name, operation) : operation();
   const auth = passportAuth || connection.resolvedPassportSnapshot?.auth || {};
   const credentialRequired = auth.type && auth.type !== 'no_auth_dev';
-  if (!connection.credentialId) {
-    if (credentialRequired && !options.allowMissing) {
+  const credential = await runStage('credential_load', async () => {
+    if (!connection.credentialId) {
+      if (credentialRequired && !options.allowMissing) {
+        throw new AppError(
+          409,
+          ErrorCodes.CREDENTIAL_REQUIRED,
+          'A runtime credential is required before this connection can be invoked.',
+        );
+      }
+      return null;
+    }
+    const stored = await Credential.findOne({
+      _id: connection.credentialId,
+      connectionId: connection._id,
+      status: 'active',
+    }).lean();
+    if (!stored) {
       throw new AppError(
         409,
         ErrorCodes.CREDENTIAL_REQUIRED,
-        'A runtime credential is required before this connection can be invoked.',
+        'The active runtime credential for this connection is unavailable.',
       );
     }
-    return {};
-  }
-  const credential = await Credential.findOne({
-    _id: connection.credentialId,
-    connectionId: connection._id,
-    status: 'active',
-  }).lean();
-  if (!credential) {
+    if (stored.expiresAt && new Date(stored.expiresAt).getTime() <= Date.now()) {
+      throw new AppError(409, ErrorCodes.CREDENTIAL_EXPIRED, 'The runtime credential has expired.');
+    }
+    return stored;
+  });
+
+  return runStage('credential_decryption', async () => {
+    if (!credential) return {};
+    let payload;
+    try {
+      payload = decryptPayload(credential.encryptedPayload);
+    } catch {
+      throw new AppError(
+        500,
+        ErrorCodes.INTERNAL_SERVER_ERROR,
+        'Stored credential could not be prepared securely.',
+      );
+    }
+    if (credential.type === 'delegated_runtime_access') {
+      return credentialHeader(
+        payload.header || auth.header || 'Authorization',
+        payload.accessToken || payload.token,
+        payload.scheme || auth.scheme || 'Bearer',
+      );
+    }
+    if (credential.type === 'api_key') {
+      return credentialHeader(
+        payload.header || auth.header || 'X-API-Key',
+        payload.apiKey,
+        payload.scheme || auth.scheme,
+      );
+    }
+    if (credential.type === 'bearer_token') {
+      return credentialHeader(
+        payload.header || auth.header || 'Authorization',
+        payload.accessToken,
+        payload.scheme || auth.scheme || 'Bearer',
+      );
+    }
     throw new AppError(
       409,
       ErrorCodes.CREDENTIAL_REQUIRED,
-      'The active runtime credential for this connection is unavailable.',
+      'The stored credential type is not supported for runtime invocation.',
     );
-  }
-  if (credential.expiresAt && new Date(credential.expiresAt).getTime() <= Date.now()) {
-    throw new AppError(409, ErrorCodes.CREDENTIAL_EXPIRED, 'The runtime credential has expired.');
-  }
-
-  let payload;
-  try {
-    payload = decryptPayload(credential.encryptedPayload);
-  } catch {
-    throw new AppError(
-      500,
-      ErrorCodes.INTERNAL_SERVER_ERROR,
-      'Stored credential could not be prepared securely.',
-    );
-  }
-
-  if (credential.type === 'delegated_runtime_access') {
-    return credentialHeader(
-      payload.header || auth.header || 'Authorization',
-      payload.accessToken || payload.token,
-      payload.scheme || auth.scheme || 'Bearer',
-    );
-  }
-  if (credential.type === 'api_key') {
-    return credentialHeader(
-      payload.header || auth.header || 'X-API-Key',
-      payload.apiKey,
-      payload.scheme || auth.scheme,
-    );
-  }
-  if (credential.type === 'bearer_token') {
-    return credentialHeader(
-      payload.header || auth.header || 'Authorization',
-      payload.accessToken,
-      payload.scheme || auth.scheme || 'Bearer',
-    );
-  }
-  throw new AppError(
-    409,
-    ErrorCodes.CREDENTIAL_REQUIRED,
-    'The stored credential type is not supported for runtime invocation.',
-  );
+  });
 }
 
 function healthTarget(connection) {

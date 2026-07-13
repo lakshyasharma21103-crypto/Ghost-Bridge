@@ -139,14 +139,15 @@ test('grounded research local timeout is stage-aware and does not begin formatti
   );
 
   assert.equal(calls.length, 1);
-  assert.equal(logger.entries.length, 1);
+  assert.equal(logger.entries.length, 2);
+  const completion = logger.entries.find((entry) => entry.message === 'Gemini operation completed');
   assert.deepEqual(
     {
-      requestId: logger.entries[0].fields.requestId,
-      operation: logger.entries[0].fields.operation,
-      model: logger.entries[0].fields.model,
-      configuredTimeoutMs: logger.entries[0].fields.configuredTimeoutMs,
-      locallyAborted: logger.entries[0].fields.locallyAborted,
+      requestId: completion.fields.requestId,
+      operation: completion.fields.operation,
+      model: completion.fields.model,
+      configuredTimeoutMs: completion.fields.configuredTimeoutMs,
+      locallyAborted: completion.fields.locallyAborted,
     },
     {
       requestId: 'req_research-timeout',
@@ -156,7 +157,7 @@ test('grounded research local timeout is stage-aware and does not begin formatti
       locallyAborted: true,
     },
   );
-  assert.equal(Number.isInteger(logger.entries[0].fields.durationMs), true);
+  assert.equal(Number.isInteger(completion.fields.durationMs), true);
   assert.equal(JSON.stringify(logger.entries).includes('sensitive research topic'), false);
   assert.equal(JSON.stringify(logger.entries).includes(TEST_CONFIG.apiKey), false);
 });

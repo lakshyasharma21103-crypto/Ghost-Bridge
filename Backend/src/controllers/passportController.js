@@ -40,7 +40,11 @@ function validatePassport(request, response, next) {
 
 async function resolvePassportInstallKey(request, response, next) {
   try {
-    const data = await resolveInstallKey(request.body, request.requestId);
+    const data = await resolveInstallKey(request.body, {
+      requestId: request.requestId,
+      traceId: request.traceId,
+      observer: request.observer,
+    });
     response.json({ success: true, data });
   } catch (error) {
     next(error);

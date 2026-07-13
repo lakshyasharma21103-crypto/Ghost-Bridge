@@ -1,4 +1,5 @@
 const path = require('node:path');
+const crypto = require('node:crypto');
 const dotenv = require('dotenv');
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
@@ -34,6 +35,8 @@ async function verify() {
 
   let response;
   let text;
+  const traceId = `trace_${crypto.randomUUID()}`;
+  const requestId = `req_${crypto.randomUUID()}`;
   try {
     response = await fetch(`${baseUrl}/v1/research/invoke`, {
       method: 'POST',
@@ -41,6 +44,8 @@ async function verify() {
         Accept: 'application/json',
         Authorization: `Bearer ${runtimeToken}`,
         'Content-Type': 'application/json',
+        'X-Trace-Id': traceId,
+        'X-Request-Id': requestId,
       },
       body: JSON.stringify({
         topic: 'What are the current approaches to secure AI-agent interoperability?',
@@ -84,6 +89,10 @@ async function verify() {
       ].join('\n'),
     );
   }
+  assert(response.headers.get('x-trace-id') === traceId, 'Trace ID was not preserved.');
+  assert(response.headers.get('x-request-id') === requestId, 'Request ID was not preserved.');
+  assert(body?.meta?.traceId === traceId, 'Response trace metadata is missing.');
+  assert(body?.meta?.requestId === requestId, 'Response request metadata is missing.');
   assert(
     typeof body?.response?.summary === 'string' && body.response.summary.trim(),
     'Summary is empty.',
@@ -115,6 +124,7 @@ async function verify() {
   );
 
   report('live request returned a grounded, Passport-compatible response without secrets');
+  report('traceId and requestId were preserved end to end');
 }
 
 verify().catch((error) => {
