@@ -76,6 +76,30 @@ const runtimeExecutionLeaseMs = integerInRangeFromEnv(
   1_000,
   1_800_000,
 );
+const circuitFailureWindowMs = integerInRangeFromEnv(
+  'CIRCUIT_FAILURE_WINDOW_MS',
+  60_000,
+  1_000,
+  3_600_000,
+);
+const circuitOpenDurationMs = integerInRangeFromEnv(
+  'CIRCUIT_OPEN_DURATION_MS',
+  30_000,
+  1_000,
+  3_600_000,
+);
+const runtimeMaxConcurrentPerConnection = integerInRangeFromEnv(
+  'RUNTIME_MAX_CONCURRENT_PER_CONNECTION',
+  3,
+  1,
+  100,
+);
+const runtimeMaxConcurrentPerWorkspace = integerInRangeFromEnv(
+  'RUNTIME_MAX_CONCURRENT_PER_WORKSPACE',
+  20,
+  1,
+  1_000,
+);
 
 if (runtimeRetryMaxDelayMs < runtimeRetryBaseDelayMs) {
   throw new Error(
@@ -85,6 +109,12 @@ if (runtimeRetryMaxDelayMs < runtimeRetryBaseDelayMs) {
 
 if (runtimeExecutionLeaseMs <= runtimeInvocationTimeoutMs) {
   throw new Error('RUNTIME_EXECUTION_LEASE_MS must be greater than RUNTIME_INVOCATION_TIMEOUT_MS');
+}
+
+if (runtimeMaxConcurrentPerWorkspace < runtimeMaxConcurrentPerConnection) {
+  throw new Error(
+    'RUNTIME_MAX_CONCURRENT_PER_WORKSPACE must be greater than or equal to RUNTIME_MAX_CONCURRENT_PER_CONNECTION',
+  );
 }
 
 const env = {
@@ -106,6 +136,25 @@ const env = {
   RUNTIME_RETRY_MAX_DELAY_MS: runtimeRetryMaxDelayMs,
   RUNTIME_RETRY_JITTER_PERCENT: runtimeRetryJitterPercent,
   RUNTIME_EXECUTION_LEASE_MS: runtimeExecutionLeaseMs,
+  CIRCUIT_BREAKER_ENABLED: booleanFromEnv('CIRCUIT_BREAKER_ENABLED', true),
+  CIRCUIT_FAILURE_THRESHOLD: integerInRangeFromEnv('CIRCUIT_FAILURE_THRESHOLD', 5, 1, 100),
+  CIRCUIT_FAILURE_WINDOW_MS: circuitFailureWindowMs,
+  CIRCUIT_OPEN_DURATION_MS: circuitOpenDurationMs,
+  CIRCUIT_HALF_OPEN_MAX_PROBES: integerInRangeFromEnv('CIRCUIT_HALF_OPEN_MAX_PROBES', 1, 1, 10),
+  CIRCUIT_SUCCESS_THRESHOLD_TO_CLOSE: integerInRangeFromEnv(
+    'CIRCUIT_SUCCESS_THRESHOLD_TO_CLOSE',
+    1,
+    1,
+    100,
+  ),
+  RUNTIME_MAX_CONCURRENT_PER_CONNECTION: runtimeMaxConcurrentPerConnection,
+  RUNTIME_MAX_CONCURRENT_PER_WORKSPACE: runtimeMaxConcurrentPerWorkspace,
+  SHUTDOWN_DRAIN_TIMEOUT_MS: integerInRangeFromEnv(
+    'SHUTDOWN_DRAIN_TIMEOUT_MS',
+    30_000,
+    1_000,
+    300_000,
+  ),
   EXTERNAL_TEST_AGENT_BASE_URL: process.env.EXTERNAL_TEST_AGENT_BASE_URL || 'http://127.0.0.1:5002',
   EXTERNAL_TEST_AGENT_RUNTIME_TOKEN: process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN || '',
   ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV: allowPrivateRuntimeUrlsInDev,

@@ -35,6 +35,19 @@ const {
   SAFE_INVOCATION_ATTEMPT_STAGES,
 } = require('../constants/invocationLifecycle');
 const { OPERATION_STAGE_NAMES, MAX_INVOCATION_STAGE_METRICS } = require('../constants/operations');
+const {
+  evaluateCircuit,
+  recordCircuitFailure,
+  recordCircuitSuccess,
+  releaseCircuitProbe,
+} = require('./circuitBreaker.service');
+const { acquireRuntimeCapacity, releaseRuntimeCapacity } = require('./runtimeCapacity.service');
+const {
+  currentHealth,
+  recordConnectionFailure,
+  recordConnectionSuccess,
+} = require('./connectionHealth.service');
+const { serviceLifecycle } = require('./serviceLifecycle.service');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
@@ -716,6 +729,7 @@ async function loadInvocationContext(
 }
 
 async function invoke(connectionId, capabilityName, input, actor = {}) {
+  serviceLifecycle.assertAcceptingInvocations();
   const startedAt = Date.now();
   const stageMetrics = [];
   const onStageMetric = stageMetricCollector(stageMetrics);
@@ -740,6 +754,9 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
   let attemptNumber = 0;
   let externalCallStarted = false;
   let responseValidated = false;
+  let circuitEvaluation;
+  let capacityLease;
+  let lifecycleRegistration;
   observer.emit('info', 'runtime.invocation.started', { status: 'started' });
   try {
     const normalizedCapabilityName = await observer.stage('request_validation', async () =>
@@ -762,6 +779,10 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     idempotency = reservation.idempotency;
     observer = observer.child({ invocationId: idOf(invocation) });
     actor.onInvocationCreated?.(idOf(invocation));
+    lifecycleRegistration = serviceLifecycle.registerInvocation(idOf(invocation), {
+      workspaceId: connection.receivingWorkspaceId,
+      connectionId: idOf(connection),
+    });
 
     if (reservation.replayed) {
       observer.emit('info', 'runtime.invocation.idempotency_replayed', {
@@ -830,6 +851,77 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       connection,
       actor: auditActor,
     });
+
+    if (currentHealth(context.connection) === 'disabled') {
+      throw new AppError(409, ErrorCodes.CONNECTION_DISABLED, 'Connection is disabled.', [], {
+        connectionId: idOf(context.connection),
+      });
+    }
+
+    circuitEvaluation = await evaluateCircuit(
+      context.connection,
+      'runtime',
+      actor.runtimeProtectionOptions,
+    );
+    if (circuitEvaluation.transitioned === 'half_opened') {
+      observer.emit('info', 'circuit.half_opened', {
+        status: 'half_open',
+        circuitState: 'half_open',
+      });
+      observer.emit('info', 'circuit.probe_started', { status: 'started' });
+      await bestEffortInvocationAudit({
+        action: 'circuit.half_opened',
+        actor: auditActor,
+        connection,
+        invocation,
+        observer,
+        metadata: { circuitState: 'half_open' },
+      });
+      await bestEffortInvocationAudit({
+        action: 'circuit.probe_started',
+        actor: auditActor,
+        connection,
+        invocation,
+        observer,
+        metadata: { circuitState: 'half_open' },
+      });
+    }
+
+    try {
+      capacityLease = await acquireRuntimeCapacity(
+        context.connection,
+        idOf(invocation),
+        actor.runtimeProtectionOptions,
+      );
+      observer.emit('info', 'capacity.acquired', {
+        status: 'acquired',
+        leaseDurationMs: capacityLease.bypassed
+          ? undefined
+          : Math.max(0, new Date(capacityLease.leaseExpiresAt).getTime() - Date.now()),
+      });
+      await bestEffortInvocationAudit({
+        action: 'capacity.acquired',
+        actor: auditActor,
+        connection,
+        invocation,
+        observer,
+        metadata: { reasonCode: 'RUNTIME_CAPACITY_ACQUIRED' },
+      });
+    } catch (capacityError) {
+      observer.emit('warn', 'capacity.rejected', {
+        status: 'rejected',
+        reasonCode: capacityError.reasonCode,
+      });
+      await bestEffortInvocationAudit({
+        action: 'capacity.rejected',
+        actor: auditActor,
+        connection,
+        invocation,
+        observer,
+        metadata: { reasonCode: capacityError.reasonCode },
+      });
+      throw capacityError;
+    }
 
     const adapter = adapters[context.connection.runtimeType];
     if (!adapter || typeof adapter.invoke !== 'function') {
@@ -903,6 +995,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
 
     let result;
     externalCallStarted = true;
+    lifecycleRegistration?.markExternalCallStarted();
     if (context.connection.runtimeType === 'mcp') {
       result = await adapter.invoke(context.connection, context.capability, input);
     } else {
@@ -916,6 +1009,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
           requestId: actor.requestId,
           invocationId: idOf(invocation),
           idempotencyKey: idempotency.keyHash,
+          signal: lifecycleRegistration?.signal,
         },
       });
     }
@@ -924,6 +1018,60 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       validateCapabilityOutput(context.capability, result.output),
     );
     responseValidated = true;
+    try {
+      const [circuitResult, healthResult] = await Promise.all([
+        recordCircuitSuccess(context.connection, 'runtime', actor.runtimeProtectionOptions),
+        recordConnectionSuccess(context.connection, actor.runtimeProtectionOptions),
+      ]);
+      if (circuitResult.transitioned === 'closed') {
+        observer.emit('info', 'circuit.closed', { status: 'closed', circuitState: 'closed' });
+        await bestEffortInvocationAudit({
+          action: 'circuit.closed',
+          actor: auditActor,
+          connection,
+          invocation,
+          observer,
+          metadata: { circuitState: 'closed' },
+        });
+      }
+      if (circuitEvaluation?.probe) {
+        observer.emit('info', 'circuit.probe_completed', {
+          status: 'succeeded',
+          circuitState: circuitResult.state,
+        });
+        await bestEffortInvocationAudit({
+          action: 'circuit.probe_completed',
+          actor: auditActor,
+          connection,
+          invocation,
+          observer,
+          metadata: { circuitState: circuitResult.state, reasonCode: 'PROBE_SUCCEEDED' },
+        });
+      }
+      if (circuitResult.rateLimitCleared) {
+        observer.emit('info', 'rate_limit.protection_cleared', { status: 'cleared' });
+      }
+      if (healthResult.changed) {
+        observer.emit('info', 'connection.health_changed', {
+          fromState: healthResult.from,
+          toState: healthResult.to,
+          status: healthResult.to,
+        });
+        await bestEffortInvocationAudit({
+          action: 'connection.health_changed',
+          actor: auditActor,
+          connection,
+          invocation,
+          observer,
+          metadata: { fromState: healthResult.from, toState: healthResult.to },
+        });
+      }
+    } catch (protectionPersistenceError) {
+      observer.emit('warn', 'persistence.runtime_protection.failed', {
+        ...errorFields(protectionPersistenceError),
+        status: 'failed',
+      });
+    }
     await finishInvocationAttempt({
       attempt,
       status: 'succeeded',
@@ -995,6 +1143,145 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     runtimeError.traceId ||= actor.traceId;
     runtimeError.requestId ||= actor.requestId;
     runtimeError.connectionId ||= connectionId;
+    if (runtimeError.code === ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION) {
+      observer.emit('warn', 'invocation.shutdown_interrupted', {
+        status: 'recovery_required',
+        reasonCode: 'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
+        invocationId: invocation ? idOf(invocation) : undefined,
+      });
+      if (invocation && connection) {
+        await bestEffortInvocationAudit({
+          action: 'invocation.shutdown_interrupted',
+          actor: auditActor,
+          connection,
+          invocation,
+          observer,
+          metadata: { reasonCode: 'SHUTDOWN_DURING_EXTERNAL_INVOCATION' },
+        });
+      }
+    }
+    if (
+      [
+        ErrorCodes.CIRCUIT_OPEN,
+        ErrorCodes.CIRCUIT_HALF_OPEN_PROBE_ACTIVE,
+        ErrorCodes.RATE_LIMIT_PROTECTED,
+      ].includes(runtimeError.code)
+    ) {
+      observer.emit('warn', 'circuit.invocation_rejected', {
+        status: 'rejected',
+        errorCode: runtimeError.code,
+        retryAfterMs: runtimeError.retryAfterMs,
+        circuitState: runtimeError.circuitState,
+      });
+      if (invocation && connection) {
+        await bestEffortInvocationAudit({
+          action: 'circuit.invocation_rejected',
+          actor: auditActor,
+          connection,
+          invocation,
+          observer,
+          metadata: {
+            errorCode: runtimeError.code,
+            retryAfterMs: runtimeError.retryAfterMs,
+            circuitState: runtimeError.circuitState,
+          },
+        });
+      }
+    }
+    if (context) {
+      try {
+        const [circuitResult, healthResult] = await Promise.all([
+          recordCircuitFailure(
+            context.connection,
+            'runtime',
+            runtimeError,
+            actor.runtimeProtectionOptions,
+          ),
+          recordConnectionFailure(context.connection, runtimeError, actor.runtimeProtectionOptions),
+        ]);
+        if (circuitResult.rateLimited) {
+          observer.emit('warn', 'rate_limit.protection_started', {
+            status: 'active',
+            retryAfterMs: runtimeError.retryAfterMs,
+          });
+          await bestEffortInvocationAudit({
+            action: 'rate_limit.protection_started',
+            actor: auditActor,
+            connection,
+            invocation,
+            observer,
+            metadata: { retryAfterMs: runtimeError.retryAfterMs },
+          });
+        }
+        if (circuitResult.transitioned === 'opened' || circuitResult.reopened) {
+          observer.emit('warn', 'circuit.opened', {
+            status: 'open',
+            circuitState: 'open',
+            reasonCode: circuitResult.classification?.reason,
+          });
+          await bestEffortInvocationAudit({
+            action: 'circuit.opened',
+            actor: auditActor,
+            connection,
+            invocation,
+            observer,
+            metadata: {
+              circuitState: 'open',
+              reasonCode: circuitResult.classification?.reason,
+            },
+          });
+        }
+        if (circuitEvaluation?.probe && circuitResult.classification?.countsTowardCircuit) {
+          observer.emit('warn', 'circuit.probe_completed', { status: 'failed' });
+          await bestEffortInvocationAudit({
+            action: 'circuit.probe_completed',
+            actor: auditActor,
+            connection,
+            invocation,
+            observer,
+            metadata: { circuitState: 'open', reasonCode: 'PROBE_FAILED' },
+          });
+        } else if (circuitEvaluation?.probe) {
+          await releaseCircuitProbe(context.connection, 'runtime', actor.runtimeProtectionOptions);
+          observer.emit('info', 'circuit.probe_completed', {
+            status: 'deferred',
+            circuitState: 'half_open',
+            reasonCode: circuitResult.classification?.reason,
+          });
+          await bestEffortInvocationAudit({
+            action: 'circuit.probe_completed',
+            actor: auditActor,
+            connection,
+            invocation,
+            observer,
+            metadata: {
+              circuitState: 'half_open',
+              reasonCode: circuitResult.classification?.reason || 'PROBE_NOT_EXECUTED',
+            },
+          });
+        }
+        if (healthResult.changed) {
+          observer.emit('warn', 'connection.health_changed', {
+            fromState: healthResult.from,
+            toState: healthResult.to,
+            status: healthResult.to,
+          });
+          await bestEffortInvocationAudit({
+            action: 'connection.health_changed',
+            actor: auditActor,
+            connection,
+            invocation,
+            observer,
+            metadata: { fromState: healthResult.from, toState: healthResult.to },
+          });
+        }
+      } catch (protectionPersistenceError) {
+        observer.emit('warn', 'persistence.runtime_protection.failed', {
+          ...errorFields(protectionPersistenceError),
+          status: 'failed',
+        });
+      }
+    }
     if (invocation) {
       runtimeError.invocationId ||= idOf(invocation);
       const responsePersistenceUncertain = responseValidated;
@@ -1190,6 +1477,35 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       durationMs: Date.now() - startedAt,
     });
     throw runtimeError;
+  } finally {
+    if (capacityLease) {
+      try {
+        const released = await releaseRuntimeCapacity(
+          capacityLease,
+          actor.runtimeProtectionOptions,
+        );
+        observer.emit('info', 'capacity.released', {
+          status: 'released',
+          releasedSlots: released.released,
+        });
+        if (invocation && connection && auditActor) {
+          await bestEffortInvocationAudit({
+            action: 'capacity.released',
+            actor: auditActor,
+            connection,
+            invocation,
+            observer,
+            metadata: { releasedSlots: released.released },
+          });
+        }
+      } catch (releaseError) {
+        observer.emit('warn', 'capacity.release_failed', {
+          ...errorFields(releaseError),
+          status: 'failed',
+        });
+      }
+    }
+    lifecycleRegistration?.complete();
   }
 }
 

@@ -12,9 +12,14 @@ const SAFE_REMOTE_STAGES = new Set([
   'response_validation',
 ]);
 const SAFE_REMOTE_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
+const SAFE_TIMEOUT_REASONS = new Set([
+  'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  'GEMINI_DEADLINE_EXCEEDED',
+]);
 const SAFE_RECOVERY_REASONS = new Set([
   'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
   'AMBIGUOUS_REMOTE_OUTCOME',
+  'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
 ]);
 
 function isRecord(value) {
@@ -44,15 +49,41 @@ function parseResponseBody(bodyText) {
   }
 }
 
+function safeRetryAfterMs(value, now = Date.now()) {
+  if (typeof value !== 'string' || value.length > 128) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(3_600_000, Math.round(seconds * 1_000));
+  }
+  const date = Date.parse(value);
+  if (!Number.isFinite(date)) return undefined;
+  return Math.min(3_600_000, Math.max(0, date - now));
+}
+
+function safeConfiguredTimeoutMs(value) {
+  return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
+}
+
 function safeRemoteError(parsedBody) {
   const remote = isRecord(parsedBody?.error) ? parsedBody.error : undefined;
   if (!remote) return {};
+  const code =
+    typeof remote.code === 'string' && SAFE_REMOTE_CODE.test(remote.code) ? remote.code : undefined;
+  const timeoutReason =
+    code === 'GEMINI_REQUEST_TIMEOUT' &&
+    SAFE_TIMEOUT_REASONS.has(remote.timeoutReason || remote.reason)
+      ? remote.timeoutReason || remote.reason
+      : undefined;
+  const configuredTimeoutMs =
+    code === 'GEMINI_REQUEST_TIMEOUT'
+      ? safeConfiguredTimeoutMs(remote.configuredTimeoutMs)
+      : undefined;
   return {
-    ...(typeof remote.code === 'string' && SAFE_REMOTE_CODE.test(remote.code)
-      ? { code: remote.code }
-      : {}),
+    ...(code ? { code } : {}),
     ...(SAFE_REMOTE_STAGES.has(remote.stage) ? { stage: remote.stage } : {}),
     ...(SAFE_REMOTE_OPERATIONS.has(remote.operation) ? { operation: remote.operation } : {}),
+    ...(timeoutReason ? { timeoutReason } : {}),
+    ...(configuredTimeoutMs !== undefined ? { configuredTimeoutMs } : {}),
     ...(typeof remote.retryable === 'boolean' ? { remoteRetryable: remote.retryable } : {}),
     ...(remote.recoveryRequired === true ? { recoveryRequired: true } : {}),
     ...(SAFE_RECOVERY_REASONS.has(remote.recoveryReason)
@@ -146,6 +177,7 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
           : {}),
       },
       timeoutMs: env.RUNTIME_INVOCATION_TIMEOUT_MS,
+      signal: observability.signal,
       allowDevelopmentDemo: true,
       allowDevelopmentExternalAgent: true,
     }),
@@ -164,7 +196,13 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
           remoteStatus: response.status,
         },
       ],
-      { providerHttpStatus: response.status, ...remoteError },
+      {
+        providerHttpStatus: response.status,
+        ...(response.status === 429
+          ? { retryAfterMs: safeRetryAfterMs(response.headers?.['retry-after']) }
+          : {}),
+        ...remoteError,
+      },
     );
   }
 
@@ -194,4 +232,5 @@ module.exports = {
   outboundOptions,
   extractOutput,
   safeRemoteError,
+  safeRetryAfterMs,
 };

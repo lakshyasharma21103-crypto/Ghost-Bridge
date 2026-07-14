@@ -13,6 +13,7 @@ const { RuntimeError } = require('./utils/errors');
 const { logger: defaultLogger } = require('./utils/logger');
 const { createObserver } = require('./utils/observability');
 const { performance } = require('node:perf_hooks');
+const { createServiceLifecycle } = require('./services/serviceLifecycle');
 
 function corsOptions(allowedOrigins) {
   const allowed = new Set(allowedOrigins);
@@ -28,10 +29,16 @@ function corsOptions(allowedOrigins) {
   };
 }
 
-function createApp({ config, logger = defaultLogger, provider: suppliedProvider }) {
+function createApp({
+  config,
+  logger = defaultLogger,
+  provider: suppliedProvider,
+  lifecycle: suppliedLifecycle,
+}) {
   if (!config?.runtimeToken) throw new Error('External agent runtime configuration is required.');
   const provider = suppliedProvider || createAIProvider(config, { logger });
   const researchService = new ResearchService(provider, config);
+  const lifecycle = suppliedLifecycle || createServiceLifecycle();
 
   const app = express();
   app.disable('x-powered-by');
@@ -87,13 +94,14 @@ function createApp({ config, logger = defaultLogger, provider: suppliedProvider 
   );
 
   app.use('/health', healthRouter(provider, config));
-  app.get('/ready', readinessHandler(provider, config));
-  app.use('/v1/research', researchRouter(config.runtimeToken, researchService));
+  app.get('/ready', readinessHandler(provider, config, lifecycle));
+  app.use('/v1/research', researchRouter(config.runtimeToken, researchService, lifecycle));
   app.use((_request, _response, next) => {
     next(new RuntimeError(404, 'NOT_FOUND', 'Route not found.'));
   });
   app.use(errorHandler(logger));
 
+  app.locals.serviceLifecycle = lifecycle;
   return app;
 }
 

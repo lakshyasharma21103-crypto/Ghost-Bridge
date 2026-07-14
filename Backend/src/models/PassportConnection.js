@@ -34,6 +34,18 @@ const passportConnectionSchema = new mongoose.Schema(
     credentialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Credential' },
     lastHealthStatus: { type: String, trim: true },
     lastHealthCheckedAt: { type: Date },
+    healthStatus: {
+      type: String,
+      enum: ['unknown', 'healthy', 'degraded', 'unhealthy', 'disabled'],
+      default: 'unknown',
+      required: true,
+      index: true,
+    },
+    consecutiveHealthFailureCount: { type: Number, default: 0, min: 0 },
+    lastHealthTransitionAt: { type: Date },
+    lastHealthSuccessAt: { type: Date },
+    lastHealthFailureAt: { type: Date },
+    lastHealthReasonCode: { type: String, trim: true, match: /^[A-Z][A-Z0-9_]{0,127}$/ },
   },
   { timestamps: true },
 );
@@ -41,6 +53,7 @@ const passportConnectionSchema = new mongoose.Schema(
 passportConnectionSchema.index({ receivingWorkspaceId: 1, passportId: 1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, status: 1, updatedAt: -1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, lastHealthStatus: 1, updatedAt: -1 });
+passportConnectionSchema.index({ receivingWorkspaceId: 1, healthStatus: 1, updatedAt: -1 });
 
 module.exports =
   mongoose.models.PassportConnection ||

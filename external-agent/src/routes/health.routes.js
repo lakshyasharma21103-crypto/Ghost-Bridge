@@ -1,7 +1,7 @@
 const express = require('express');
 const { SERVICE_NAME, SERVICE_VERSION } = require('../constants');
 
-function healthRouter(provider, config) {
+function healthRouter(_provider, _config) {
   const router = express.Router();
 
   router.get('/', (request, response) => {
@@ -9,9 +9,8 @@ function healthRouter(provider, config) {
       success: true,
       data: {
         service: SERVICE_NAME,
-        status: 'healthy',
+        status: 'ok',
         version: SERVICE_VERSION,
-        ai: provider.checkConfiguration(),
       },
       meta: {
         traceId: request.traceId,
@@ -23,11 +22,13 @@ function healthRouter(provider, config) {
   return router;
 }
 
-function readinessHandler(provider, config) {
+function readinessHandler(provider, config, lifecycle) {
   return function readiness(request, response) {
     const ai = provider.checkConfiguration();
     const runtimeAuthenticationConfigured = Boolean(config?.runtimeToken);
-    const ready = ai.configured === true && runtimeAuthenticationConfigured;
+    const lifecycleState = lifecycle?.snapshot?.() || { ready: true, phase: 'ready' };
+    const ready =
+      lifecycleState.ready === true && ai.configured === true && runtimeAuthenticationConfigured;
     response.status(ready ? 200 : 503).json({
       success: ready,
       data: {
@@ -39,6 +40,7 @@ function readinessHandler(provider, config) {
           configured: ai.configured === true,
         },
         runtimeAuthentication: { configured: runtimeAuthenticationConfigured },
+        lifecycle: { status: lifecycleState.phase },
       },
       meta: { traceId: request.traceId, requestId: request.requestId },
     });

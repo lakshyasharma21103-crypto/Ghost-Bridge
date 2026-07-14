@@ -3,58 +3,159 @@ const { createApp } = require('./app');
 const { env } = require('./config/env');
 const { connectDatabase, disconnectDatabase } = require('./config/db');
 const { logger, safeLogPayload } = require('./utils/logger');
+const { databaseStatus } = require('./config/db');
+const { serviceLifecycle } = require('./services/serviceLifecycle.service');
+const { markActiveInvocationRecovery } = require('./services/invocationLifecycle.service');
 
-async function start() {
-  let shuttingDown = false;
-
-  const app = createApp();
+async function start(options = {}) {
+  const activeLogger = options.logger || logger;
+  const lifecycle = options.lifecycle || serviceLifecycle;
+  const connect = options.connectDatabase || connectDatabase;
+  const disconnect = options.disconnectDatabase || disconnectDatabase;
+  const app = createApp({ lifecycle });
   const server = http.createServer(app);
+  let shutdownPromise;
+  let forced = false;
 
-  async function shutdown(signal, exitCode = 0) {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    logger.info({ signal }, 'Shutting down Agent Passport Runtime Gateway backend');
-    server.close(async () => {
-      await disconnectDatabase();
-      process.exit(exitCode);
-    });
+  async function shutdown(signal = 'manual', exitCode = 0) {
+    if (shutdownPromise) {
+      forced = true;
+      activeLogger.warn({ signal }, 'Repeated shutdown signal forced backend termination');
+      lifecycle.abortActiveInvocations();
+      server.closeAllConnections?.();
+      return shutdownPromise;
+    }
+    shutdownPromise = (async () => {
+      lifecycle.beginDraining();
+      const startedAt = Date.now();
+      activeLogger.info(
+        {
+          event: 'service.draining_started',
+          signal,
+          activeInvocations: lifecycle.snapshot().activeInvocationCount,
+        },
+        'Backend shutdown drain started',
+      );
+      const serverClosed = new Promise((resolve) => server.close(resolve));
+      server.closeIdleConnections?.();
+      let drained = await lifecycle.waitForIdle(env.SHUTDOWN_DRAIN_TIMEOUT_MS);
+      if (!drained) {
+        const aborted = lifecycle.abortActiveInvocations();
+        activeLogger.warn({ aborted }, 'Backend shutdown drain deadline exceeded');
+        await lifecycle.waitForIdle(1_000);
+        for (const entry of lifecycle.snapshot().activeInvocations) {
+          if (!entry.externalCallStarted) continue;
+          try {
+            await markActiveInvocationRecovery({
+              invocationId: entry.invocationId,
+              receivingWorkspaceId: entry.workspaceId,
+              reasonCode: 'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
+            });
+          } catch (error) {
+            activeLogger.error(
+              { error: safeLogPayload(error), invocationId: entry.invocationId },
+              'Interrupted invocation recovery persistence failed',
+            );
+          }
+        }
+        server.closeAllConnections?.();
+        drained = lifecycle.snapshot().activeInvocationCount === 0;
+      }
+      const closeRemainingMs = Math.max(
+        1,
+        env.SHUTDOWN_DRAIN_TIMEOUT_MS - (Date.now() - startedAt),
+      );
+      let closeTimer;
+      const socketsClosed = await Promise.race([
+        serverClosed.then(() => true),
+        new Promise((resolve) => {
+          closeTimer = setTimeout(() => resolve(false), closeRemainingMs);
+        }),
+      ]);
+      clearTimeout(closeTimer);
+      if (!socketsClosed) {
+        forced = true;
+        server.closeAllConnections?.();
+        await serverClosed;
+      }
+      await disconnect();
+      lifecycle.markStopped();
+      activeLogger.info(
+        {
+          event: 'service.draining_completed',
+          signal,
+          drained,
+          forced,
+          durationMs: Date.now() - startedAt,
+        },
+        'Backend shutdown drain completed',
+      );
+      return { exitCode: forced ? 1 : exitCode, drained, forced };
+    })();
+    return shutdownPromise;
   }
 
   server.on('error', (error) => {
     if (error && error.code === 'EADDRINUSE') {
-      logger.fatal({ port: env.PORT }, 'Backend port is already in use');
+      activeLogger.fatal({ port: env.PORT }, 'Backend port is already in use');
       void shutdown('server-error', 1);
       return;
     }
 
-    logger.fatal({ error: safeLogPayload(error) }, 'Backend server failed');
+    activeLogger.fatal({ error: safeLogPayload(error) }, 'Backend server failed');
     void shutdown('server-error', 1);
   });
 
-  server.listen(env.PORT, () => {
-    logger.info({ port: env.PORT }, 'Agent Passport Runtime Gateway backend started');
-    connectDatabase().catch((error) => {
-      logger.error({ error: safeLogPayload(error) }, 'Background database connection failed');
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(options.port ?? env.PORT, options.host || '0.0.0.0', () => {
+      server.off('error', reject);
+      resolve();
     });
   });
+  activeLogger.info(
+    { port: options.port ?? env.PORT },
+    'Agent Passport Runtime Gateway backend started',
+  );
+  await connect();
+  if (databaseStatus() === 'connected' || options.connectDatabase) lifecycle.markReady();
 
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-  process.on('uncaughtException', (error) => {
-    logger.fatal({ error: safeLogPayload(error) }, 'Uncaught exception');
-    void shutdown('uncaughtException', 1);
-  });
-  process.on('unhandledRejection', (reason) => {
-    logger.fatal({ reason: safeLogPayload(reason) }, 'Unhandled rejection');
-    void shutdown('unhandledRejection', 1);
-  });
+  return { app, server, shutdown, lifecycle };
 }
 
 if (require.main === module) {
-  start().catch((error) => {
-    logger.fatal({ error: safeLogPayload(error) }, 'Failed to start backend');
-    process.exit(1);
-  });
+  let runtime;
+  const stop = (signal, exitCode = 0) => {
+    process.exitCode = exitCode;
+    runtime
+      ?.shutdown(signal, exitCode)
+      .then((result) => {
+        process.exitCode = result.exitCode;
+      })
+      .catch((error) => {
+        logger.error({ error: safeLogPayload(error) }, 'Backend shutdown failed');
+        process.exitCode = 1;
+      });
+  };
+  start()
+    .catch((error) => {
+      logger.fatal({ error: safeLogPayload(error) }, 'Failed to start backend');
+      process.exitCode = 1;
+    })
+    .then((started) => {
+      if (!started) return;
+      runtime = started;
+      process.on('SIGTERM', () => stop('SIGTERM'));
+      process.on('SIGINT', () => stop('SIGINT'));
+      process.on('uncaughtException', (error) => {
+        logger.fatal({ error: safeLogPayload(error) }, 'Uncaught exception');
+        stop('uncaughtException', 1);
+      });
+      process.on('unhandledRejection', (reason) => {
+        logger.fatal({ reason: safeLogPayload(reason) }, 'Unhandled rejection');
+        stop('unhandledRejection', 1);
+      });
+    });
 }
 
 module.exports = {

@@ -7,7 +7,14 @@ const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
 ]);
-const SAFE_RECOVERY_REASONS = new Set(['FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH']);
+const SAFE_RECOVERY_REASONS = new Set([
+  'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
+  'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
+]);
+
+function safeConfiguredTimeoutMs(value) {
+  return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
+}
 
 function normalizeError(error) {
   if (error instanceof RuntimeError) return error;
@@ -71,6 +78,15 @@ function errorHandler(logger) {
       normalized.recoveryRequired === true && SAFE_RECOVERY_REASONS.has(normalized.recoveryReason)
         ? normalized.recoveryReason
         : undefined;
+    const timeoutReason =
+      normalized.code === 'GEMINI_REQUEST_TIMEOUT' &&
+      SAFE_TIMEOUT_REASONS.has(normalized.timeoutReason || normalized.reason)
+        ? normalized.timeoutReason || normalized.reason
+        : undefined;
+    const configuredTimeoutMs =
+      normalized.code === 'GEMINI_REQUEST_TIMEOUT'
+        ? safeConfiguredTimeoutMs(normalized.configuredTimeoutMs)
+        : undefined;
 
     response.status(normalized.statusCode).json({
       success: false,
@@ -85,8 +101,12 @@ function errorHandler(logger) {
         ...(SAFE_GEMINI_OPERATIONS.has(normalized.operation)
           ? { operation: normalized.operation }
           : {}),
-        ...(SAFE_TIMEOUT_REASONS.has(normalized.reason) ? { reason: normalized.reason } : {}),
+        ...(timeoutReason ? { reason: timeoutReason, timeoutReason } : {}),
+        ...(configuredTimeoutMs !== undefined ? { configuredTimeoutMs } : {}),
         ...(recoveryReason ? { recoveryRequired: true, recoveryReason } : {}),
+        ...(Number.isInteger(normalized.retryAfterMs) && normalized.retryAfterMs >= 0
+          ? { retryAfterMs: normalized.retryAfterMs }
+          : {}),
         ...sourceDiagnostics,
       },
     });

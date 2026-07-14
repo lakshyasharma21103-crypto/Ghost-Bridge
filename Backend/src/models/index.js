@@ -8,6 +8,8 @@ const Invocation = require('./Invocation');
 const InvocationAttempt = require('./InvocationAttempt');
 const AuditLog = require('./AuditLog');
 const OperationalAlert = require('./OperationalAlert');
+const CircuitBreaker = require('./CircuitBreaker');
+const RuntimeCapacitySlot = require('./RuntimeCapacitySlot');
 
 module.exports = {
   Partner,
@@ -20,4 +22,6 @@ module.exports = {
   InvocationAttempt,
   AuditLog,
   OperationalAlert,
+  CircuitBreaker,
+  RuntimeCapacitySlot,
 };

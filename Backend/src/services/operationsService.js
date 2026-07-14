@@ -4,6 +4,9 @@ const Invocation = require('../models/Invocation');
 const OperationalAlert = require('../models/OperationalAlert');
 const PassportConnection = require('../models/PassportConnection');
 const PassportInstallKey = require('../models/PassportInstallKey');
+const CircuitBreaker = require('../models/CircuitBreaker');
+const RuntimeCapacitySlot = require('../models/RuntimeCapacitySlot');
+const mongoose = require('mongoose');
 const { databaseStatus } = require('../config/db');
 const { env } = require('../config/env');
 const { runtimeConfigurationStatus } = require('../controllers/healthController');
@@ -15,9 +18,17 @@ const {
   MAX_LATENCY_SAMPLE_SIZE,
 } = require('../constants/operations');
 const packageMetadata = require('../../package.json');
+const { serviceLifecycle } = require('./serviceLifecycle.service');
 
 const ALERT_WINDOW = '24h';
-const SAFE_HEALTH_STATUSES = new Set(['healthy', 'unhealthy', 'unreachable']);
+const SAFE_HEALTH_STATUSES = new Set([
+  'unknown',
+  'healthy',
+  'degraded',
+  'unhealthy',
+  'disabled',
+  'unreachable',
+]);
 const SAFE_ALERT_STATUSES = new Set(['active', 'acknowledged', 'resolved']);
 const IN_PROGRESS_LIFECYCLE_STATES = [
   'accepted',
@@ -404,7 +415,9 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
                 {
                   $and: [
                     { $eq: ['$status', 'connected'] },
-                    { $eq: ['$lastHealthStatus', 'healthy'] },
+                    {
+                      $eq: [{ $ifNull: ['$healthStatus', '$lastHealthStatus'] }, 'healthy'],
+                    },
                   ],
                 },
                 1,
@@ -418,7 +431,28 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
                 {
                   $and: [
                     { $eq: ['$status', 'connected'] },
-                    { $in: ['$lastHealthStatus', ['unhealthy', 'unreachable']] },
+                    {
+                      $in: [
+                        { $ifNull: ['$healthStatus', '$lastHealthStatus'] },
+                        ['unhealthy', 'unreachable'],
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          degraded: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'connected'] },
+                    {
+                      $eq: [{ $ifNull: ['$healthStatus', '$lastHealthStatus'] }, 'degraded'],
+                    },
                   ],
                 },
                 1,
@@ -438,7 +472,7 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
   ]);
   const items = await PassportConnection.find({ receivingWorkspaceId, status: 'connected' })
     .select(
-      '_id status runtimeType lastHealthStatus lastHealthCheckedAt resolvedPassportSnapshot.agent.name updatedAt',
+      '_id status runtimeType healthStatus lastHealthStatus lastHealthCheckedAt resolvedPassportSnapshot.agent.name updatedAt',
     )
     .sort({ lastHealthCheckedAt: -1, updatedAt: -1 })
     .limit(12)
@@ -459,6 +493,7 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
   const active = counts.active || 0;
   const healthy = counts.healthy || 0;
   const unhealthy = counts.unhealthy || 0;
+  const degraded = counts.degraded || 0;
   return {
     total: counts.total || 0,
     active,
@@ -466,18 +501,69 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
     disconnected: counts.disconnected || 0,
     error: counts.error || 0,
     healthCheckFailures: healthFailures,
-    health: { healthy, unhealthy, unknown: Math.max(0, active - healthy - unhealthy) },
+    health: {
+      healthy,
+      degraded,
+      unhealthy,
+      unknown: Math.max(0, active - healthy - degraded - unhealthy),
+    },
     items: items.map((item) => ({
       connectionId: String(item._id),
       agentName: item.resolvedPassportSnapshot?.agent?.name || 'Unnamed agent',
       runtimeType: item.runtimeType,
       status: item.status,
-      healthStatus: SAFE_HEALTH_STATUSES.has(item.lastHealthStatus)
-        ? item.lastHealthStatus
+      healthStatus: SAFE_HEALTH_STATUSES.has(item.healthStatus || item.lastHealthStatus)
+        ? item.healthStatus || item.lastHealthStatus
         : 'unknown',
       checkedAt: item.lastHealthCheckedAt || null,
       recentFailureCount: failuresByConnection.get(String(item._id)) || 0,
     })),
+  };
+}
+
+async function reliabilitySummary(receivingWorkspaceId, window) {
+  const lifecycle = serviceLifecycle.snapshot();
+  if (mongoose.connection.readyState !== 1) {
+    return {
+      circuits: { open: 0, halfOpen: 0 },
+      rateLimitedConnections: 0,
+      capacity: { activeInvocations: 0, activeSlots: 0, rejections: 0 },
+      service: { phase: lifecycle.phase, draining: lifecycle.draining },
+    };
+  }
+  const now = new Date();
+  const [circuitRows, rateLimitedConnections, capacityRows, capacityRejections] = await Promise.all(
+    [
+      CircuitBreaker.aggregate([
+        { $match: { workspaceId: receivingWorkspaceId, state: { $in: ['open', 'half_open'] } } },
+        { $group: { _id: '$state', count: { $sum: 1 } } },
+      ]),
+      CircuitBreaker.distinct('connectionId', {
+        workspaceId: receivingWorkspaceId,
+        rateLimitedUntil: { $gt: now },
+      }).then((ids) => ids.length),
+      RuntimeCapacitySlot.aggregate([
+        { $match: { workspaceId: receivingWorkspaceId, leaseExpiresAt: { $gt: now } } },
+        { $group: { _id: '$leaseId', slots: { $sum: 1 } } },
+        { $group: { _id: null, activeInvocations: { $sum: 1 }, activeSlots: { $sum: '$slots' } } },
+      ]),
+      AuditLog.countDocuments({
+        'metadata.receivingWorkspaceId': receivingWorkspaceId,
+        action: 'capacity.rejected',
+        ...(window ? { createdAt: { $gte: window.since } } : {}),
+      }),
+    ],
+  );
+  const circuitCounts = Object.fromEntries(circuitRows.map((row) => [row._id, row.count]));
+  return {
+    circuits: { open: circuitCounts.open || 0, halfOpen: circuitCounts.half_open || 0 },
+    rateLimitedConnections,
+    capacity: {
+      activeInvocations: capacityRows[0]?.activeInvocations || 0,
+      activeSlots: capacityRows[0]?.activeSlots || 0,
+      rejections: capacityRejections,
+    },
+    service: { phase: lifecycle.phase, draining: lifecycle.draining },
   };
 }
 
@@ -817,6 +903,13 @@ async function getErrors(input) {
 
 function alertRulesFromSignals(signals) {
   const rules = [];
+  const protection = signals.protection || {
+    circuits: {},
+    capacity: {},
+    service: {},
+    rateLimitedConnections: 0,
+  };
+  const audit = signals.audit || {};
   const add = (condition, rule) => {
     if (condition) rules.push(rule);
   };
@@ -832,6 +925,106 @@ function alertRulesFromSignals(signals) {
       database: signals.readiness.database,
       runtimeConfiguration: signals.readiness.runtimeConfiguration,
     },
+  });
+  add((protection.circuits.open || 0) >= 2, {
+    type: 'multiple_runtime_circuits_open',
+    severity: 'critical',
+    title: 'Multiple runtime circuits are open',
+    summary: 'Several isolated runtime connections are rejecting work to contain failures.',
+    metricName: 'open_runtime_circuits',
+    observedValue: protection.circuits.open,
+    thresholdValue: 2,
+    safeValues: { count: protection.circuits.open },
+  });
+  add((protection.circuits.open || 0) === 1, {
+    type: 'runtime_circuit_open',
+    severity: 'warning',
+    title: 'A runtime circuit is open',
+    summary: 'One runtime connection is temporarily rejecting work after repeated failures.',
+    metricName: 'open_runtime_circuits',
+    observedValue: protection.circuits.open,
+    thresholdValue: 1,
+    safeValues: { count: protection.circuits.open },
+  });
+  add((audit.circuitOpened || 0) >= 2, {
+    type: 'runtime_circuit_repeatedly_opened',
+    severity: 'warning',
+    title: 'A runtime circuit opened repeatedly',
+    summary: 'Repeated eligible failures or failed recovery probes reopened a runtime circuit.',
+    metricName: 'runtime_circuit_open_events',
+    observedValue: audit.circuitOpened,
+    thresholdValue: 2,
+    safeValues: { count: audit.circuitOpened },
+  });
+  add((protection.circuits.halfOpen || 0) > 0, {
+    type: 'runtime_circuit_half_open',
+    severity: 'warning',
+    title: 'Runtime circuit recovery probe is active',
+    summary: 'A limited half-open probe is evaluating runtime recovery.',
+    metricName: 'half_open_runtime_circuits',
+    observedValue: protection.circuits.halfOpen,
+    thresholdValue: 1,
+    safeValues: { count: protection.circuits.halfOpen },
+  });
+  add((protection.rateLimitedConnections || 0) > 0, {
+    type: 'runtime_rate_limit_protection_active',
+    severity: 'warning',
+    title: 'Runtime rate-limit protection is active',
+    summary: 'One or more connections are respecting an upstream rate-limit window.',
+    metricName: 'rate_limited_connections',
+    observedValue: protection.rateLimitedConnections,
+    thresholdValue: 1,
+    safeValues: { count: protection.rateLimitedConnections },
+  });
+  add((protection.capacity.rejections || 0) >= 3, {
+    type: 'runtime_capacity_rejections',
+    severity: 'warning',
+    title: 'Runtime capacity rejections are elevated',
+    summary: 'Per-connection or per-workspace bulkheads rejected repeated work.',
+    metricName: 'runtime_capacity_rejections',
+    observedValue: protection.capacity.rejections,
+    thresholdValue: 3,
+    safeValues: { count: protection.capacity.rejections },
+  });
+  add(protection.service.draining === true, {
+    type: 'service_draining',
+    severity: 'info',
+    title: 'Gateway shutdown draining began',
+    summary: 'New mutations are paused while active invocations drain.',
+    metricName: 'service_draining',
+    observedValue: true,
+    thresholdValue: false,
+    safeValues: { phase: protection.service.phase },
+  });
+  add((audit.circuitClosed || 0) > 0, {
+    type: 'runtime_circuit_recovered',
+    severity: 'info',
+    title: 'Runtime circuit recovered',
+    summary: 'A half-open runtime probe succeeded and closed its circuit.',
+    metricName: 'runtime_circuits_closed',
+    observedValue: audit.circuitClosed,
+    thresholdValue: 1,
+    safeValues: { count: audit.circuitClosed },
+  });
+  add((audit.connectionReturnedHealthy || 0) > 0, {
+    type: 'connection_returned_healthy',
+    severity: 'info',
+    title: 'Connection returned to healthy',
+    summary: 'A successful passive or active signal restored connection health.',
+    metricName: 'connections_returned_healthy',
+    observedValue: audit.connectionReturnedHealthy,
+    thresholdValue: 1,
+    safeValues: { count: audit.connectionReturnedHealthy },
+  });
+  add((audit.shutdownInterrupted || 0) > 0, {
+    type: 'shutdown_drain_deadline_exceeded',
+    severity: 'critical',
+    title: 'Shutdown drain deadline was exceeded',
+    summary: 'One or more transmitted invocations required shutdown recovery handling.',
+    metricName: 'shutdown_interrupted_invocations',
+    observedValue: audit.shutdownInterrupted,
+    thresholdValue: 1,
+    safeValues: { count: audit.shutdownInterrupted },
   });
   add(
     signals.invocations.total >= env.OPS_ALERT_FAILURE_RATE_MIN_INVOCATIONS &&
@@ -901,15 +1094,15 @@ function alertRulesFromSignals(signals) {
     thresholdValue: 1,
     safeValues: { count: signals.errors.credentialFailures },
   });
-  add(signals.audit.authFailures >= env.OPS_ALERT_AUTH_FAILURE_COUNT, {
+  add((audit.authFailures || 0) >= env.OPS_ALERT_AUTH_FAILURE_COUNT, {
     type: 'repeated_auth_failures',
     severity: 'critical',
     title: 'Repeated authorization failures detected',
     summary: `Authorization denials reached the configured count of ${env.OPS_ALERT_AUTH_FAILURE_COUNT}.`,
     metricName: 'authorization_failures',
-    observedValue: signals.audit.authFailures,
+    observedValue: audit.authFailures || 0,
     thresholdValue: env.OPS_ALERT_AUTH_FAILURE_COUNT,
-    safeValues: { count: signals.audit.authFailures },
+    safeValues: { count: audit.authFailures || 0 },
   });
   add(signals.errors.providerErrors >= env.OPS_ALERT_PROVIDER_ERROR_COUNT, {
     type: 'provider_errors',
@@ -971,6 +1164,16 @@ function alertRulesFromSignals(signals) {
     observedValue: signals.connections.health.unhealthy,
     thresholdValue: 1,
     safeValues: { count: signals.connections.health.unhealthy },
+  });
+  add((signals.connections.health.degraded || 0) > 0, {
+    type: 'degraded_connections',
+    severity: 'warning',
+    title: 'Connections are degraded',
+    summary: 'Eligible passive or active failures degraded one or more connections.',
+    metricName: 'degraded_connections',
+    observedValue: signals.connections.health.degraded,
+    thresholdValue: 1,
+    safeValues: { count: signals.connections.health.degraded },
   });
   add(
     signals.funnel.totals.resolutionAttempts >= 4 &&
@@ -1078,12 +1281,51 @@ async function alertAuditSignals(receivingWorkspaceId, window) {
       $match: {
         'metadata.receivingWorkspaceId': receivingWorkspaceId,
         createdAt: { $gte: window.since },
-        'metadata.errorCode': { $in: ['AUTHENTICATION_REQUIRED', 'FORBIDDEN'] },
       },
     },
-    { $group: { _id: null, authFailures: { $sum: 1 } } },
+    {
+      $group: {
+        _id: null,
+        authFailures: {
+          $sum: {
+            $cond: [
+              { $in: ['$metadata.errorCode', ['AUTHENTICATION_REQUIRED', 'FORBIDDEN']] },
+              1,
+              0,
+            ],
+          },
+        },
+        circuitClosed: { $sum: { $cond: [{ $eq: ['$action', 'circuit.closed'] }, 1, 0] } },
+        circuitOpened: { $sum: { $cond: [{ $eq: ['$action', 'circuit.opened'] }, 1, 0] } },
+        connectionReturnedHealthy: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$action', 'connection.health_changed'] },
+                  { $eq: ['$metadata.toState', 'healthy'] },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+        shutdownInterrupted: {
+          $sum: {
+            $cond: [{ $eq: ['$action', 'invocation.shutdown_interrupted'] }, 1, 0],
+          },
+        },
+      },
+    },
   ]);
-  return { authFailures: row.authFailures || 0 };
+  return {
+    authFailures: row.authFailures || 0,
+    circuitClosed: row.circuitClosed || 0,
+    circuitOpened: row.circuitOpened || 0,
+    connectionReturnedHealthy: row.connectionReturnedHealthy || 0,
+    shutdownInterrupted: row.shutdownInterrupted || 0,
+  };
 }
 
 async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date()) {
@@ -1177,7 +1419,7 @@ async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date
 
 async function evaluateWorkspaceAlerts(receivingWorkspaceId, connectionIds, now = new Date()) {
   const window = parseWindow(ALERT_WINDOW, now);
-  const [connections, invocations, funnel, latency, errors, audit] = await Promise.all([
+  const [connections, invocations, funnel, latency, errors, audit, protection] = await Promise.all([
     connectionSummary(receivingWorkspaceId, window, connectionIds),
     invocationSummary(receivingWorkspaceId, connectionIds, window),
     installationFunnel(receivingWorkspaceId, connectionIds, window),
@@ -1188,12 +1430,17 @@ async function evaluateWorkspaceAlerts(receivingWorkspaceId, connectionIds, now 
     }),
     alertErrorSignals(receivingWorkspaceId, connectionIds, window),
     alertAuditSignals(receivingWorkspaceId, window),
+    reliabilitySummary(receivingWorkspaceId, window),
   ]);
   const database = databaseStatus();
   const runtimeConfiguration = runtimeConfigurationStatus();
+  const lifecycle = serviceLifecycle.snapshot();
   const signals = {
     readiness: {
-      status: database === 'connected' && runtimeConfiguration === 'valid' ? 'ready' : 'not_ready',
+      status:
+        lifecycle.ready && database === 'connected' && runtimeConfiguration === 'valid'
+          ? 'ready'
+          : 'not_ready',
       database,
       runtimeConfiguration,
     },
@@ -1203,6 +1450,7 @@ async function evaluateWorkspaceAlerts(receivingWorkspaceId, connectionIds, now 
     latency: latency.overall,
     errors,
     audit,
+    protection,
   };
   await syncOperationalAlerts(receivingWorkspaceId, alertRulesFromSignals(signals), now);
 }
@@ -1225,23 +1473,28 @@ async function getSummary(input) {
   const identity = requireIdentity(input);
   const window = parseWindow(input?.window);
   const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
-  const [passports, connections, invocations, failures, funnel] = await Promise.all([
+  const [passports, connections, invocations, failures, funnel, protection] = await Promise.all([
     passportSummary(identity.receivingWorkspaceId, window),
     connectionSummary(identity.receivingWorkspaceId, window, connectionIds),
     invocationSummary(identity.receivingWorkspaceId, connectionIds, window),
     recentFailures(identity.receivingWorkspaceId, connectionIds, window),
     installationFunnel(identity.receivingWorkspaceId, connectionIds, window),
+    reliabilitySummary(identity.receivingWorkspaceId, window),
   ]);
   await evaluateWorkspaceAlerts(identity.receivingWorkspaceId, connectionIds);
   const database = databaseStatus();
   const runtimeConfiguration = runtimeConfigurationStatus();
+  const lifecycle = serviceLifecycle.snapshot();
   const funnelCounts = Object.fromEntries(funnel.steps.map((step) => [step.key, step.count]));
   return {
     window: windowView(window),
     readiness: {
       service: 'agent-passport-runtime-gateway',
       version: packageMetadata.version,
-      status: database === 'connected' && runtimeConfiguration === 'valid' ? 'ready' : 'not_ready',
+      status:
+        lifecycle.ready && database === 'connected' && runtimeConfiguration === 'valid'
+          ? 'ready'
+          : 'not_ready',
       database,
       runtimeConfiguration,
     },
@@ -1263,6 +1516,7 @@ async function getSummary(input) {
       verifiedConnections: funnelCounts.connectionsVerified || 0,
     },
     alerts: await alertCounts(identity.receivingWorkspaceId),
+    protection,
   };
 }
 
@@ -1354,6 +1608,7 @@ module.exports = {
   invocationSummary,
   safeFailure,
   alertRulesFromSignals,
+  reliabilitySummary,
   syncOperationalAlerts,
   getSummary,
   getLatency,

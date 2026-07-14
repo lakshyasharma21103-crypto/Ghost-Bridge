@@ -44,6 +44,7 @@ const environmentSchema = z
     EXTERNAL_AGENT_RUNTIME_TOKEN: z.string().min(32, 'must contain at least 32 characters'),
     ALLOWED_GATEWAY_ORIGINS: z.string().default(''),
     REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(1_800_000).default(300_000),
+    SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(100).max(300_000).default(30_000),
     AI_PROVIDER: z.enum(['gemini', 'mock']).default('gemini'),
     GEMINI_API_KEY: z.string().trim().optional(),
     GEMINI_MODEL: z.string().trim().optional(),
@@ -158,6 +159,7 @@ function readEnvironment(source = process.env) {
     runtimeToken: result.data.EXTERNAL_AGENT_RUNTIME_TOKEN,
     allowedGatewayOrigins: Object.freeze(parseOrigins(result.data.ALLOWED_GATEWAY_ORIGINS)),
     requestTimeoutMs: result.data.REQUEST_TIMEOUT_MS,
+    shutdownDrainTimeoutMs: result.data.SHUTDOWN_DRAIN_TIMEOUT_MS,
     aiProvider: result.data.AI_PROVIDER,
     gemini: Object.freeze({
       apiKey: result.data.GEMINI_API_KEY,

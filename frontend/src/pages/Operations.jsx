@@ -236,11 +236,54 @@ export function Operations() {
               value={number(summary?.connections?.health?.unhealthy)}
               tone="danger"
             />
+            <Stat
+              label="Degraded"
+              value={number(summary?.connections?.health?.degraded)}
+              tone="warning"
+            />
             <Stat label="Unknown" value={number(summary?.connections?.health?.unknown)} />
             <Stat label="Pending auth" value={number(summary?.connections?.pendingAuth)} />
           </div>
         </Section>
       </div>
+
+      <Section title="Runtime protection" icon={ShieldCheck} className="operations-section-spaced">
+        <div className="operations-stat-list">
+          <Stat
+            label="Open circuits"
+            value={number(summary?.protection?.circuits?.open)}
+            tone="danger"
+          />
+          <Stat
+            label="Half-open circuits"
+            value={number(summary?.protection?.circuits?.halfOpen)}
+            tone="warning"
+          />
+          <Stat
+            label="Rate-limited connections"
+            value={number(summary?.protection?.rateLimitedConnections)}
+            tone="warning"
+          />
+          <Stat
+            label="Active runtime work"
+            value={number(summary?.protection?.capacity?.activeInvocations)}
+          />
+          <Stat
+            label="Capacity rejections"
+            value={number(summary?.protection?.capacity?.rejections)}
+          />
+          <Stat
+            label="Service lifecycle"
+            value={humanize(summary?.protection?.service?.phase || 'unavailable')}
+            tone={summary?.protection?.service?.draining ? 'warning' : ''}
+          />
+          <Stat
+            label="Recovery required"
+            value={number(invocationMetrics.recoveryRequired)}
+            tone="warning"
+          />
+        </div>
+      </Section>
 
       <Section
         title="Internal alerts"

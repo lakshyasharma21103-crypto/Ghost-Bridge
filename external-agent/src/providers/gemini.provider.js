@@ -105,6 +105,10 @@ const FORMATTING_RECOVERY_CODES = new Set([
   'GEMINI_REQUEST_TIMEOUT',
   'GEMINI_UPSTREAM_UNAVAILABLE',
 ]);
+const SAFE_TIMEOUT_REASONS = new Set([
+  'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  'GEMINI_DEADLINE_EXCEEDED',
+]);
 
 function geminiError(code, configuration) {
   const [statusCode, message] = SAFE_ERRORS[code] || SAFE_ERRORS.GEMINI_UNKNOWN_ERROR;
@@ -181,6 +185,15 @@ function attachOperationDiagnostics(error, context = {}) {
     error.providerHttpStatus = context.providerHttpStatus;
   }
   if (context.providerStatus) error.providerStatus = context.providerStatus;
+  return error;
+}
+
+function attachTimeoutDiagnostics(error, timeoutMs) {
+  if (error.code !== 'GEMINI_REQUEST_TIMEOUT') return error;
+  if (SAFE_TIMEOUT_REASONS.has(error.reason)) error.timeoutReason = error.reason;
+  if (Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 1_800_000) {
+    error.configuredTimeoutMs = timeoutMs;
+  }
   return error;
 }
 
@@ -430,12 +443,15 @@ class GeminiProvider extends AIProvider {
       return await this.generate(parameters(timed.signal), maxAttempts, timed.signal, attemptState);
     } catch (error) {
       operationError = error;
-      const mapped = mapGeminiError(error, {
-        locallyAborted: timed.timedOut(),
-        operation,
-        webSearchEnabled: operation === 'grounded_research' && this.config.webSearchEnabled,
-        model: this.config.model,
-      });
+      const mapped = attachTimeoutDiagnostics(
+        mapGeminiError(error, {
+          locallyAborted: timed.timedOut(),
+          operation,
+          webSearchEnabled: operation === 'grounded_research' && this.config.webSearchEnabled,
+          model: this.config.model,
+        }),
+        timeoutMs,
+      );
       mapped.providerAttemptCount = attemptState.count;
       mapped.providerMaxAttempts = maxAttempts;
       throw mapped;

@@ -11,9 +11,15 @@ const { requestId } = require('./middleware/requestId');
 const { router } = require('./routes');
 const { createObserver } = require('./utils/observability');
 const { performance } = require('node:perf_hooks');
+const { serviceLifecycle } = require('./services/serviceLifecycle.service');
+const { AppError } = require('./utils/AppError');
+const { ErrorCodes } = require('./utils/errorCodes');
 
-function createApp() {
+function createApp(options = {}) {
+  const lifecycle = options.lifecycle || serviceLifecycle;
+  if (!options.lifecycle) lifecycle.markReady();
   const app = express();
+  app.locals.serviceLifecycle = lifecycle;
 
   app.disable('x-powered-by');
   app.use(helmet(helmetOptions));
@@ -40,6 +46,18 @@ function createApp() {
         durationMs: Math.max(0, Math.round((performance.now() - started) * 100) / 100),
       });
     });
+    next();
+  });
+  app.use((request, _response, next) => {
+    if (lifecycle.snapshot().draining && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+      next(
+        new AppError(503, ErrorCodes.SERVICE_DRAINING, 'Service is draining.', [], {
+          retryAfterMs: 1_000,
+          reasonCode: 'SERVICE_DRAINING',
+        }),
+      );
+      return;
+    }
     next();
   });
 

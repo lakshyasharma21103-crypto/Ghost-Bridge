@@ -348,6 +348,9 @@ async function safeFetch(rawUrl, options = {}) {
       await assertResolvedHostIsSafe(parsed, options);
 
       const controller = new AbortController();
+      const abortFromCaller = () => controller.abort(options.signal?.reason);
+      if (options.signal?.aborted) controller.abort(options.signal.reason);
+      else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       let response;
       try {
@@ -360,6 +363,7 @@ async function safeFetch(rawUrl, options = {}) {
         });
       } finally {
         clearTimeout(timeout);
+        options.signal?.removeEventListener('abort', abortFromCaller);
       }
 
       if (response.status >= 300 && response.status < 400) {

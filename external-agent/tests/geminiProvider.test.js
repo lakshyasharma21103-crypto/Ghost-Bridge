@@ -136,7 +136,9 @@ test('grounded research local timeout is stage-aware and does not begin formatti
     (error) =>
       error.code === 'GEMINI_REQUEST_TIMEOUT' &&
       error.operation === 'grounded_research' &&
-      error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+      error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' &&
+      error.timeoutReason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' &&
+      error.configuredTimeoutMs === 10,
   );
 
   assert.equal(calls.length, 1);
@@ -203,12 +205,16 @@ test('structured formatting local timeout is identified with a fresh controller'
       error.operation === 'structured_formatting' &&
       error.stage === 'structured_formatting' &&
       error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' &&
+      error.timeoutReason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' &&
+      error.configuredTimeoutMs === 10 &&
       error.recoveryRequired === true &&
       error.recoveryReason === 'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
   );
 
   assert.equal(calls.length, 2);
   assert.notEqual(calls[0].config.abortSignal, calls[1].config.abortSignal);
+  assert.equal(calls[0].config.abortSignal.aborted, false);
+  assert.equal(calls[1].config.abortSignal.aborted, true);
   const operationEntries = logger.entries.filter(
     (entry) => entry.message === 'Gemini operation completed',
   );
@@ -779,6 +785,89 @@ test('API key is absent from HTTP errors and captured logs', async (context) => 
   assert.equal(JSON.parse(text).error.code, 'GEMINI_AUTHENTICATION_FAILED');
   assert.equal(text.includes(TEST_CONFIG.apiKey), false);
   assert.equal(logLines.join('').includes(TEST_CONFIG.apiKey), false);
+});
+
+test('HTTP timeout errors expose only safe stage deadline metadata', async (context) => {
+  const providerSecret = 'private upstream timeout content that must not escape';
+  const raw = Object.assign(new Error(providerSecret), {
+    status: 504,
+    response: { data: { prompt: providerSecret, apiKey: TEST_CONFIG.apiKey } },
+  });
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, researchTimeoutMs: 115_000, formattingTimeoutMs: 90_000 },
+    { client: fakeClient([raw]) },
+  );
+  const logLines = [];
+  const logger = createLogger({
+    base: null,
+    destination: new Writable({
+      write(chunk, _encoding, callback) {
+        logLines.push(chunk.toString());
+        callback();
+      },
+    }),
+  });
+  const runtimeToken = 'test_runtime_secret_0123456789_abcdefghijklmnopqrstuvwxyz';
+  const server = http.createServer(
+    createApp({
+      provider,
+      logger,
+      config: {
+        runtimeToken,
+        allowedGatewayOrigins: [],
+        requestTimeoutMs: 300_000,
+        jsonBodyLimit: '32kb',
+        rateLimitWindowMs: 60_000,
+        rateLimitMax: 10,
+        aiProvider: 'gemini',
+        gemini: TEST_CONFIG,
+      },
+    }),
+  );
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  context.after(
+    () => new Promise((resolve) => (server.closeAllConnections?.(), server.close(resolve))),
+  );
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/research/invoke`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${runtimeToken}`,
+      'Content-Type': 'application/json',
+      'X-Request-Id': 'req_timeout-metadata',
+      'X-Trace-Id': 'trace_timeout-metadata',
+    },
+    body: JSON.stringify({ topic: 'Safe timeout metadata' }),
+  });
+  const text = await response.text();
+  const body = JSON.parse(text);
+  logger.flush?.();
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(
+    {
+      code: body.error.code,
+      operation: body.error.operation,
+      reason: body.error.reason,
+      timeoutReason: body.error.timeoutReason,
+      configuredTimeoutMs: body.error.configuredTimeoutMs,
+      requestId: body.error.requestId,
+      traceId: body.error.traceId,
+    },
+    {
+      code: 'GEMINI_REQUEST_TIMEOUT',
+      operation: 'grounded_research',
+      reason: 'GEMINI_DEADLINE_EXCEEDED',
+      timeoutReason: 'GEMINI_DEADLINE_EXCEEDED',
+      configuredTimeoutMs: 115_000,
+      requestId: 'req_timeout-metadata',
+      traceId: 'trace_timeout-metadata',
+    },
+  );
+  for (const forbidden of [providerSecret, TEST_CONFIG.apiKey, runtimeToken]) {
+    assert.equal(text.includes(forbidden), false);
+    assert.equal(logLines.join('').includes(forbidden), false);
+  }
 });
 
 test('HTTP formatting failures expose only safe recovery classification', async (context) => {

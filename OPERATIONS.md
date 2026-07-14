@@ -1,4 +1,4 @@
-# Phase 13A2 operations with Phase 13B1 lifecycle signals
+# Phase 13A2 operations with Phase 13B1 lifecycle and Phase 13B2 protection signals
 
 The Operations page and `/api/v1/operations` APIs provide receiving-workspace metrics from persisted
 gateway records. Every request requires the current receiving identity fields
@@ -29,7 +29,7 @@ limits must be between 1 and 100.
 - Passport totals include only distinct passports referenced by that workspace's connections.
   `active` means the persisted passport is `valid`. Invalid, suspended, draft, unknown, and updated
   during the window are reported separately.
-- Connection `active` means `connected`. Health is `healthy`, `unhealthy`/`unreachable`, or `unknown`
+- Connection `active` means `connected`. Health is `healthy`, `degraded`, `unhealthy`/`unreachable`, or `unknown`
   for an active connection without a recognized persisted result. Health-check failures count
   unhealthy or unreachable health audit results in the selected window.
 - Invocation success means authoritative lifecycle `succeeded` (or legacy `completed`). Deterministic
@@ -40,6 +40,9 @@ limits must be between 1 and 100.
 - Error groups contain only code, safe category, approved stage (or `unknown`), retryability, provider
   HTTP status, runtime type, connection health, count, percentage of failures, and latest timestamp.
   Raw messages, bodies, inputs, outputs, and stack traces are not projected.
+- Runtime protection reports workspace-scoped open and half-open circuits, rate-limited connections,
+  active lease groups/slots, capacity rejections, and the process draining phase. Circuit endpoint
+  identity hashes and capacity lease IDs are not returned to the dashboard.
 
 Overall latency uses succeeded or legacy completed invocations with a numeric `durationMs`. Average, min, max, p50, p95,
 and p99 are calculated from the 10,000 most recent matching invocations using linear interpolation

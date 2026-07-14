@@ -502,6 +502,35 @@ async function markExpiredInvocationLeaseRecovery(options) {
   return null;
 }
 
+async function markActiveInvocationRecovery(options) {
+  const invocationId = safeOptionalIdentifier(options?.invocationId, 'invocationId', {
+    required: true,
+  });
+  const receivingWorkspaceId = safeOptionalIdentifier(
+    options?.receivingWorkspaceId,
+    'receivingWorkspaceId',
+    { required: true },
+  );
+  const reasonCode = options?.reasonCode || 'SHUTDOWN_DURING_EXTERNAL_INVOCATION';
+  for (const fromState of ['running', 'waiting_for_runtime']) {
+    const update = transitionUpdate(fromState, 'recovery_required', {
+      ...options,
+      reasonCode,
+    });
+    const invocation = await Invocation.findOneAndUpdate(
+      { _id: invocationId, receivingWorkspaceId, lifecycleState: fromState },
+      update,
+      { new: true, runValidators: true },
+    );
+    if (invocation) {
+      const entry = update.$push.stateHistory.$each[0];
+      emitStateChange(options?.observer, invocation, fromState, 'recovery_required', entry);
+      return invocation;
+    }
+  }
+  return null;
+}
+
 async function claimInvocationExecution(options) {
   const invocationId = safeOptionalIdentifier(options?.invocationId, 'invocationId', {
     required: true,
@@ -599,6 +628,7 @@ module.exports = {
   isTerminalState,
   legacyStatusForState,
   markExpiredInvocationLeaseRecovery,
+  markActiveInvocationRecovery,
   transitionHistoryEntry,
   transitionInvocation,
   transitionUpdate,

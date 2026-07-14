@@ -1,5 +1,6 @@
 const { databaseStatus } = require('../config/db');
 const { env } = require('../config/env');
+const { serviceLifecycle } = require('../services/serviceLifecycle.service');
 
 function getHealth(_request, response) {
   response.json({
@@ -23,7 +24,13 @@ function runtimeConfigurationStatus() {
 function getReadiness(_request, response) {
   const database = databaseStatus();
   const runtimeConfiguration = runtimeConfigurationStatus();
-  const ready = database === 'connected' && runtimeConfiguration === 'valid';
+  const lifecycle =
+    _request?.app?.locals?.serviceLifecycle?.snapshot?.() || serviceLifecycle.snapshot();
+  const ready =
+    lifecycle.ready &&
+    !lifecycle.draining &&
+    database === 'connected' &&
+    runtimeConfiguration === 'valid';
   response.status(ready ? 200 : 503).json({
     success: ready,
     data: {
@@ -31,6 +38,7 @@ function getReadiness(_request, response) {
       status: ready ? 'ready' : 'not_ready',
       database: { status: database },
       runtimeConfiguration: { status: runtimeConfiguration },
+      lifecycle: { status: lifecycle.phase },
       timestamp: new Date().toISOString(),
     },
   });

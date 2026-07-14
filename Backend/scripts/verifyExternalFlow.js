@@ -39,13 +39,34 @@ const { start: startExternalAgent } = require('../../external-agent/src/server')
 
 const WORKSPACE_ID = `workspace_external_flow_${Date.now()}`;
 const USER_ID = `user_external_flow_${Date.now()}`;
-const TOPIC = 'external authenticated agent interoperability';
 const capturedGatewayLogs = [];
 const capturedExternalLogs = [];
 const capturedApiResponses = [];
+const SAFE_HEALTH_STATUSES = new Set(['ok', 'healthy', 'alive']);
+const SAFE_READINESS_STATUSES = new Set(['ready', 'not_ready']);
+const SAFE_PROVIDER_NAMES = new Set(['gemini', 'mock']);
+const SAFE_LIFECYCLE_STATUSES = new Set(['starting', 'ready', 'draining', 'stopped']);
+const SAFE_GEMINI_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
+const SAFE_SOURCE_EXTRACTION_CODES = new Set([
+  'GEMINI_GROUNDING_METADATA_MISSING',
+  'GEMINI_SOURCE_PARSING_FAILED',
+]);
+
+function verificationResearchTopic(now = new Date()) {
+  const currentDate = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const date = currentDate.toISOString().slice(0, 10);
+  return (
+    'Using current official web sources, identify the latest published release/version status ' +
+    'and publication dates of the Model Context Protocol and Agent2Agent Protocol ' +
+    `specifications as of ${date}`
+  );
+}
+
+const TOPIC = verificationResearchTopic();
 
 const VERIFICATION_STAGES = Object.freeze([
   'external_health',
+  'external_readiness',
   'sandbox_partner',
   'passport_upsert',
   'install_key_issue',
@@ -67,9 +88,19 @@ class ExternalFlowVerificationError extends Error {
       'stage',
       'httpStatus',
       'applicationErrorCode',
+      'readinessStatus',
+      'providerName',
+      'draining',
+      'sourceExtractionCode',
+      'groundingMetadataPresent',
+      'groundingChunkCount',
+      'webSearchQueryCount',
       'requestId',
+      'traceId',
       'durationMs',
+      'operation',
       'timeoutReason',
+      'configuredTimeoutMs',
       'connectionId',
     ]) {
       if (options[field] !== undefined) this[field] = options[field];
@@ -92,6 +123,70 @@ function safeIdentifier(value) {
   return value;
 }
 
+function safeHealthStatus(value) {
+  return SAFE_HEALTH_STATUSES.has(value) ? value : undefined;
+}
+
+function safeReadinessStatus(value) {
+  return SAFE_READINESS_STATUSES.has(value) ? value : undefined;
+}
+
+function safeProviderName(value) {
+  return SAFE_PROVIDER_NAMES.has(value) ? value : undefined;
+}
+
+function safeLifecycleStatus(value) {
+  return SAFE_LIFECYCLE_STATUSES.has(value) ? value : undefined;
+}
+
+function safeSourceExtractionCode(value) {
+  return SAFE_SOURCE_EXTRACTION_CODES.has(value) ? value : undefined;
+}
+
+function safeDiagnosticCount(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 1_000_000 ? value : undefined;
+}
+
+function safeGeminiOperation(value) {
+  return SAFE_GEMINI_OPERATIONS.has(value) ? value : undefined;
+}
+
+function safeConfiguredTimeoutMs(value) {
+  return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
+}
+
+function sourceExtractionDiagnostics(logChunks, identifiers = {}) {
+  const records = (Array.isArray(logChunks) ? logChunks : [])
+    .join('')
+    .split(/\r?\n/)
+    .filter(Boolean);
+
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    let record;
+    try {
+      record = JSON.parse(records[index]);
+    } catch {
+      continue;
+    }
+    if (!record || record.event !== 'gemini.source_extraction.failed') continue;
+    if (identifiers.requestId && safeIdentifier(record.requestId) !== identifiers.requestId)
+      continue;
+    if (identifiers.traceId && safeIdentifier(record.traceId) !== identifiers.traceId) continue;
+
+    return {
+      sourceExtractionCode: safeSourceExtractionCode(record.internalCode),
+      groundingMetadataPresent:
+        typeof record.groundingMetadataPresent === 'boolean'
+          ? record.groundingMetadataPresent
+          : undefined,
+      groundingChunkCount: safeDiagnosticCount(record.groundingChunkCount),
+      webSearchQueryCount: safeDiagnosticCount(record.webSearchQueryCount),
+    };
+  }
+
+  return {};
+}
+
 function errorField(error, field) {
   let current = error;
   for (let depth = 0; current && depth < 5; depth += 1) {
@@ -111,6 +206,8 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
     errorField(error, 'reason') ??
     (applicationErrorCode === 'SAFE_FETCH_TIMEOUT' ? 'SAFE_FETCH_TIMEOUT' : undefined) ??
     (errorField(error, 'name') === 'AbortError' ? 'LOCAL_VERIFICATION_REQUEST_TIMEOUT' : undefined);
+  const rawDraining = errorField(error, 'draining');
+  const rawGroundingMetadataPresent = errorField(error, 'groundingMetadataPresent');
 
   return new ExternalFlowVerificationError(
     error instanceof ExternalFlowVerificationError && typeof error.message === 'string'
@@ -121,9 +218,20 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
       stage: state.stage,
       httpStatus: Number.isInteger(httpStatus) ? httpStatus : undefined,
       applicationErrorCode,
+      readinessStatus: safeReadinessStatus(errorField(error, 'readinessStatus')),
+      providerName: safeProviderName(errorField(error, 'providerName')),
+      draining: typeof rawDraining === 'boolean' ? rawDraining : undefined,
+      sourceExtractionCode: safeSourceExtractionCode(errorField(error, 'sourceExtractionCode')),
+      groundingMetadataPresent:
+        typeof rawGroundingMetadataPresent === 'boolean' ? rawGroundingMetadataPresent : undefined,
+      groundingChunkCount: safeDiagnosticCount(errorField(error, 'groundingChunkCount')),
+      webSearchQueryCount: safeDiagnosticCount(errorField(error, 'webSearchQueryCount')),
       requestId: safeIdentifier(errorField(error, 'requestId')),
+      traceId: safeIdentifier(errorField(error, 'traceId')),
       durationMs: Math.max(0, now - state.stageStartedAt),
+      operation: safeGeminiOperation(errorField(error, 'operation')),
       timeoutReason: safeCode(rawTimeoutReason),
+      configuredTimeoutMs: safeConfiguredTimeoutMs(errorField(error, 'configuredTimeoutMs')),
       connectionId:
         safeIdentifier(errorField(error, 'connectionId')) ?? safeIdentifier(state.connectionId),
     },
@@ -136,10 +244,24 @@ function formatVerificationFailure(error) {
     `Failed stage: ${VERIFICATION_STAGES.includes(error.stage) ? error.stage : '[unavailable]'}`,
     `HTTP status: ${Number.isInteger(error.httpStatus) ? error.httpStatus : '[unavailable]'}`,
     `Application error code: ${safeCode(error.applicationErrorCode) || '[unavailable]'}`,
+    `Readiness status: ${safeReadinessStatus(error.readinessStatus) || '[unavailable]'}`,
+    `Provider: ${safeProviderName(error.providerName) || '[unavailable]'}`,
+    `Draining: ${typeof error.draining === 'boolean' ? error.draining : '[unavailable]'}`,
+    `Source extraction code: ${safeSourceExtractionCode(error.sourceExtractionCode) || '[unavailable]'}`,
+    `Grounding metadata present: ${
+      typeof error.groundingMetadataPresent === 'boolean'
+        ? error.groundingMetadataPresent
+        : '[unavailable]'
+    }`,
+    `Grounding chunk count: ${safeDiagnosticCount(error.groundingChunkCount) ?? '[unavailable]'}`,
+    `Web Search query count: ${safeDiagnosticCount(error.webSearchQueryCount) ?? '[unavailable]'}`,
     `Safe message: ${redactString(String(error.message || 'External-flow verification failed.'))}`,
     `Request ID: ${safeIdentifier(error.requestId) || '[unavailable]'}`,
+    `Trace ID: ${safeIdentifier(error.traceId) || '[unavailable]'}`,
     `Duration ms: ${Number.isInteger(error.durationMs) ? error.durationMs : '[unavailable]'}`,
+    `Operation: ${safeGeminiOperation(error.operation) || '[unavailable]'}`,
     `Timeout reason: ${safeCode(error.timeoutReason) || '[unavailable]'}`,
+    `Configured timeout ms: ${safeConfiguredTimeoutMs(error.configuredTimeoutMs) ?? '[unavailable]'}`,
     `Connection ID: ${safeIdentifier(error.connectionId) || '[unavailable]'}`,
   ].join('\n');
 }
@@ -242,7 +364,7 @@ async function request(baseUrl, path, options = {}) {
   timer.unref?.();
   let response;
   try {
-    response = await fetch(`${baseUrl}${path}`, {
+    response = await (options.fetchFn || fetch)(`${baseUrl}${path}`, {
       method: options.method || 'GET',
       headers: {
         Accept: 'application/json',
@@ -259,6 +381,10 @@ async function request(baseUrl, path, options = {}) {
         error?.name === 'TimeoutError' ? 'VERIFICATION_REQUEST_TIMEOUT' : undefined,
       timeoutReason:
         error?.name === 'TimeoutError' ? 'LOCAL_VERIFICATION_REQUEST_TIMEOUT' : undefined,
+      requestId: safeIdentifier(
+        options.headers?.['X-Request-Id'] || options.headers?.['x-request-id'],
+      ),
+      traceId: safeIdentifier(options.headers?.['X-Trace-Id'] || options.headers?.['x-trace-id']),
       connectionId: options.connectionId,
     });
   } finally {
@@ -283,16 +409,135 @@ async function request(baseUrl, path, options = {}) {
 function success(result, label, options = {}) {
   if (!result.response.ok || result.body?.success === false) {
     const code = result.body?.error?.code || `HTTP_${result.response.status}`;
+    const identifiers = safeResponseIdentifiers(result);
+    const sourceDiagnostics =
+      code === 'GEMINI_SOURCE_EXTRACTION_FAILED'
+        ? sourceExtractionDiagnostics(
+            options.externalLogChunks ?? capturedExternalLogs,
+            identifiers,
+          )
+        : {};
+    const timeoutDiagnostics =
+      code === 'GEMINI_REQUEST_TIMEOUT'
+        ? {
+            operation: safeGeminiOperation(result.body?.error?.operation),
+            timeoutReason: safeCode(
+              result.body?.error?.timeoutReason || result.body?.error?.reason,
+            ),
+            configuredTimeoutMs: safeConfiguredTimeoutMs(result.body?.error?.configuredTimeoutMs),
+          }
+        : {};
     throw new ExternalFlowVerificationError(`${label} failed.`, {
       httpStatus: result.response.status,
       applicationErrorCode: safeCode(code),
-      requestId:
-        result.body?.error?.requestId || result.response.headers.get('x-request-id') || undefined,
-      timeoutReason: result.body?.error?.reason,
+      ...identifiers,
+      ...sourceDiagnostics,
+      ...timeoutDiagnostics,
       connectionId: options.connectionId,
     });
   }
   return result.body.data;
+}
+
+function safeResponseIdentifiers(result) {
+  return {
+    requestId: safeIdentifier(
+      result?.body?.meta?.requestId ||
+        result?.body?.error?.requestId ||
+        result?.response?.headers?.get?.('x-request-id'),
+    ),
+    traceId: safeIdentifier(
+      result?.body?.meta?.traceId ||
+        result?.body?.error?.traceId ||
+        result?.response?.headers?.get?.('x-trace-id'),
+    ),
+  };
+}
+
+function validateExternalHealth(result) {
+  const identifiers = safeResponseIdentifiers(result);
+  const health = result?.body?.data;
+  const options = {
+    httpStatus: Number.isInteger(result?.response?.status) ? result.response.status : undefined,
+    applicationErrorCode: safeCode(result?.body?.error?.code),
+    ...identifiers,
+  };
+  if (!result?.response?.ok || result?.body?.success === false) {
+    throw new ExternalFlowVerificationError('External liveness check failed.', options);
+  }
+  if (health?.service !== 'external-research-agent') {
+    throw new ExternalFlowVerificationError(
+      'External health identified the wrong service.',
+      options,
+    );
+  }
+  if (!safeHealthStatus(health?.status)) {
+    throw new ExternalFlowVerificationError(
+      'External health did not confirm process liveness.',
+      options,
+    );
+  }
+  return health;
+}
+
+function readinessDiagnostics(result) {
+  const readiness = result?.body?.data;
+  const lifecycleStatus = safeLifecycleStatus(readiness?.lifecycle?.status);
+  return {
+    httpStatus: Number.isInteger(result?.response?.status) ? result.response.status : undefined,
+    applicationErrorCode: safeCode(result?.body?.error?.code),
+    readinessStatus: safeReadinessStatus(readiness?.status),
+    providerName: safeProviderName(readiness?.ai?.provider),
+    draining: lifecycleStatus ? lifecycleStatus === 'draining' : undefined,
+    ...safeResponseIdentifiers(result),
+  };
+}
+
+function validateExternalReadiness(result) {
+  const readiness = result?.body?.data;
+  const diagnostics = readinessDiagnostics(result);
+  const fail = (message) => {
+    throw new ExternalFlowVerificationError(message, diagnostics);
+  };
+  if (!result?.response?.ok || result?.body?.success === false) {
+    fail('External service is not ready.');
+  }
+  if (readiness?.service !== 'external-research-agent') {
+    fail('External readiness identified the wrong service.');
+  }
+  if (readiness?.status !== 'ready') {
+    fail('External readiness did not confirm the service is ready.');
+  }
+  if (readiness?.lifecycle?.status !== 'ready') {
+    fail('External readiness did not confirm that the service is accepting work.');
+  }
+  if (readiness?.ai?.provider !== 'gemini') {
+    fail('External readiness did not identify Gemini.');
+  }
+  if (readiness?.ai?.configured !== true) {
+    fail('External Gemini provider configuration is unavailable.');
+  }
+  if (readiness?.runtimeAuthentication?.configured !== true) {
+    fail('External runtime authentication configuration is unavailable.');
+  }
+  return readiness;
+}
+
+async function verifyExternalStartup(externalBaseUrl, state, options = {}) {
+  const requestFn = options.requestFn || request;
+  const reportFn = options.reportFn || report;
+  beginStage(state, 'external_health');
+  validateExternalHealth(await requestFn(externalBaseUrl, '/health', { label: 'external health' }));
+  reportFn('external liveness', 'independent research-agent process is alive');
+
+  beginStage(state, 'external_readiness');
+  validateExternalReadiness(
+    await requestFn(externalBaseUrl, '/ready', { label: 'external readiness' }),
+  );
+  reportFn(
+    'external readiness',
+    'Gemini and runtime authentication are configured without a provider request',
+  );
 }
 
 async function verify() {
@@ -328,17 +573,7 @@ async function verify() {
     const externalBaseUrl = `http://127.0.0.1:${externalAgentPort}`;
     const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}/api/v1`;
 
-    const health = success(
-      await request(externalBaseUrl, '/health', { label: 'external health' }),
-      'external health',
-    );
-    assert(
-      health.service === 'external-research-agent',
-      'External health identified the wrong service.',
-    );
-    assert(health.ai?.provider === 'gemini', 'External health did not identify Gemini.');
-    assert(health.ai?.configured === true, 'External Gemini provider is not configured.');
-    report('external service', 'independent Gemini research agent is healthy');
+    await verifyExternalStartup(externalBaseUrl, state);
 
     beginStage(state, 'sandbox_partner');
     const partner = success(
@@ -674,7 +909,13 @@ module.exports = {
   beginStage,
   formatVerificationFailure,
   request,
+  readinessDiagnostics,
+  sourceExtractionDiagnostics,
   success,
+  validateExternalHealth,
+  validateExternalReadiness,
   verify,
+  verifyExternalStartup,
+  verificationResearchTopic,
   wrapVerificationFailure,
 };

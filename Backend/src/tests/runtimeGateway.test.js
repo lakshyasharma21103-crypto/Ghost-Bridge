@@ -6,6 +6,8 @@ const PassportConnection = require('../models/PassportConnection');
 const Credential = require('../models/Credential');
 const Invocation = require('../models/Invocation');
 const InvocationAttempt = require('../models/InvocationAttempt');
+const CircuitBreaker = require('../models/CircuitBreaker');
+const RuntimeCapacitySlot = require('../models/RuntimeCapacitySlot');
 const AuditLog = require('../models/AuditLog');
 const safeFetchUtility = require('../utils/safeFetch');
 const { adapters } = require('../services/adapters');
@@ -325,6 +327,101 @@ test('invalid capability input persists a failed invocation before the runtime i
     assert.equal(runtimeCalled, false);
     assert.equal(latestInvocationDocument.lifecycleState, 'failed');
     assert.equal(latestInvocationDocument.error.code, ErrorCodes.CAPABILITY_INPUT_INVALID);
+  } finally {
+    restore(patches);
+  }
+});
+
+test('an open circuit rejects before attempt creation or outbound runtime I/O', async () => {
+  const patches = [];
+  let outboundCalls = 0;
+  patchInvocationContext(patches);
+  patch(Invocation, 'create', async (doc) => invocationDocument(doc), patches);
+  patch(
+    CircuitBreaker,
+    'findOneAndUpdate',
+    async () => ({
+      _id: 'breaker_123',
+      connectionId: 'connection_123',
+      state: 'open',
+      version: 1,
+      openUntil: new Date(Date.now() + 5_000),
+    }),
+    patches,
+  );
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async () => {
+      outboundCalls += 1;
+    },
+    patches,
+  );
+
+  try {
+    await assert.rejects(
+      () =>
+        invoke(
+          'connection_123',
+          'research_topic',
+          { topic: 'FIFA' },
+          {
+            runtimeProtectionOptions: { forcePersistence: true },
+          },
+        ),
+      { code: ErrorCodes.CIRCUIT_OPEN },
+    );
+    assert.equal(outboundCalls, 0);
+    assert.equal(latestAttemptDocument, undefined);
+    assert.equal(latestInvocationDocument.lifecycleState, 'failed');
+  } finally {
+    restore(patches);
+  }
+});
+
+test('capacity denial rejects before attempt creation or outbound runtime I/O', async () => {
+  const patches = [];
+  let outboundCalls = 0;
+  patchInvocationContext(patches);
+  patch(Invocation, 'create', async (doc) => invocationDocument(doc), patches);
+  patch(
+    CircuitBreaker,
+    'findOneAndUpdate',
+    async () => ({
+      _id: 'breaker_123',
+      connectionId: 'connection_123',
+      state: 'closed',
+      version: 1,
+      halfOpenProbeInFlight: false,
+    }),
+    patches,
+  );
+  patch(RuntimeCapacitySlot, 'findOneAndUpdate', async () => null, patches);
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async () => {
+      outboundCalls += 1;
+    },
+    patches,
+  );
+
+  try {
+    await assert.rejects(
+      () =>
+        invoke(
+          'connection_123',
+          'research_topic',
+          { topic: 'FIFA' },
+          {
+            runtimeProtectionOptions: { forcePersistence: true },
+          },
+        ),
+      { code: ErrorCodes.RUNTIME_CAPACITY_EXCEEDED },
+    );
+    assert.equal(outboundCalls, 0);
+    assert.equal(latestAttemptDocument, undefined);
+    assert.equal(latestInvocationDocument.lifecycleState, 'failed');
   } finally {
     restore(patches);
   }

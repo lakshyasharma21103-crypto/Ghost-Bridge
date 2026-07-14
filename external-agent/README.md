@@ -4,7 +4,7 @@ An independently runnable and deployable Gemini-powered research runtime used th
 
 ## API
 
-- `GET /health` is unauthenticated and returns service identity and health.
+- `GET /health` is unauthenticated process liveness. `GET /ready` checks local configuration and draining state without calling Gemini.
 - `POST /v1/research/invoke` requires `Authorization: Bearer <token>` and a JSON body such as `{ "topic": "latest AI infrastructure trends" }`.
 
 Successful invocation responses retain the existing `response.summary`, `response.sources`, and `response.runtime` contract. Runtime metadata identifies the configured provider and model without exposing credentials or provider internals.
@@ -22,6 +22,7 @@ Copy `.env.example` to `.env` only for local use and replace the placeholder tok
 | `EXTERNAL_AGENT_RUNTIME_TOKEN`   | Yes      | None          | Random bearer secret of at least 32 characters.                                                                                                        |
 | `ALLOWED_GATEWAY_ORIGINS`        | No       | Empty         | Comma-separated HTTP(S) browser origins. Requests without an Origin header remain allowed for server-to-server invocation. CORS is not authentication. |
 | `REQUEST_TIMEOUT_MS`             | No       | `300000`      | Per-request timeout. Must exceed both Gemini stage deadlines plus 10 seconds of processing overhead.                                                   |
+| `SHUTDOWN_DRAIN_TIMEOUT_MS`      | No       | `30000`       | Bounded time for active research to finish after readiness is disabled; provider work is aborted at the deadline.                                      |
 | `AI_PROVIDER`                    | No       | `gemini`      | `gemini`, or explicit `mock` use during tests/local development. Mock is rejected in production.                                                       |
 | `GEMINI_API_KEY`                 | Gemini   | None          | Gemini credential stored only in this deployment's secret manager.                                                                                     |
 | `GEMINI_MODEL`                   | Gemini   | None          | Model available to the configured Gemini API project. No model is hardcoded.                                                                           |
@@ -119,7 +120,7 @@ TLS is expected to terminate at the hosting platform or reverse proxy. The Node 
 
 ## Security behavior
 
-Bearer authentication uses a timing-safe digest comparison. The app also applies strict Zod input/output validation, a 32 KB JSON limit, request and provider timeouts, cancellation, rate limiting, single-attempt grounded research, one optional bounded formatting-only retry, output/source limits, security headers, optional CORS restrictions, safe request IDs, production-safe errors, redacted structured logs, and graceful shutdown. Google Search results and topics are treated as untrusted data.
+Bearer authentication uses a timing-safe digest comparison. The app also applies strict Zod input/output validation, a 32 KB JSON limit, request and provider timeouts, cancellation, rate limiting, single-attempt grounded research, one optional bounded formatting-only retry, output/source limits, security headers, optional CORS restrictions, safe request IDs, production-safe errors, redacted structured logs, and bounded graceful shutdown. Readiness becomes false before draining, new research receives 503, and active Gemini signals are aborted only after the drain deadline. Google Search results and topics are treated as untrusted data.
 
 ## Known limitations
 

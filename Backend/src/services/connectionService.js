@@ -9,6 +9,12 @@ const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { hashKey, decryptPayload, encryptPayload } = require('../utils/crypto');
 const safeFetchUtility = require('../utils/safeFetch');
+const { recordCircuitFailure, recordCircuitSuccess } = require('./circuitBreaker.service');
+const {
+  currentHealth,
+  recordConnectionFailure,
+  recordConnectionSuccess,
+} = require('./connectionHealth.service');
 const { createObserver } = require('../utils/observability');
 const { runtimeSupport } = require('./adapters');
 
@@ -150,6 +156,7 @@ function safeConnectionView(connection, options = {}) {
     },
     installScope: connection.installScope || installation.scope,
     lastHealthStatus: connection.lastHealthStatus || null,
+    healthStatus: currentHealth(connection),
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
   };
@@ -747,9 +754,32 @@ async function checkConnectionHealth(connectionId, body, requestId) {
       allowDevelopmentDemo: true,
       allowDevelopmentExternalAgent: true,
     });
-    connection.lastHealthStatus = remoteResponse.ok ? 'healthy' : 'unhealthy';
-    connection.lastHealthCheckedAt = checkedAt;
-    await connection.save();
+    let healthResult;
+    if (remoteResponse.ok) {
+      healthResult = await recordConnectionSuccess(connection, { now: checkedAt });
+      await recordCircuitSuccess(connection, 'runtime', { now: checkedAt });
+      if (healthResult.to === 'unknown' && typeof connection.save === 'function') {
+        connection.healthStatus = 'healthy';
+        connection.lastHealthStatus = 'healthy';
+        connection.lastHealthCheckedAt = checkedAt;
+        connection.lastHealthSuccessAt = checkedAt;
+        connection.consecutiveHealthFailureCount = 0;
+        await connection.save();
+        healthResult = { changed: true, from: 'unknown', to: 'healthy' };
+      }
+    } else {
+      const metadata = {
+        code: 'RUNTIME_READINESS_FAILED',
+        providerHttpStatus: remoteResponse.status,
+        stage: 'connection_health_check',
+      };
+      healthResult = await recordConnectionFailure(connection, metadata, {
+        now: checkedAt,
+        activeCheck: true,
+      });
+      await recordCircuitFailure(connection, 'runtime', metadata, { now: checkedAt });
+    }
+    const healthStatus = healthResult.to || currentHealth(connection);
     await createAuditLog(
       'user',
       identity.receivingUserId,
@@ -761,24 +791,49 @@ async function checkConnectionHealth(connectionId, body, requestId) {
         receivingUserId: identity.receivingUserId,
         source: target.source,
         remoteStatus: remoteResponse.status,
-        result: connection.lastHealthStatus,
+        result: healthStatus,
       },
       requestId,
     );
+    if (healthResult.changed) {
+      await createAuditLog(
+        'user',
+        identity.receivingUserId,
+        'connection.health_changed',
+        'PassportConnection',
+        idOf(connection),
+        {
+          receivingWorkspaceId: identity.receivingWorkspaceId,
+          receivingUserId: identity.receivingUserId,
+          fromState: healthResult.from,
+          toState: healthResult.to,
+          reasonCode: remoteResponse.ok ? 'ACTIVE_CHECK_SUCCEEDED' : 'ACTIVE_CHECK_FAILED',
+        },
+        requestId,
+      );
+    }
 
     return {
       connectionId: idOf(connection),
       status: connection.status,
       health: {
-        healthy: remoteResponse.ok,
+        healthy: healthStatus === 'healthy',
+        status: healthStatus,
         remoteStatus: remoteResponse.status,
         checkedAt,
       },
     };
   } catch (error) {
-    connection.lastHealthStatus = 'unreachable';
-    connection.lastHealthCheckedAt = checkedAt;
-    await connection.save();
+    const metadata = {
+      code: error.code || ErrorCodes.SAFE_FETCH_FAILED,
+      providerHttpStatus: error.providerHttpStatus,
+      stage: 'connection_health_check',
+    };
+    const healthResult = await recordConnectionFailure(connection, metadata, {
+      now: checkedAt,
+      activeCheck: true,
+    });
+    await recordCircuitFailure(connection, 'runtime', metadata, { now: checkedAt });
     await createAuditLog(
       'user',
       identity.receivingUserId,
@@ -789,11 +844,28 @@ async function checkConnectionHealth(connectionId, body, requestId) {
         receivingWorkspaceId: identity.receivingWorkspaceId,
         receivingUserId: identity.receivingUserId,
         source: target.source,
-        result: 'unreachable',
+        result: healthResult.to || currentHealth(connection),
         errorCode: error.code || ErrorCodes.SAFE_FETCH_FAILED,
       },
       requestId,
     );
+    if (healthResult.changed) {
+      await createAuditLog(
+        'user',
+        identity.receivingUserId,
+        'connection.health_changed',
+        'PassportConnection',
+        idOf(connection),
+        {
+          receivingWorkspaceId: identity.receivingWorkspaceId,
+          receivingUserId: identity.receivingUserId,
+          fromState: healthResult.from,
+          toState: healthResult.to,
+          reasonCode: 'ACTIVE_CHECK_FAILED',
+        },
+        requestId,
+      );
+    }
     throw error;
   }
 }

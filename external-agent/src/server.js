@@ -3,6 +3,7 @@ const { createApp } = require('./app');
 const { loadEnvironment } = require('./config/env');
 const { logger, safeLogPayload } = require('./utils/logger');
 const { redactString } = require('./utils/redact');
+const { createServiceLifecycle } = require('./services/serviceLifecycle');
 
 function startupErrorLogFields(error) {
   const isError = error instanceof Error;
@@ -29,7 +30,13 @@ function startupErrorLogFields(error) {
 async function start(options = {}) {
   const config = options.config || loadEnvironment();
   const activeLogger = options.logger || logger;
-  const app = createApp({ config, logger: activeLogger, provider: options.provider });
+  const lifecycle = options.lifecycle || createServiceLifecycle({ initialReady: false });
+  const app = createApp({
+    config,
+    logger: activeLogger,
+    provider: options.provider,
+    lifecycle,
+  });
   const server = http.createServer(app);
   server.requestTimeout = config.requestTimeoutMs + 1_000;
   server.headersTimeout = Math.max(server.requestTimeout + 1_000, 10_000);
@@ -47,28 +54,72 @@ async function start(options = {}) {
     { port: config.port, environment: config.nodeEnv },
     'External research agent started',
   );
+  lifecycle.markReady();
 
-  let shuttingDown = false;
+  let shutdownPromise;
+  let forced = false;
   async function shutdown(signal = 'manual') {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    activeLogger.info({ signal }, 'Shutting down external research agent');
-
-    await new Promise((resolve) => {
-      const forceTimer = setTimeout(() => {
+    if (shutdownPromise) {
+      forced = true;
+      activeLogger.warn({ signal }, 'Repeated shutdown signal forced external agent termination');
+      lifecycle.abortActive();
+      server.closeAllConnections?.();
+      return shutdownPromise;
+    }
+    shutdownPromise = (async () => {
+      lifecycle.beginDraining();
+      const startedAt = Date.now();
+      activeLogger.info(
+        {
+          event: 'service.draining_started',
+          signal,
+          activeRequests: lifecycle.snapshot().activeRequestCount,
+        },
+        'External agent shutdown drain started',
+      );
+      const serverClosed = new Promise((resolve) => server.close(resolve));
+      server.closeIdleConnections?.();
+      let drained = await lifecycle.waitForIdle(config.shutdownDrainTimeoutMs || 30_000);
+      if (!drained) {
+        const aborted = lifecycle.abortActive();
+        activeLogger.warn({ aborted }, 'External agent shutdown drain deadline exceeded');
+        await lifecycle.waitForIdle(1_000);
         server.closeAllConnections?.();
-        resolve();
-      }, 10_000);
-      forceTimer.unref();
-      server.close(() => {
-        clearTimeout(forceTimer);
-        resolve();
-      });
-    });
-    activeLogger.flush?.();
+        drained = lifecycle.snapshot().activeRequestCount === 0;
+      }
+      const drainTimeoutMs = config.shutdownDrainTimeoutMs || 30_000;
+      const closeRemainingMs = Math.max(1, drainTimeoutMs - (Date.now() - startedAt));
+      let closeTimer;
+      const socketsClosed = await Promise.race([
+        serverClosed.then(() => true),
+        new Promise((resolve) => {
+          closeTimer = setTimeout(() => resolve(false), closeRemainingMs);
+        }),
+      ]);
+      clearTimeout(closeTimer);
+      if (!socketsClosed) {
+        forced = true;
+        server.closeAllConnections?.();
+        await serverClosed;
+      }
+      lifecycle.markStopped();
+      activeLogger.info(
+        {
+          event: 'service.draining_completed',
+          signal,
+          drained,
+          forced,
+          durationMs: Date.now() - startedAt,
+        },
+        'External agent shutdown drain completed',
+      );
+      activeLogger.flush?.();
+      return { drained, forced };
+    })();
+    return shutdownPromise;
   }
 
-  return { app, config, server, shutdown };
+  return { app, config, server, shutdown, lifecycle };
 }
 
 if (require.main === module) {

@@ -16,15 +16,30 @@ function validationDetails(error) {
   }));
 }
 
-function researchRouter(runtimeToken, researchService) {
+function researchRouter(runtimeToken, researchService, lifecycle) {
   const router = express.Router();
 
   router.post('/invoke', authenticateRuntime(runtimeToken), async (request, response, next) => {
+    let activeRequest;
+    try {
+      activeRequest = lifecycle?.register(request.requestId);
+    } catch (error) {
+      next(error);
+      return;
+    }
     request.observer?.emit('info', 'external_agent.invocation.started', { status: 'started' });
-    const parsed = await request.observer.stage('request_validation', async () =>
-      invocationSchema.safeParse(request.body),
-    );
+    let parsed;
+    try {
+      parsed = await request.observer.stage('request_validation', async () =>
+        invocationSchema.safeParse(request.body),
+      );
+    } catch (error) {
+      activeRequest?.complete();
+      next(error);
+      return;
+    }
     if (!parsed.success) {
+      activeRequest?.complete();
       next(
         new RuntimeError(
           400,
@@ -37,13 +52,16 @@ function researchRouter(runtimeToken, researchService) {
     }
 
     try {
+      const providerSignal = activeRequest?.signal
+        ? AbortSignal.any([request.runtimeAbortSignal, activeRequest.signal])
+        : request.runtimeAbortSignal;
       const result = await researchService.researchTopic({
         topic: parsed.data.topic,
         requestId: request.requestId,
         traceId: request.traceId,
         invocationId: request.invocationId,
         observer: request.observer,
-        signal: request.runtimeAbortSignal,
+        signal: providerSignal,
       });
       if (response.writableEnded || response.destroyed) return;
       await request.observer.stage('response_serialization', async () => {
@@ -65,6 +83,8 @@ function researchRouter(runtimeToken, researchService) {
         stage: error.stage,
       });
       next(error);
+    } finally {
+      activeRequest?.complete();
     }
   });
 

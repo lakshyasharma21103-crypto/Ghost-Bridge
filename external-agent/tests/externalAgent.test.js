@@ -188,6 +188,52 @@ test('legacy Gemini timeout is used only for absent stage-specific settings', ()
   assert.equal(parsed.gemini.formattingTimeoutMs, 40_000);
 });
 
+test('an absent stage configuration resolves the legacy 115000 value per stage', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_REQUEST_TIMEOUT_MS: '115000',
+    REQUEST_TIMEOUT_MS: '300000',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.researchTimeoutMs, 115_000);
+  assert.equal(parsed.gemini.formattingTimeoutMs, 115_000);
+  assert.ok(
+    parsed.requestTimeoutMs >
+      parsed.gemini.researchTimeoutMs +
+        parsed.gemini.formattingTimeoutMs +
+        GEMINI_PROCESSING_OVERHEAD_MS,
+  );
+});
+
+test('stage-specific deadlines override a stale 115000 legacy fallback', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_REQUEST_TIMEOUT_MS: '115000',
+    GEMINI_RESEARCH_TIMEOUT_MS: '180000',
+    GEMINI_FORMATTING_TIMEOUT_MS: '90000',
+    REQUEST_TIMEOUT_MS: '300000',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.researchTimeoutMs, 180_000);
+  assert.equal(parsed.gemini.formattingTimeoutMs, 90_000);
+  assert.notEqual(parsed.gemini.researchTimeoutMs, 115_000);
+  assert.notEqual(parsed.gemini.formattingTimeoutMs, 115_000);
+  assert.ok(
+    parsed.requestTimeoutMs >
+      parsed.gemini.researchTimeoutMs +
+        parsed.gemini.formattingTimeoutMs +
+        GEMINI_PROCESSING_OVERHEAD_MS,
+  );
+});
+
 test('formatting attempts are configurable only within the conservative bound', () => {
   const parsed = readEnvironment({
     NODE_ENV: 'test',
@@ -341,13 +387,8 @@ test('health endpoint identifies the independent external service', async () => 
   assert.equal(result.response.status, 200);
   assert.deepEqual(result.body.data, {
     service: 'external-research-agent',
-    status: 'healthy',
+    status: 'ok',
     version: '2.0.0',
-    ai: {
-      provider: 'mock',
-      configured: true,
-      webSearchEnabled: false,
-    },
   });
   assert.match(result.body.meta.requestId, /^req_/);
 });
