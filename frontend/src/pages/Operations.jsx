@@ -80,6 +80,8 @@ export function Operations() {
   const data = state.data;
   const summary = data?.summary;
   const latency = data?.latency;
+  const invocationMetrics = summary?.invocations || {};
+  const attemptMetrics = invocationMetrics.attempts || {};
 
   return (
     <>
@@ -178,7 +180,7 @@ export function Operations() {
 
       <div className="operations-grid operations-grid-top">
         <Section title="Invocation activity" icon={Activity}>
-          <div className="operations-stat-list">
+          <div className="operations-stat-list operations-stat-list-odd">
             <Stat
               label="Successful"
               value={number(summary?.invocations?.successful)}
@@ -190,6 +192,36 @@ export function Operations() {
               value={number(summary?.invocations?.retryableFailures)}
             />
             <Stat label="Success rate" value={percent(summary?.invocations?.successRatePercent)} />
+            <Stat
+              label="Recovery required"
+              value={number(
+                firstFinite(
+                  invocationMetrics.recoveryRequired,
+                  invocationMetrics.recovery_required,
+                ),
+              )}
+              tone="warning"
+            />
+            <Stat
+              label="External attempts"
+              value={number(
+                firstFinite(
+                  attemptMetrics.total,
+                  attemptMetrics.totalAttempts,
+                  invocationMetrics.totalAttempts,
+                ),
+              )}
+            />
+            <Stat
+              label="Repeated transient failures"
+              value={number(
+                firstFinite(
+                  attemptMetrics.repeatedTransientFailures,
+                  invocationMetrics.repeatedTransientFailures,
+                ),
+              )}
+              tone="danger"
+            />
           </div>
         </Section>
         <Section title="Connection health" icon={ShieldCheck}>
@@ -383,7 +415,7 @@ export function Operations() {
       </Section>
 
       <Section
-        title="Recent failed invocations"
+        title="Recent failed or ambiguous invocations"
         icon={AlertTriangle}
         className="operations-section-spaced"
       >
@@ -391,14 +423,21 @@ export function Operations() {
           headers={[
             'Trace',
             'Invocation',
+            'State',
+            'Attempts',
             'Connection',
             'Error code',
             'Stage',
             'Retryable',
+            'Retry decision',
             'Duration',
             'Time',
           ]}
-          empty={!data?.errors?.recentFailures?.length ? 'No recent failed invocations.' : ''}
+          empty={
+            !data?.errors?.recentFailures?.length
+              ? 'No recent failed or ambiguous invocations.'
+              : ''
+          }
         >
           {(data?.errors?.recentFailures || []).map((item) => (
             <tr key={item.invocationId}>
@@ -410,6 +449,14 @@ export function Operations() {
                   {shortId(item.invocationId)}
                 </Link>
               </td>
+              <td>
+                <span
+                  className={`operations-severity operations-severity-${invocationStateTone(item)}`}
+                >
+                  {humanize(invocationState(item))}
+                </span>
+              </td>
+              <td>{number(firstFinite(item.attemptCount, item.attempts?.count))}</td>
               <td>
                 <Link
                   className="operations-link operations-code"
@@ -423,6 +470,9 @@ export function Operations() {
               </td>
               <td>{humanize(item.stage)}</td>
               <td>{item.retryable ? 'Yes' : 'No'}</td>
+              <td>
+                <span className="operations-code">{retryDecisionLabel(item)}</span>
+              </td>
               <td>{duration(item.durationMs)}</td>
               <td>{formatDate(item.createdAt)}</td>
             </tr>
@@ -536,6 +586,47 @@ function healthTone(status) {
   if (status === 'healthy') return 'ready';
   if (['unhealthy', 'unreachable'].includes(status)) return 'error';
   return 'unknown';
+}
+
+function firstFinite(...values) {
+  return values.find((value) => Number.isFinite(value));
+}
+
+function invocationState(item) {
+  if (item?.status) return item.status;
+  if (item?.recoveryRequired) return 'recovery_required';
+  return 'failed';
+}
+
+function invocationStateTone(item) {
+  const state = invocationState(item);
+  if (state === 'recovery_required') return 'warning';
+  if (['failed', 'timed_out'].includes(state)) return 'critical';
+  return 'info';
+}
+
+function retryDecisionLabel(item) {
+  const retryDecision = item?.retryDecision;
+  const nestedDecision = retryDecision && typeof retryDecision === 'object' ? retryDecision : {};
+  const retryState = item?.retryState && typeof item.retryState === 'object' ? item.retryState : {};
+  let decision = typeof retryDecision === 'string' ? retryDecision : nestedDecision.decision;
+  if (!decision && typeof nestedDecision.allowed === 'boolean') {
+    decision = nestedDecision.allowed ? 'allowed' : 'denied';
+  }
+  if (!decision && typeof retryState.allowed === 'boolean') {
+    decision = retryState.allowed ? 'allowed' : 'denied';
+  }
+  decision ||= retryState.decision;
+  const reason =
+    item?.retryReason ||
+    item?.retryDecisionReason ||
+    nestedDecision.reason ||
+    retryState.reason ||
+    item?.latestAttempt?.retryReason;
+  if (!decision && !reason) return '—';
+  return [decision ? humanize(decision) : null, reason ? String(reason) : null]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function safeMetric(value) {

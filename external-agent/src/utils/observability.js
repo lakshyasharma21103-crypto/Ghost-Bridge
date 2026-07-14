@@ -3,6 +3,8 @@ const { SERVICE_NAME, SERVICE_VERSION } = require('../constants');
 const { logger: defaultLogger, safeLogPayload } = require('./logger');
 const { isRetryableError } = require('./retryability');
 
+const SAFE_RECOVERY_REASONS = new Set(['FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH']);
+
 function definedFields(value) {
   return Object.fromEntries(Object.entries(value || {}).filter(([, item]) => item !== undefined));
 }
@@ -15,6 +17,11 @@ function safeErrorFields(error) {
     statusCode: error?.statusCode,
     retryable: isRetryableError(error),
     timeoutReason: error?.timeoutReason || error?.reason,
+    recoveryRequired: error?.recoveryRequired === true ? true : undefined,
+    recoveryReason:
+      error?.recoveryRequired === true && SAFE_RECOVERY_REASONS.has(error?.recoveryReason)
+        ? error.recoveryReason
+        : undefined,
     causeCode: error?.cause?.code,
     causeName: error?.cause?.name,
   });

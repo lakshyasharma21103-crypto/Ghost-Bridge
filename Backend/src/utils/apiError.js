@@ -31,6 +31,14 @@ function toApiErrorResponse(error, identifiers = {}) {
         ...(context.traceId ? { traceId: redactString(context.traceId) } : {}),
         ...(context.requestId ? { requestId: redactString(context.requestId) } : {}),
         retryable: appError.retryable,
+        ...(appError.invocationId ? { invocationId: redactString(appError.invocationId) } : {}),
+        ...(appError.lifecycleState
+          ? { lifecycleState: redactString(appError.lifecycleState) }
+          : {}),
+        ...(Number.isInteger(appError.attemptCount) ? { attemptCount: appError.attemptCount } : {}),
+        ...(appError.retryState ? { retryState: redactString(appError.retryState) } : {}),
+        ...(appError.retryReason ? { retryReason: redactString(appError.retryReason) } : {}),
+        ...(appError.recoveryRequired === true ? { recoveryRequired: true } : {}),
       },
     },
     appError,

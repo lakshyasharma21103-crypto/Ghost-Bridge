@@ -7,6 +7,7 @@ const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
 ]);
+const SAFE_RECOVERY_REASONS = new Set(['FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH']);
 
 function normalizeError(error) {
   if (error instanceof RuntimeError) return error;
@@ -66,6 +67,10 @@ function errorHandler(logger) {
               : {}),
           }
         : {};
+    const recoveryReason =
+      normalized.recoveryRequired === true && SAFE_RECOVERY_REASONS.has(normalized.recoveryReason)
+        ? normalized.recoveryReason
+        : undefined;
 
     response.status(normalized.statusCode).json({
       success: false,
@@ -81,6 +86,7 @@ function errorHandler(logger) {
           ? { operation: normalized.operation }
           : {}),
         ...(SAFE_TIMEOUT_REASONS.has(normalized.reason) ? { reason: normalized.reason } : {}),
+        ...(recoveryReason ? { recoveryRequired: true, recoveryReason } : {}),
         ...sourceDiagnostics,
       },
     });

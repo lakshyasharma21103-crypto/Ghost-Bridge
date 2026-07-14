@@ -13,6 +13,16 @@ function integerFromEnv(name, fallback) {
   return value;
 }
 
+function integerInRangeFromEnv(name, fallback, minimum, maximum) {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+  }
+  return value;
+}
+
 function booleanFromEnv(name, fallback) {
   const raw = process.env[name];
   if (raw == null || raw === '') return fallback;
@@ -45,6 +55,37 @@ function validateEncryptionKey(raw, nodeEnv) {
 const nodeEnv = process.env.NODE_ENV || 'development';
 const allowPrivateRuntimeUrlsInDev =
   nodeEnv === 'development' && booleanFromEnv('ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV', false);
+const runtimeInvocationTimeoutMs = integerFromEnv('RUNTIME_INVOCATION_TIMEOUT_MS', 330_000);
+const runtimeRetryMaxAttempts = integerInRangeFromEnv('RUNTIME_RETRY_MAX_ATTEMPTS', 2, 1, 5);
+const runtimeRetryBaseDelayMs = integerInRangeFromEnv(
+  'RUNTIME_RETRY_BASE_DELAY_MS',
+  1_000,
+  1,
+  60_000,
+);
+const runtimeRetryMaxDelayMs = integerInRangeFromEnv(
+  'RUNTIME_RETRY_MAX_DELAY_MS',
+  10_000,
+  1,
+  300_000,
+);
+const runtimeRetryJitterPercent = integerInRangeFromEnv('RUNTIME_RETRY_JITTER_PERCENT', 20, 0, 100);
+const runtimeExecutionLeaseMs = integerInRangeFromEnv(
+  'RUNTIME_EXECUTION_LEASE_MS',
+  Math.min(1_800_000, runtimeInvocationTimeoutMs + 30_000),
+  1_000,
+  1_800_000,
+);
+
+if (runtimeRetryMaxDelayMs < runtimeRetryBaseDelayMs) {
+  throw new Error(
+    'RUNTIME_RETRY_MAX_DELAY_MS must be greater than or equal to RUNTIME_RETRY_BASE_DELAY_MS',
+  );
+}
+
+if (runtimeExecutionLeaseMs <= runtimeInvocationTimeoutMs) {
+  throw new Error('RUNTIME_EXECUTION_LEASE_MS must be greater than RUNTIME_INVOCATION_TIMEOUT_MS');
+}
 
 const env = {
   NODE_ENV: nodeEnv,
@@ -59,7 +100,12 @@ const env = {
   DEV_PARTNER_SLUG: process.env.DEV_PARTNER_SLUG || 'dev-partner',
   REQUEST_BODY_LIMIT: process.env.REQUEST_BODY_LIMIT || '1mb',
   RUNTIME_REQUEST_TIMEOUT_MS: integerFromEnv('RUNTIME_REQUEST_TIMEOUT_MS', 15_000),
-  RUNTIME_INVOCATION_TIMEOUT_MS: integerFromEnv('RUNTIME_INVOCATION_TIMEOUT_MS', 330_000),
+  RUNTIME_INVOCATION_TIMEOUT_MS: runtimeInvocationTimeoutMs,
+  RUNTIME_RETRY_MAX_ATTEMPTS: runtimeRetryMaxAttempts,
+  RUNTIME_RETRY_BASE_DELAY_MS: runtimeRetryBaseDelayMs,
+  RUNTIME_RETRY_MAX_DELAY_MS: runtimeRetryMaxDelayMs,
+  RUNTIME_RETRY_JITTER_PERCENT: runtimeRetryJitterPercent,
+  RUNTIME_EXECUTION_LEASE_MS: runtimeExecutionLeaseMs,
   EXTERNAL_TEST_AGENT_BASE_URL: process.env.EXTERNAL_TEST_AGENT_BASE_URL || 'http://127.0.0.1:5002',
   EXTERNAL_TEST_AGENT_RUNTIME_TOKEN: process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN || '',
   ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV: allowPrivateRuntimeUrlsInDev,
@@ -85,5 +131,8 @@ if (env.NODE_ENV === 'production' && !env.MONGODB_URI) {
 }
 
 module.exports = {
+  booleanFromEnv,
   env,
+  integerFromEnv,
+  integerInRangeFromEnv,
 };

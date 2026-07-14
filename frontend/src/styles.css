@@ -1003,6 +1003,15 @@ select:focus-visible {
   border-bottom: 0;
 }
 
+.operations-stat-list-odd > div:nth-last-child(2) {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.operations-stat-list-odd > div:last-child {
+  grid-column: 1 / -1;
+  border-right: 0;
+}
+
 .operations-stat-list span {
   overflow: hidden;
   color: #5f6368;
@@ -1023,6 +1032,10 @@ select:focus-visible {
 
 .operations-text-danger {
   color: #c5221f !important;
+}
+
+.operations-text-warning {
+  color: #8d5d00 !important;
 }
 
 .operations-table-scroll {

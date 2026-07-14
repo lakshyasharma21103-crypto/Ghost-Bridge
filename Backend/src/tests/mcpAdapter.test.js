@@ -11,10 +11,7 @@ const {
   MCP_REMOTE_RUNTIME_NOT_IMPLEMENTED,
   MCP_REMOTE_RUNTIME_NOT_IMPLEMENTED_MESSAGE,
 } = require('../services/adapters/mcp.adapter');
-const {
-  invoke,
-  importMcpTools,
-} = require('../services/runtimeGateway.service');
+const { invoke, importMcpTools } = require('../services/runtimeGateway.service');
 const { safeConnectionView } = require('../services/connectionService');
 
 function patch(object, key, value, patches) {
@@ -32,6 +29,7 @@ function mcpConnection(overrides = {}) {
   return {
     _id: 'connection_123',
     passportId: 'passport_123',
+    receivingWorkspaceId: 'workspace_123',
     receivingUserId: 'user_123',
     status: 'connected',
     installScope: 'invoke',
@@ -106,14 +104,35 @@ test('Runtime Gateway routes MCP invocations to the adapter and persists a struc
   patch(PassportConnection, 'findOne', async () => mcpConnection(), patches);
   patch(AgentPassport, 'findOne', async () => mcpPassport(), patches);
   patch(Capability, 'findOne', async () => capability(), patches);
-  patch(Invocation, 'create', async (doc) => {
-    storedInvocation = invocationDocument(doc);
-    return storedInvocation;
-  }, patches);
-  patch(AuditLog, 'create', async (payload) => {
-    audits.push(payload);
-    return payload;
-  }, patches);
+  patch(
+    Invocation,
+    'create',
+    async (doc) => {
+      storedInvocation = invocationDocument(doc);
+      return storedInvocation;
+    },
+    patches,
+  );
+  patch(
+    Invocation,
+    'findOneAndUpdate',
+    async (filter, update) => {
+      if (!storedInvocation || storedInvocation.lifecycleState !== filter.lifecycleState)
+        return null;
+      Object.assign(storedInvocation, update.$set || {});
+      return storedInvocation;
+    },
+    patches,
+  );
+  patch(
+    AuditLog,
+    'create',
+    async (payload) => {
+      audits.push(payload);
+      return payload;
+    },
+    patches,
+  );
 
   try {
     await assert.rejects(() => invoke('connection_123', 'research_topic', { topic: 'FIFA' }), {
@@ -130,11 +149,21 @@ test('Runtime Gateway routes MCP invocations to the adapter and persists a struc
 test('MCP tool import returns the explicit remote transport limitation without importing capabilities', async () => {
   const patches = [];
   let capabilityWriteAttempted = false;
-  patch(PassportConnection, 'findOne', async () => mcpConnection({ installScope: 'connect' }), patches);
+  patch(
+    PassportConnection,
+    'findOne',
+    async () => mcpConnection({ installScope: 'connect' }),
+    patches,
+  );
   patch(AgentPassport, 'findOne', async () => mcpPassport(), patches);
-  patch(Capability, 'findOneAndUpdate', async () => {
-    capabilityWriteAttempted = true;
-  }, patches);
+  patch(
+    Capability,
+    'findOneAndUpdate',
+    async () => {
+      capabilityWriteAttempted = true;
+    },
+    patches,
+  );
 
   try {
     await assert.rejects(() => importMcpTools('connection_123'), {

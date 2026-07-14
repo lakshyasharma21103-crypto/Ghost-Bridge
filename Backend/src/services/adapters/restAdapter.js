@@ -4,6 +4,18 @@ const { ErrorCodes } = require('../../utils/errorCodes');
 const safeFetchUtility = require('../../utils/safeFetch');
 
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH']);
+const SAFE_REMOTE_CODE = /^[A-Z][A-Z0-9_]{0,127}$/;
+const SAFE_REMOTE_STAGES = new Set([
+  'grounded_research',
+  'grounding_source_extraction',
+  'structured_formatting',
+  'response_validation',
+]);
+const SAFE_REMOTE_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
+const SAFE_RECOVERY_REASONS = new Set([
+  'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
+  'AMBIGUOUS_REMOTE_OUTCOME',
+]);
 
 function isRecord(value) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -30,6 +42,23 @@ function parseResponseBody(bodyText) {
   } catch {
     return bodyText;
   }
+}
+
+function safeRemoteError(parsedBody) {
+  const remote = isRecord(parsedBody?.error) ? parsedBody.error : undefined;
+  if (!remote) return {};
+  return {
+    ...(typeof remote.code === 'string' && SAFE_REMOTE_CODE.test(remote.code)
+      ? { code: remote.code }
+      : {}),
+    ...(SAFE_REMOTE_STAGES.has(remote.stage) ? { stage: remote.stage } : {}),
+    ...(SAFE_REMOTE_OPERATIONS.has(remote.operation) ? { operation: remote.operation } : {}),
+    ...(typeof remote.retryable === 'boolean' ? { remoteRetryable: remote.retryable } : {}),
+    ...(remote.recoveryRequired === true ? { recoveryRequired: true } : {}),
+    ...(SAFE_RECOVERY_REASONS.has(remote.recoveryReason)
+      ? { recoveryReason: remote.recoveryReason }
+      : {}),
+  };
 }
 
 function extractOutput(runtime, parsedBody, providerHttpStatus) {
@@ -111,6 +140,10 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
         ...(observability.traceId ? { 'x-trace-id': observability.traceId } : {}),
         ...(observability.requestId ? { 'x-request-id': observability.requestId } : {}),
         ...(observability.invocationId ? { 'x-invocation-id': observability.invocationId } : {}),
+        ...(typeof observability.idempotencyKey === 'string' &&
+        /^(?:sha256|hmac-sha256):[a-f0-9]{64}$/.test(observability.idempotencyKey)
+          ? { 'Idempotency-Key': observability.idempotencyKey }
+          : {}),
       },
       timeoutMs: env.RUNTIME_INVOCATION_TIMEOUT_MS,
       allowDevelopmentDemo: true,
@@ -119,9 +152,10 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
   );
 
   if (!response.ok) {
+    const remoteError = safeRemoteError(parseResponseBody(response.bodyText));
     throw new AppError(
       502,
-      ErrorCodes.RUNTIME_INVOCATION_FAILED,
+      remoteError.code || ErrorCodes.RUNTIME_INVOCATION_FAILED,
       'Agent runtime returned an unsuccessful response.',
       [
         {
@@ -130,7 +164,7 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
           remoteStatus: response.status,
         },
       ],
-      { providerHttpStatus: response.status },
+      { providerHttpStatus: response.status, ...remoteError },
     );
   }
 
@@ -159,4 +193,5 @@ module.exports = {
   requestPayload,
   outboundOptions,
   extractOutput,
+  safeRemoteError,
 };

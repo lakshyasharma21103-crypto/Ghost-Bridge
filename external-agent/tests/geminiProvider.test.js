@@ -20,6 +20,7 @@ const TEST_CONFIG = Object.freeze({
   model: 'gemini-3-flash-preview',
   webSearchEnabled: true,
   requestTimeoutMs: 2_000,
+  formattingMaxAttempts: 2,
   maxOutputTokens: 1_500,
   maxSources: 8,
   thinkingLevel: 'medium',
@@ -200,7 +201,10 @@ test('structured formatting local timeout is identified with a fresh controller'
     (error) =>
       error.code === 'GEMINI_REQUEST_TIMEOUT' &&
       error.operation === 'structured_formatting' &&
-      error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+      error.stage === 'structured_formatting' &&
+      error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' &&
+      error.recoveryRequired === true &&
+      error.recoveryReason === 'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
   );
 
   assert.equal(calls.length, 2);
@@ -388,7 +392,11 @@ test('invalid formatter JSON maps to a safe structured-output error', async () =
 
   await assert.rejects(
     () => provider.research({ topic: 'Secure agents' }),
-    (error) => error.code === 'GEMINI_INVALID_STRUCTURED_OUTPUT' && error.details.length === 0,
+    (error) =>
+      error.code === 'GEMINI_INVALID_STRUCTURED_OUTPUT' &&
+      error.details.length === 0 &&
+      error.operation === 'structured_formatting' &&
+      error.recoveryRequired !== true,
   );
 });
 
@@ -627,8 +635,9 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
 });
 
 test('missing grounding metadata fails without fabricated citations', async () => {
+  const client = fakeClient([candidate('Ungrounded answer.')]);
   const provider = new GeminiProvider(TEST_CONFIG, {
-    client: fakeClient([candidate('Ungrounded answer.')]),
+    client,
   });
 
   await assert.rejects(
@@ -640,6 +649,7 @@ test('missing grounding metadata fails without fabricated citations', async () =
       error.groundingMetadataPresent === false &&
       error.groundingChunkCount === 0,
   );
+  assert.equal(client.calls.length, 1);
 });
 
 test('timeout and rate-limit failures map to stable safe codes', () => {
@@ -706,7 +716,8 @@ test('blocked Gemini responses map without exposing provider internals', async (
 
 test('authentication failures never expose the API key', async () => {
   const raw = Object.assign(new Error(`Rejected key ${TEST_CONFIG.apiKey}`), { status: 401 });
-  const provider = new GeminiProvider(TEST_CONFIG, { client: fakeClient([raw]) });
+  const client = fakeClient([raw]);
+  const provider = new GeminiProvider(TEST_CONFIG, { client });
 
   await assert.rejects(
     () => provider.research({ topic: 'Secure agents' }),
@@ -715,6 +726,7 @@ test('authentication failures never expose the API key', async () => {
       !error.message.includes(TEST_CONFIG.apiKey) &&
       JSON.stringify(error.details).includes(TEST_CONFIG.apiKey) === false,
   );
+  assert.equal(client.calls.length, 1);
 });
 
 test('API key is absent from HTTP errors and captured logs', async (context) => {
@@ -769,14 +781,148 @@ test('API key is absent from HTTP errors and captured logs', async (context) => 
   assert.equal(logLines.join('').includes(TEST_CONFIG.apiKey), false);
 });
 
-test('only one transient retry is permitted across the research workflow', async () => {
+test('HTTP formatting failures expose only safe recovery classification', async (context) => {
+  const groundedText = 'private grounded text that must never leave recovery diagnostics';
+  const sourceUrl = 'https://authority.example/private-source';
+  const rawProviderMessage = 'private upstream response body';
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, formattingMaxAttempts: 1 },
+    {
+      client: fakeClient([
+        candidate(groundedText, {
+          sources: [{ title: 'Private source', uri: sourceUrl }],
+        }),
+        Object.assign(new Error(rawProviderMessage), { status: 503 }),
+      ]),
+    },
+  );
+  const logLines = [];
+  const logger = createLogger({
+    base: null,
+    destination: new Writable({
+      write(chunk, _encoding, callback) {
+        logLines.push(chunk.toString());
+        callback();
+      },
+    }),
+  });
+  const runtimeToken = 'test_runtime_secret_0123456789_abcdefghijklmnopqrstuvwxyz';
+  const server = http.createServer(
+    createApp({
+      provider,
+      logger,
+      config: {
+        runtimeToken,
+        allowedGatewayOrigins: [],
+        requestTimeoutMs: 2_000,
+        jsonBodyLimit: '32kb',
+        rateLimitWindowMs: 60_000,
+        rateLimitMax: 10,
+        aiProvider: 'gemini',
+        gemini: { ...TEST_CONFIG, formattingMaxAttempts: 1 },
+      },
+    }),
+  );
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  context.after(
+    () => new Promise((resolve) => (server.closeAllConnections?.(), server.close(resolve))),
+  );
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/v1/research/invoke`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${runtimeToken}`,
+      'Content-Type': 'application/json',
+      'X-Trace-Id': 'trace_formatting-recovery',
+    },
+    body: JSON.stringify({ topic: 'Secure agents' }),
+  });
+  const text = await response.text();
+  const body = JSON.parse(text);
+  logger.flush?.();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.error.code, 'GEMINI_UPSTREAM_UNAVAILABLE');
+  assert.equal(body.error.operation, 'structured_formatting');
+  assert.equal(body.error.stage, 'structured_formatting');
+  assert.equal(body.error.recoveryRequired, true);
+  assert.equal(body.error.recoveryReason, 'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH');
+  assert.equal(body.error.traceId, 'trace_formatting-recovery');
+  for (const forbidden of [groundedText, sourceUrl, rawProviderMessage, runtimeToken]) {
+    assert.equal(text.includes(forbidden), false);
+    assert.equal(logLines.join('').includes(forbidden), false);
+  }
+});
+
+test('transient grounded research failures never repeat Google Search', async () => {
   const transient = Object.assign(new Error('temporary'), { status: 503 });
+  const client = fakeClient([transient]);
+  const provider = new GeminiProvider(TEST_CONFIG, {
+    client,
+    delay: async () => undefined,
+    random: () => 0,
+  });
+
+  await assert.rejects(
+    () => provider.research({ topic: 'Secure agents' }),
+    (error) =>
+      error.code === 'GEMINI_UPSTREAM_UNAVAILABLE' &&
+      error.operation === 'grounded_research' &&
+      error.recoveryRequired !== true,
+  );
+  assert.equal(client.calls.length, 1);
+  assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
+});
+
+test('a transient formatting failure retries only formatting with the in-memory research result', async () => {
+  const transient = Object.assign(new Error('temporary'), { status: 503 });
+  const groundedText = 'Grounded facts retained only for this request.';
+  const logger = memoryLogger();
   const client = fakeClient([
-    transient,
-    candidate('Grounded facts.', {
+    candidate(groundedText, {
       sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
     }),
     transient,
+    candidate(JSON.stringify({ summary: 'Recovered formatting.' })),
+  ]);
+  const provider = new GeminiProvider(TEST_CONFIG, {
+    client,
+    delay: async () => undefined,
+    random: () => 0,
+    logger,
+  });
+
+  const result = await provider.research({
+    topic: 'Secure agents',
+    traceId: 'trace_formatting-retry',
+    requestId: 'req_formatting-retry',
+  });
+
+  assert.equal(result.summary, 'Recovered formatting.');
+  assert.equal(client.calls.length, 3);
+  assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
+  for (const formattingCall of client.calls.slice(1)) {
+    assert.equal(formattingCall.contents, groundedText);
+    assert.equal(formattingCall.config.tools, undefined);
+  }
+  const formattingCompletion = logger.entries.find(
+    (entry) =>
+      entry.message === 'Gemini operation completed' &&
+      entry.fields.operation === 'structured_formatting',
+  );
+  assert.equal(formattingCompletion.fields.traceId, 'trace_formatting-retry');
+  assert.equal(formattingCompletion.fields.requestId, 'req_formatting-retry');
+  assert.equal(formattingCompletion.fields.providerAttemptCount, 2);
+});
+
+test('exhausted formatting-only retries return safe recovery metadata', async () => {
+  const transient = () => Object.assign(new Error('private provider failure'), { status: 503 });
+  const client = fakeClient([
+    candidate('Private grounded text.', {
+      sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
+    }),
+    transient(),
+    transient(),
   ]);
   const provider = new GeminiProvider(TEST_CONFIG, {
     client,
@@ -786,7 +932,36 @@ test('only one transient retry is permitted across the research workflow', async
 
   await assert.rejects(
     () => provider.research({ topic: 'Secure agents' }),
-    (error) => error.code === 'GEMINI_UPSTREAM_UNAVAILABLE',
+    (error) =>
+      error.code === 'GEMINI_UPSTREAM_UNAVAILABLE' &&
+      error.operation === 'structured_formatting' &&
+      error.recoveryRequired === true &&
+      error.recoveryReason === 'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH' &&
+      !JSON.stringify(error).includes('Private grounded text'),
   );
   assert.equal(client.calls.length, 3);
+  assert.equal(
+    client.calls.slice(1).some((call) => call.config.tools),
+    false,
+  );
+});
+
+test('formatting retries can be disabled without enabling a research retry', async () => {
+  const transient = Object.assign(new Error('temporary'), { status: 503 });
+  const client = fakeClient([
+    candidate('Grounded facts.', {
+      sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
+    }),
+    transient,
+  ]);
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, formattingMaxAttempts: 1 },
+    { client, delay: async () => undefined },
+  );
+
+  await assert.rejects(
+    () => provider.research({ topic: 'Secure agents' }),
+    (error) => error.code === 'GEMINI_UPSTREAM_UNAVAILABLE' && error.recoveryRequired === true,
+  );
+  assert.equal(client.calls.length, 2);
 });

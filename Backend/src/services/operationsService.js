@@ -19,6 +19,51 @@ const packageMetadata = require('../../package.json');
 const ALERT_WINDOW = '24h';
 const SAFE_HEALTH_STATUSES = new Set(['healthy', 'unhealthy', 'unreachable']);
 const SAFE_ALERT_STATUSES = new Set(['active', 'acknowledged', 'resolved']);
+const IN_PROGRESS_LIFECYCLE_STATES = [
+  'accepted',
+  'validating',
+  'authorized',
+  'running',
+  'waiting_for_runtime',
+];
+const PROBLEM_LIFECYCLE_STATES = ['failed', 'timed_out', 'recovery_required'];
+
+function effectiveLifecycleExpression() {
+  return {
+    $ifNull: [
+      '$lifecycleState',
+      {
+        $switch: {
+          branches: [
+            { case: { $eq: ['$status', 'completed'] }, then: 'succeeded' },
+            { case: { $eq: ['$status', 'running'] }, then: 'running' },
+            { case: { $eq: ['$status', 'failed'] }, then: 'failed' },
+          ],
+          default: 'accepted',
+        },
+      },
+    ],
+  };
+}
+
+function successfulInvocationFilter() {
+  return {
+    $or: [
+      { lifecycleState: 'succeeded' },
+      { lifecycleState: { $exists: false }, status: 'completed' },
+    ],
+  };
+}
+
+function problemInvocationFilter(extra = {}) {
+  return {
+    ...extra,
+    $or: [
+      { lifecycleState: { $in: PROBLEM_LIFECYCLE_STATES } },
+      { lifecycleState: { $exists: false }, status: 'failed' },
+    ],
+  };
+}
 
 function validationError(path, message) {
   return new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Request validation failed.', [
@@ -140,6 +185,7 @@ function invocationMatch(receivingWorkspaceId, connectionIds, since, extra = {})
 async function invocationSummary(receivingWorkspaceId, connectionIds, window) {
   const [result = { totals: [], runtimes: [] }] = await Invocation.aggregate([
     { $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since) },
+    { $set: { effectiveLifecycleState: effectiveLifecycleExpression() } },
     {
       $facet: {
         totals: [
@@ -147,17 +193,97 @@ async function invocationSummary(receivingWorkspaceId, connectionIds, window) {
             $group: {
               _id: null,
               total: { $sum: 1 },
-              successful: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
-              failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
-              running: { $sum: { $cond: [{ $eq: ['$status', 'running'] }, 1, 0] } },
-              queued: { $sum: { $cond: [{ $eq: ['$status', 'queued'] }, 1, 0] } },
-              retryableFailures: {
+              successful: {
+                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'succeeded'] }, 1, 0] },
+              },
+              failed: {
+                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'failed'] }, 1, 0] },
+              },
+              timedOut: {
+                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'timed_out'] }, 1, 0] },
+              },
+              cancelled: {
+                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'cancelled'] }, 1, 0] },
+              },
+              recoveryRequired: {
+                $sum: {
+                  $cond: [{ $eq: ['$effectiveLifecycleState', 'recovery_required'] }, 1, 0],
+                },
+              },
+              inProgress: {
                 $sum: {
                   $cond: [
-                    { $and: [{ $eq: ['$status', 'failed'] }, { $eq: ['$error.retryable', true] }] },
+                    { $in: ['$effectiveLifecycleState', IN_PROGRESS_LIFECYCLE_STATES] },
                     1,
                     0,
                   ],
+                },
+              },
+              running: {
+                $sum: {
+                  $cond: [
+                    { $in: ['$effectiveLifecycleState', ['running', 'waiting_for_runtime']] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              queued: {
+                $sum: {
+                  $cond: [
+                    { $in: ['$effectiveLifecycleState', ['accepted', 'validating', 'authorized']] },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              retryableFailures: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $in: ['$effectiveLifecycleState', PROBLEM_LIFECYCLE_STATES] },
+                        { $eq: ['$error.retryable', true] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              totalAttempts: { $sum: { $ifNull: ['$attemptCount', 0] } },
+              additionalAttempts: {
+                $sum: {
+                  $cond: [
+                    { $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] },
+                    { $subtract: [{ $ifNull: ['$attemptCount', 0] }, 1] },
+                    0,
+                  ],
+                },
+              },
+              retriedInvocations: {
+                $sum: { $cond: [{ $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] }, 1, 0] },
+              },
+              repeatedTransientFailures: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] },
+                        { $eq: ['$error.retryable', true] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
+              retryAllowed: {
+                $sum: { $cond: [{ $eq: ['$retryState', 'scheduled'] }, 1, 0] },
+              },
+              retryDenied: {
+                $sum: {
+                  $cond: [{ $in: ['$retryState', ['not_allowed', 'exhausted']] }, 1, 0],
                 },
               },
             },
@@ -168,28 +294,54 @@ async function invocationSummary(receivingWorkspaceId, connectionIds, window) {
     },
   ]);
   const totals = result.totals?.[0] || {};
+  const problemCount =
+    (totals.failed || 0) + (totals.timedOut || 0) + (totals.recoveryRequired || 0);
   return {
     total: totals.total || 0,
     successful: totals.successful || 0,
     failed: totals.failed || 0,
+    timedOut: totals.timedOut || 0,
+    cancelled: totals.cancelled || 0,
+    recoveryRequired: totals.recoveryRequired || 0,
+    inProgress: totals.inProgress || 0,
     running: totals.running || 0,
     queued: totals.queued || 0,
     retryableFailures: totals.retryableFailures || 0,
-    nonRetryableFailures: Math.max(0, (totals.failed || 0) - (totals.retryableFailures || 0)),
+    nonRetryableFailures: Math.max(0, problemCount - (totals.retryableFailures || 0)),
     successRatePercent: rate(totals.successful || 0, totals.total || 0),
-    failureRatePercent: rate(totals.failed || 0, totals.total || 0),
+    failureRatePercent: rate(problemCount, totals.total || 0),
     ratePerHour: round((totals.total || 0) / window.hours),
     byRuntime: Object.fromEntries(
       (result.runtimes || []).map((item) => [item._id || 'unknown', item.count]),
     ),
+    attempts: {
+      total: totals.totalAttempts || 0,
+      additional: totals.additionalAttempts || 0,
+      retriedInvocations: totals.retriedInvocations || 0,
+      repeatedTransientFailures: totals.repeatedTransientFailures || 0,
+      retryAllowed: totals.retryAllowed || 0,
+      retryDenied: totals.retryDenied || 0,
+    },
   };
 }
 
 function safeFailure(invocation) {
+  const lifecycleState =
+    invocation.lifecycleState || (invocation.status === 'failed' ? 'failed' : invocation.status);
+  const retryDecision =
+    invocation.retryState === 'scheduled'
+      ? 'allowed'
+      : ['not_allowed', 'exhausted'].includes(invocation.retryState)
+        ? 'denied'
+        : 'not_evaluated';
   return {
     invocationId: String(invocation._id || invocation.id),
     connectionId: String(invocation.connectionId || ''),
     runtimeType: invocation.runtimeType || 'unknown',
+    status: lifecycleState || 'failed',
+    attemptCount: Number.isInteger(invocation.attemptCount) ? invocation.attemptCount : 0,
+    retryDecision,
+    retryReason: invocation.retryDecisionReason || null,
     durationMs: Number.isFinite(invocation.durationMs) ? invocation.durationMs : null,
     errorCode: invocation.error?.code || 'UNKNOWN',
     stage: OPERATION_STAGE_NAMES.includes(invocation.error?.stage)
@@ -223,10 +375,10 @@ function errorCategory(errorCode, providerHttpStatus) {
 
 async function recentFailures(receivingWorkspaceId, connectionIds, window, limit = 10) {
   const rows = await Invocation.find(
-    invocationMatch(receivingWorkspaceId, connectionIds, window.since, { status: 'failed' }),
+    invocationMatch(receivingWorkspaceId, connectionIds, window.since, problemInvocationFilter()),
   )
     .select(
-      '_id connectionId runtimeType durationMs traceId error.code error.stage error.retryable error.providerHttpStatus createdAt',
+      '_id connectionId runtimeType status lifecycleState attemptCount retryState retryDecisionReason durationMs traceId error.code error.stage error.retryable error.providerHttpStatus createdAt',
     )
     .sort({ createdAt: -1 })
     .limit(limit)
@@ -296,8 +448,8 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
     ? await Invocation.aggregate([
         {
           $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since, {
-            status: 'failed',
             connectionId: { $in: itemIds },
+            ...problemInvocationFilter(),
           }),
         },
         { $group: { _id: '$connectionId', count: { $sum: 1 } } },
@@ -456,7 +608,7 @@ async function installationFunnel(receivingWorkspaceId, connectionIds, window) {
     Invocation.aggregate([
       {
         $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since, {
-          status: 'completed',
+          ...successfulInvocationFilter(),
         }),
       },
       { $group: { _id: '$connectionId' } },
@@ -512,7 +664,7 @@ async function getLatency(input) {
   const window = parseWindow(input?.window);
   const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
   const match = invocationMatch(identity.receivingWorkspaceId, connectionIds, window.since, {
-    status: 'completed',
+    ...successfulInvocationFilter(),
     durationMs: { $type: 'number' },
   });
   const [rows, total] = await Promise.all([
@@ -553,9 +705,12 @@ async function getErrors(input) {
   const window = parseWindow(input?.window);
   const pagination = pageFromInput(input);
   const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
-  const match = invocationMatch(identity.receivingWorkspaceId, connectionIds, window.since, {
-    status: 'failed',
-  });
+  const match = invocationMatch(
+    identity.receivingWorkspaceId,
+    connectionIds,
+    window.since,
+    problemInvocationFilter(),
+  );
   const [facet = { groups: [], meta: [], totals: [] }] = await Invocation.aggregate([
     { $match: match },
     {
@@ -692,10 +847,32 @@ function alertRulesFromSignals(signals) {
       safeValues: {
         total: signals.invocations.total,
         failed: signals.invocations.failed,
+        timedOut: signals.invocations.timedOut || 0,
+        recoveryRequired: signals.invocations.recoveryRequired || 0,
         failureRatePercent: signals.invocations.failureRatePercent,
       },
     },
   );
+  add(signals.invocations.recoveryRequired > 0, {
+    type: 'invocations_recovery_required',
+    severity: 'critical',
+    title: 'Ambiguous invocation outcomes require recovery',
+    summary: 'One or more external executions require explicit recovery review.',
+    metricName: 'invocations_recovery_required',
+    observedValue: signals.invocations.recoveryRequired,
+    thresholdValue: 1,
+    safeValues: { count: signals.invocations.recoveryRequired },
+  });
+  add((signals.invocations.attempts?.repeatedTransientFailures || 0) > 0, {
+    type: 'repeated_transient_invocation_failures',
+    severity: 'warning',
+    title: 'Repeated transient invocation failures detected',
+    summary: 'One or more invocations recorded multiple attempts and a transient final failure.',
+    metricName: 'repeated_transient_invocation_failures',
+    observedValue: signals.invocations.attempts?.repeatedTransientFailures || 0,
+    thresholdValue: 1,
+    safeValues: { count: signals.invocations.attempts?.repeatedTransientFailures || 0 },
+  });
   add(
     signals.connections.active > 0 &&
       signals.connections.health.healthy === 0 &&
@@ -839,9 +1016,12 @@ function alertRulesFromSignals(signals) {
 async function alertErrorSignals(receivingWorkspaceId, connectionIds, window) {
   const [row = {}] = await Invocation.aggregate([
     {
-      $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since, {
-        status: 'failed',
-      }),
+      $match: invocationMatch(
+        receivingWorkspaceId,
+        connectionIds,
+        window.since,
+        problemInvocationFilter(),
+      ),
     },
     {
       $group: {
@@ -1171,6 +1351,8 @@ module.exports = {
   rate,
   percentile,
   latencyStatistics,
+  invocationSummary,
+  safeFailure,
   alertRulesFromSignals,
   syncOperationalAlerts,
   getSummary,

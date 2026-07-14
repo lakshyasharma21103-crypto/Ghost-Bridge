@@ -10,6 +10,8 @@ const {
   rate,
   percentile,
   latencyStatistics,
+  invocationSummary,
+  safeFailure,
   alertRulesFromSignals,
   syncOperationalAlerts,
   getLatency,
@@ -102,7 +104,14 @@ test('persisted invocation stage metrics are allow-listed, bounded, and contain 
 test('operational alert rules are deterministic and expose only safe aggregate values', () => {
   const signals = {
     readiness: { status: 'not_ready', database: 'unavailable', runtimeConfiguration: 'valid' },
-    invocations: { total: 100, successful: 0, failed: 100, failureRatePercent: 100 },
+    invocations: {
+      total: 100,
+      successful: 0,
+      failed: 98,
+      recoveryRequired: 2,
+      failureRatePercent: 100,
+      attempts: { repeatedTransientFailures: 1 },
+    },
     connections: { active: 2, health: { healthy: 0, unhealthy: 2, unknown: 0 } },
     errors: { credentialFailures: 1, providerErrors: 10 },
     audit: { authFailures: 10 },
@@ -118,7 +127,98 @@ test('operational alert rules are deterministic and expose only safe aggregate v
     first.some((rule) => rule.type === 'gateway_not_ready' && rule.severity === 'critical'),
   );
   assert.ok(first.some((rule) => rule.type === 'high_p95_latency' && rule.severity === 'warning'));
+  assert.ok(
+    first.some(
+      (rule) => rule.type === 'invocations_recovery_required' && rule.severity === 'critical',
+    ),
+  );
+  assert.ok(first.some((rule) => rule.type === 'repeated_transient_invocation_failures'));
   assert.doesNotMatch(JSON.stringify(first), /payload|bearer\s|api[_-]?key|runtimeEndpoint/i);
+});
+
+test('invocation summary includes lifecycle, recovery, and attempt metrics with legacy compatibility', async () => {
+  const originalAggregate = Invocation.aggregate;
+  let pipeline;
+  try {
+    Invocation.aggregate = async (value) => {
+      pipeline = value;
+      return [
+        {
+          totals: [
+            {
+              total: 8,
+              successful: 3,
+              failed: 1,
+              timedOut: 1,
+              cancelled: 1,
+              recoveryRequired: 1,
+              inProgress: 1,
+              running: 1,
+              queued: 0,
+              retryableFailures: 2,
+              totalAttempts: 7,
+              additionalAttempts: 1,
+              retriedInvocations: 1,
+              repeatedTransientFailures: 1,
+              retryAllowed: 0,
+              retryDenied: 3,
+            },
+          ],
+          runtimes: [{ _id: 'rest', count: 8 }],
+        },
+      ];
+    };
+    const result = await invocationSummary(
+      'workspace-a',
+      ['connection-a'],
+      parseWindow('24h', new Date('2026-07-13T12:00:00Z')),
+    );
+    assert.equal(result.successful, 3);
+    assert.equal(result.timedOut, 1);
+    assert.equal(result.recoveryRequired, 1);
+    assert.equal(result.inProgress, 1);
+    assert.equal(result.failureRatePercent, 37.5);
+    assert.deepEqual(result.attempts, {
+      total: 7,
+      additional: 1,
+      retriedInvocations: 1,
+      repeatedTransientFailures: 1,
+      retryAllowed: 0,
+      retryDenied: 3,
+    });
+    assert.match(JSON.stringify(pipeline), /effectiveLifecycleState|completed|succeeded/);
+  } finally {
+    Invocation.aggregate = originalAggregate;
+  }
+});
+
+test('recent problem projection includes only safe lifecycle and retry metadata', () => {
+  const projected = safeFailure({
+    _id: 'invocation-a',
+    connectionId: 'connection-a',
+    lifecycleState: 'recovery_required',
+    status: 'failed',
+    attemptCount: 1,
+    retryState: 'not_allowed',
+    retryDecisionReason: 'AMBIGUOUS_OUTCOME_REQUIRES_RECOVERY',
+    runtimeType: 'rest',
+    traceId: 'trace-a',
+    error: {
+      code: 'SAFE_FETCH_TIMEOUT',
+      stage: 'external_runtime_invocation',
+      retryable: true,
+      providerHttpStatus: 504,
+      message: 'Authorization: Bearer private-token',
+      responseBody: 'private output',
+    },
+  });
+  assert.equal(projected.status, 'recovery_required');
+  assert.equal(projected.retryDecision, 'denied');
+  assert.equal(projected.retryReason, 'AMBIGUOUS_OUTCOME_REQUIRES_RECOVERY');
+  assert.doesNotMatch(
+    JSON.stringify(projected),
+    /Bearer|private-token|responseBody|private output/,
+  );
 });
 
 test('alert synchronization is idempotent and increments occurrence only on reactivation', async () => {

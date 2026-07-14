@@ -1,4 +1,4 @@
-# Phase 13A2 operations
+# Phase 13A2 operations with Phase 13B1 lifecycle signals
 
 The Operations page and `/api/v1/operations` APIs provide receiving-workspace metrics from persisted
 gateway records. Every request requires the current receiving identity fields
@@ -32,14 +32,16 @@ limits must be between 1 and 100.
 - Connection `active` means `connected`. Health is `healthy`, `unhealthy`/`unreachable`, or `unknown`
   for an active connection without a recognized persisted result. Health-check failures count
   unhealthy or unreachable health audit results in the selected window.
-- Invocation success means `completed`; failure means `failed`; running and queued are pending.
-  Rates divide the relevant count by all invocations in the window and return zero for an empty
-  denominator. Retryability uses the existing deterministic classifier stored with invocation errors.
+- Invocation success means authoritative lifecycle `succeeded` (or legacy `completed`). Deterministic
+  failures, timeouts, cancellations, recovery-required outcomes, and in-progress states are reported
+  separately. Failure rate includes `failed`, `timed_out`, and `recovery_required`. Attempt totals,
+  additional attempts, retry decisions, and repeated transient failures use safe denormalized
+  invocation fields. Retryability uses the deterministic classifier stored with invocation errors.
 - Error groups contain only code, safe category, approved stage (or `unknown`), retryability, provider
   HTTP status, runtime type, connection health, count, percentage of failures, and latest timestamp.
   Raw messages, bodies, inputs, outputs, and stack traces are not projected.
 
-Overall latency uses completed invocations with a numeric `durationMs`. Average, min, max, p50, p95,
+Overall latency uses succeeded or legacy completed invocations with a numeric `durationMs`. Average, min, max, p50, p95,
 and p99 are calculated from the 10,000 most recent matching invocations using linear interpolation
 between sorted values. Responses state the sample size and whether it was truncated. Stage latency is
 derived only from the bounded Invocation `stageMetrics` array. Stored entries contain one of the nine
@@ -64,7 +66,7 @@ summary updates `lastSeenAt` without increasing occurrences. A cleared condition
 if it returns, the alert becomes active, acknowledgement fields are cleared, and `occurrenceCount`
 increases while `firstSeenAt` is preserved.
 
-Rules include gateway readiness loss, high invocation failure rate, all checked active connections
+Rules include recovery-required invocation outcomes, repeated transient invocation failures, gateway readiness loss, high invocation failure rate, all checked active connections
 unhealthy, credential failures, repeated authorization failures, provider 429/503/504 errors,
 repeated timeouts, high p95 latency, unhealthy or unknown connection health, elevated installation
 failures, elevated reused-key rejections, and activity with no successful invocation.
@@ -83,7 +85,8 @@ Defaults are configurable in `Backend/.env.example`:
 ## Safe data policy and dashboard
 
 The dashboard contains a flat metric row, invocation activity, connection health, internal alerts,
-installation funnel, stage latency, grouped failures, and recent failed invocation identifiers.
+installation funnel, stage latency, grouped failures, and recent failed or ambiguous invocation identifiers
+with state, attempt count, and safe retry reason.
 Drill-down uses existing authorized connection and invocation pages. It never renders prompts, task
 input, model/runtime response content, source URLs, request headers, cookies, keys, tokens, encrypted
 or decrypted credentials, connection strings, or raw logs.
@@ -98,5 +101,7 @@ or decrypted credentials, connection strings, or raw logs.
 - Percentiles are a documented bounded recent sample rather than an unbounded exact scan.
 - Alerts are evaluated on summary reads, not by a background scheduler, so condition transitions are
   observed when the dashboard or summary endpoint is used.
+- Expired invocation leases are marked opportunistically when invocation state is read or replayed;
+  there is no process-restart recovery scanner in Phase 13B1.
 - The internal alert model can later feed a provider-neutral exporter or webhook, but this phase adds no
   external monitoring vendor, queue, Redis cache, email, chat, or paid integration.

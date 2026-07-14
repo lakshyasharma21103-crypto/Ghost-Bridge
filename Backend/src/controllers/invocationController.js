@@ -3,6 +3,7 @@ const {
   importMcpTools,
   listInvocations: listGatewayInvocations,
   getInvocation: getGatewayInvocation,
+  listInvocationAttempts: listGatewayInvocationAttempts,
 } = require('../services/runtimeGateway.service');
 
 async function invokeConnection(request, response, next) {
@@ -16,6 +17,7 @@ async function invokeConnection(request, response, next) {
       requestId: request.requestId,
       traceId: request.traceId,
       observer: request.observer,
+      idempotencyKey: request.get('Idempotency-Key'),
       onInvocationCreated(invocationId) {
         response.setHeader('X-Invocation-Id', invocationId);
       },
@@ -60,9 +62,19 @@ async function getInvocation(request, response, next) {
   }
 }
 
+async function listInvocationAttempts(request, response, next) {
+  try {
+    const data = await listGatewayInvocationAttempts(request.params.id, request.query);
+    response.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   invokeConnection,
   importConnectionMcpTools,
   listInvocations,
   getInvocation,
+  listInvocationAttempts,
 };

@@ -5,6 +5,7 @@ const { resolveGeminiThinkingConfiguration } = require('./geminiThinking');
 
 const DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS = 180_000;
 const DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS = 90_000;
+const DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS = 2;
 const GEMINI_PROCESSING_OVERHEAD_MS = 10_000;
 
 const booleanValue = (defaultValue) =>
@@ -49,6 +50,12 @@ const environmentSchema = z
     GEMINI_WEB_SEARCH_ENABLED: booleanValue(true),
     GEMINI_RESEARCH_TIMEOUT_MS: optionalTimeout,
     GEMINI_FORMATTING_TIMEOUT_MS: optionalTimeout,
+    GEMINI_FORMATTING_MAX_ATTEMPTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(2)
+      .default(DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS),
     GEMINI_REQUEST_TIMEOUT_MS: optionalTimeout,
     GEMINI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(128).max(8_192).default(1_500),
     GEMINI_MAX_SOURCES: z.coerce.number().int().min(1).max(20).default(8),
@@ -158,6 +165,7 @@ function readEnvironment(source = process.env) {
       webSearchEnabled: result.data.GEMINI_WEB_SEARCH_ENABLED,
       researchTimeoutMs: timeouts.researchTimeoutMs,
       formattingTimeoutMs: timeouts.formattingTimeoutMs,
+      formattingMaxAttempts: result.data.GEMINI_FORMATTING_MAX_ATTEMPTS,
       maxOutputTokens: result.data.GEMINI_MAX_OUTPUT_TOKENS,
       maxSources: result.data.GEMINI_MAX_SOURCES,
       thinkingLevel: thinking.thinkingLevel,
@@ -175,6 +183,7 @@ function loadEnvironment() {
 }
 
 module.exports = {
+  DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS,
   DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
   DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
   GEMINI_PROCESSING_OVERHEAD_MS,

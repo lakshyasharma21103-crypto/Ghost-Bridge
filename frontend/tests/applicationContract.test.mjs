@@ -76,9 +76,16 @@ test('Operations uses tenant-scoped aggregate APIs and renders only safe operati
   assert.match(operations, /receivingWorkspaceId/);
   assert.match(operations, /No active operational alerts\./);
   assert.match(operations, /No failed invocations for this window\./);
+  assert.match(operations, /Recovery required/);
+  assert.match(operations, /External attempts/);
+  assert.match(operations, /Repeated transient failures/);
+  assert.match(operations, /Recent failed or ambiguous invocations/);
+  assert.match(operations, /attemptCount/);
+  assert.match(operations, /retryDecision/);
+  assert.match(operations, /recovery_required/);
   assert.doesNotMatch(
     operations,
-    /inputSummary|\.output\b|sourceUrl|Authorization|encryptedPayload|accessToken|installKey|apiKey/,
+    /inputSummary|\.output\b|sourceUrl|Authorization|encryptedPayload|accessToken|installKey|apiKey|idempotencyKeyHash/,
   );
 });
 

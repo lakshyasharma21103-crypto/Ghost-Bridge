@@ -146,6 +146,7 @@ test('Gemini stage defaults leave request-level processing overhead', () => {
 
   assert.equal(parsed.gemini.researchTimeoutMs, 180_000);
   assert.equal(parsed.gemini.formattingTimeoutMs, 90_000);
+  assert.equal(parsed.gemini.formattingMaxAttempts, 2);
   assert.ok(
     parsed.requestTimeoutMs >
       parsed.gemini.researchTimeoutMs +
@@ -185,6 +186,33 @@ test('legacy Gemini timeout is used only for absent stage-specific settings', ()
 
   assert.equal(parsed.gemini.researchTimeoutMs, 50_000);
   assert.equal(parsed.gemini.formattingTimeoutMs, 40_000);
+});
+
+test('formatting attempts are configurable only within the conservative bound', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_FORMATTING_MAX_ATTEMPTS: '1',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.formattingMaxAttempts, 1);
+  for (const invalidValue of ['0', '3', '1.5']) {
+    assert.throws(
+      () =>
+        readEnvironment({
+          NODE_ENV: 'test',
+          AI_PROVIDER: 'gemini',
+          GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+          GEMINI_MODEL: 'gemini-2.5-flash',
+          GEMINI_FORMATTING_MAX_ATTEMPTS: invalidValue,
+          EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+        }),
+      /GEMINI_FORMATTING_MAX_ATTEMPTS/,
+    );
+  }
 });
 
 test('Gemini model rejects resource names that could disclose project identifiers', () => {
@@ -511,6 +539,8 @@ test('invalid and oversized trace identifiers are replaced safely', async () => 
 test('external retryability and recursive redaction cover safe diagnostics', () => {
   assert.equal(isRetryableError({ code: 'GEMINI_RATE_LIMITED' }), true);
   assert.equal(isRetryableError({ code: 'RUNTIME_AUTHENTICATION_FAILED' }), false);
+  assert.equal(isRetryableError({ code: 'GEMINI_WEB_SEARCH_FAILED', statusCode: 502 }), false);
+  assert.equal(isRetryableError({ code: 'GEMINI_UNKNOWN_ERROR', statusCode: 502 }), false);
   const secret = 'external-secret-12345678';
   const redacted = redactSecrets({
     headers: { Authorization: `Bearer ${secret}` },
