@@ -137,7 +137,7 @@ async function verify() {
 
     const finalHealth = await request(baseUrl, '/health', { label: 'final health check' });
     assert(
-      finalHealth.response.ok && finalHealth.body?.data?.status === 'healthy',
+      finalHealth.response.ok && finalHealth.body?.data?.status === 'ok',
       'Service was unhealthy after failed requests.',
     );
     report('failure resilience', 'service remains healthy');

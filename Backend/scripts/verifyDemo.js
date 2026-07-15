@@ -186,13 +186,19 @@ async function verify() {
 
     const identity = { receivingWorkspaceId: WORKSPACE_ID, receivingUserId: USER_ID };
     const invocationList = success(
-      await request(baseUrl, `/invocations?${query(identity)}`, { label: 'invocation history' }),
+      await request(baseUrl, `/invocations?${query(identity)}`, {
+        headers: partnerHeaders,
+        label: 'invocation history',
+      }),
       'invocation history',
     );
     assert.ok(invocationList.items.some((item) => item.invocationId === invoked.invocationId));
 
     const auditList = success(
-      await request(baseUrl, `/audit-logs?${query(identity)}`, { label: 'audit history' }),
+      await request(baseUrl, `/audit-logs?${query(identity)}`, {
+        headers: partnerHeaders,
+        label: 'audit history',
+      }),
       'audit history',
     );
     assert.ok(auditList.items.some((item) => item.action === 'install_key.consumed'));
@@ -201,6 +207,7 @@ async function verify() {
     const operationsIdentity = { ...identity, window: '24h' };
     const operationsSummary = success(
       await request(baseUrl, `/operations/summary?${query(operationsIdentity)}`, {
+        headers: partnerHeaders,
         label: 'operations summary',
       }),
       'operations summary',
@@ -213,6 +220,7 @@ async function verify() {
 
     const operationsLatency = success(
       await request(baseUrl, `/operations/latency?${query(operationsIdentity)}`, {
+        headers: partnerHeaders,
         label: 'operations latency',
       }),
       'operations latency',
@@ -224,6 +232,7 @@ async function verify() {
 
     const operationsErrors = success(
       await request(baseUrl, `/operations/errors?${query(operationsIdentity)}`, {
+        headers: partnerHeaders,
         label: 'operations errors',
       }),
       'operations errors',
@@ -232,6 +241,7 @@ async function verify() {
 
     const operationsFunnel = success(
       await request(baseUrl, `/operations/passport-funnel?${query(operationsIdentity)}`, {
+        headers: partnerHeaders,
         label: 'operations funnel',
       }),
       'operations funnel',
@@ -244,6 +254,7 @@ async function verify() {
 
     const operationsAlerts = success(
       await request(baseUrl, `/operations/alerts?${query(identity)}`, {
+        headers: partnerHeaders,
         label: 'operations alerts',
       }),
       'operations alerts',

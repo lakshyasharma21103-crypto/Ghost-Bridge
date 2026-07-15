@@ -174,18 +174,45 @@ function windowView(window) {
   return { key: window.key, from: window.since, to: window.until };
 }
 
-async function connectionIdsForWorkspace(receivingWorkspaceId) {
-  return PassportConnection.distinct('_id', { receivingWorkspaceId });
+function partnerIdFrom(actor = {}) {
+  return actor?.partner?._id || actor?.partnerId;
+}
+
+async function connectionIdsForWorkspace(receivingWorkspaceId, partnerId) {
+  return PassportConnection.distinct('_id', {
+    receivingWorkspaceId,
+    ...(partnerId ? { partnerId } : {}),
+  });
+}
+
+function connectionMatch(receivingWorkspaceId, connectionIds) {
+  return {
+    receivingWorkspaceId,
+    ...(Array.isArray(connectionIds) ? { _id: { $in: connectionIds } } : {}),
+  };
+}
+
+function ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds) {
+  const ownedIds = Array.isArray(connectionIds) ? connectionIds.map(String) : null;
+  return {
+    'metadata.receivingWorkspaceId': receivingWorkspaceId,
+    ...(ownedIds
+      ? {
+          $or: [
+            { 'metadata.connectionId': { $in: ownedIds } },
+            { entityType: 'PassportConnection', entityId: { $in: ownedIds } },
+          ],
+        }
+      : {}),
+  };
 }
 
 function invocationMatch(receivingWorkspaceId, connectionIds, since, extra = {}) {
   return {
     $and: [
       {
-        $or: [
-          { receivingWorkspaceId },
-          ...(connectionIds.length ? [{ connectionId: { $in: connectionIds } }] : []),
-        ],
+        receivingWorkspaceId,
+        ...(Array.isArray(connectionIds) ? { connectionId: { $in: connectionIds } } : {}),
       },
       { createdAt: { $gte: since } },
       extra,
@@ -194,116 +221,181 @@ function invocationMatch(receivingWorkspaceId, connectionIds, since, extra = {})
 }
 
 async function invocationSummary(receivingWorkspaceId, connectionIds, window) {
-  const [result = { totals: [], runtimes: [] }] = await Invocation.aggregate([
-    { $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since) },
-    { $set: { effectiveLifecycleState: effectiveLifecycleExpression() } },
-    {
-      $facet: {
-        totals: [
-          {
-            $group: {
-              _id: null,
-              total: { $sum: 1 },
-              successful: {
-                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'succeeded'] }, 1, 0] },
-              },
-              failed: {
-                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'failed'] }, 1, 0] },
-              },
-              timedOut: {
-                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'timed_out'] }, 1, 0] },
-              },
-              cancelled: {
-                $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'cancelled'] }, 1, 0] },
-              },
-              recoveryRequired: {
-                $sum: {
-                  $cond: [{ $eq: ['$effectiveLifecycleState', 'recovery_required'] }, 1, 0],
-                },
-              },
-              inProgress: {
-                $sum: {
-                  $cond: [
-                    { $in: ['$effectiveLifecycleState', IN_PROGRESS_LIFECYCLE_STATES] },
-                    1,
-                    0,
-                  ],
-                },
-              },
-              running: {
-                $sum: {
-                  $cond: [
-                    { $in: ['$effectiveLifecycleState', ['running', 'waiting_for_runtime']] },
-                    1,
-                    0,
-                  ],
-                },
-              },
-              queued: {
-                $sum: {
-                  $cond: [
-                    { $in: ['$effectiveLifecycleState', ['accepted', 'validating', 'authorized']] },
-                    1,
-                    0,
-                  ],
-                },
-              },
-              retryableFailures: {
-                $sum: {
-                  $cond: [
-                    {
-                      $and: [
-                        { $in: ['$effectiveLifecycleState', PROBLEM_LIFECYCLE_STATES] },
-                        { $eq: ['$error.retryable', true] },
+  const [[result = { totals: [], runtimes: [] }], manualRetryAllowed, recoveryRetryDenied] =
+    await Promise.all([
+      Invocation.aggregate([
+        { $match: invocationMatch(receivingWorkspaceId, connectionIds, window.since) },
+        { $set: { effectiveLifecycleState: effectiveLifecycleExpression() } },
+        {
+          $facet: {
+            totals: [
+              {
+                $group: {
+                  _id: null,
+                  total: { $sum: 1 },
+                  successful: {
+                    $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'succeeded'] }, 1, 0] },
+                  },
+                  failed: {
+                    $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'failed'] }, 1, 0] },
+                  },
+                  timedOut: {
+                    $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'timed_out'] }, 1, 0] },
+                  },
+                  cancelled: {
+                    $sum: { $cond: [{ $eq: ['$effectiveLifecycleState', 'cancelled'] }, 1, 0] },
+                  },
+                  recoveryRequired: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            { $eq: ['$effectiveLifecycleState', 'recovery_required'] },
+                            { $ne: ['$recoveryState', 'resolved'] },
+                          ],
+                        },
+                        1,
+                        0,
                       ],
                     },
-                    1,
-                    0,
-                  ],
-                },
-              },
-              totalAttempts: { $sum: { $ifNull: ['$attemptCount', 0] } },
-              additionalAttempts: {
-                $sum: {
-                  $cond: [
-                    { $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] },
-                    { $subtract: [{ $ifNull: ['$attemptCount', 0] }, 1] },
-                    0,
-                  ],
-                },
-              },
-              retriedInvocations: {
-                $sum: { $cond: [{ $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] }, 1, 0] },
-              },
-              repeatedTransientFailures: {
-                $sum: {
-                  $cond: [
-                    {
-                      $and: [
+                  },
+                  inProgress: {
+                    $sum: {
+                      $cond: [
+                        { $in: ['$effectiveLifecycleState', IN_PROGRESS_LIFECYCLE_STATES] },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  running: {
+                    $sum: {
+                      $cond: [
+                        { $in: ['$effectiveLifecycleState', ['running', 'waiting_for_runtime']] },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  queued: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $in: [
+                            '$effectiveLifecycleState',
+                            ['accepted', 'validating', 'authorized'],
+                          ],
+                        },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  retryableFailures: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            { $in: ['$effectiveLifecycleState', PROBLEM_LIFECYCLE_STATES] },
+                            { $eq: ['$error.retryable', true] },
+                          ],
+                        },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  totalAttempts: { $sum: { $ifNull: ['$attemptCount', 0] } },
+                  additionalAttempts: {
+                    $sum: {
+                      $cond: [
                         { $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] },
-                        { $eq: ['$error.retryable', true] },
+                        { $subtract: [{ $ifNull: ['$attemptCount', 0] }, 1] },
+                        0,
                       ],
                     },
-                    1,
-                    0,
-                  ],
+                  },
+                  retriedInvocations: {
+                    $sum: { $cond: [{ $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] }, 1, 0] },
+                  },
+                  repeatedTransientFailures: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            { $gt: [{ $ifNull: ['$attemptCount', 0] }, 1] },
+                            { $eq: ['$error.retryable', true] },
+                          ],
+                        },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  retryAllowed: {
+                    $sum: { $cond: [{ $eq: ['$retryState', 'scheduled'] }, 1, 0] },
+                  },
+                  retryDenied: {
+                    $sum: {
+                      $cond: [{ $in: ['$retryState', ['not_allowed', 'exhausted']] }, 1, 0],
+                    },
+                  },
+                  cancellationRequested: {
+                    $sum: {
+                      $cond: [{ $ne: [{ $ifNull: ['$cancelRequestedAt', null] }, null] }, 1, 0],
+                    },
+                  },
+                  cancellationConfirmed: {
+                    $sum: { $cond: [{ $eq: ['$cancellationState', 'confirmed'] }, 1, 0] },
+                  },
+                  cancellationOutcomeUnknown: {
+                    $sum: { $cond: [{ $eq: ['$cancellationState', 'outcome_unknown'] }, 1, 0] },
+                  },
+                  stuckDetected: {
+                    $sum: {
+                      $cond: [{ $ne: [{ $ifNull: ['$stuckDetectedAt', null] }, null] }, 1, 0],
+                    },
+                  },
+                  manuallyResolved: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            { $eq: ['$recoveryState', 'resolved'] },
+                            {
+                              $in: [
+                                '$recoveryDecision',
+                                ['resolve_as_failed_allowed', 'resolve_as_cancelled_allowed'],
+                              ],
+                            },
+                          ],
+                        },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
                 },
               },
-              retryAllowed: {
-                $sum: { $cond: [{ $eq: ['$retryState', 'scheduled'] }, 1, 0] },
-              },
-              retryDenied: {
-                $sum: {
-                  $cond: [{ $in: ['$retryState', ['not_allowed', 'exhausted']] }, 1, 0],
-                },
-              },
-            },
+            ],
+            runtimes: [
+              { $group: { _id: '$runtimeType', count: { $sum: 1 } } },
+              { $sort: { _id: 1 } },
+            ],
           },
-        ],
-        runtimes: [{ $group: { _id: '$runtimeType', count: { $sum: 1 } } }, { $sort: { _id: 1 } }],
-      },
-    },
-  ]);
+        },
+      ]),
+      AuditLog.countDocuments({
+        ...ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds),
+        action: 'invocation.recovery.retry_allowed',
+        createdAt: { $gte: window.since },
+      }),
+      AuditLog.countDocuments({
+        ...ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds),
+        action: 'invocation.recovery.retry_denied',
+        createdAt: { $gte: window.since },
+      }),
+    ]);
   const totals = result.totals?.[0] || {};
   const problemCount =
     (totals.failed || 0) + (totals.timedOut || 0) + (totals.recoveryRequired || 0);
@@ -333,6 +425,111 @@ async function invocationSummary(receivingWorkspaceId, connectionIds, window) {
       retryAllowed: totals.retryAllowed || 0,
       retryDenied: totals.retryDenied || 0,
     },
+    controls: {
+      cancellationRequested: totals.cancellationRequested || 0,
+      cancellationConfirmed: totals.cancellationConfirmed || 0,
+      cancellationOutcomeUnknown: totals.cancellationOutcomeUnknown || 0,
+      stuckDetected: totals.stuckDetected || 0,
+      recoveryRequired: totals.recoveryRequired || 0,
+      manuallyRetried: manualRetryAllowed || 0,
+      manuallyResolved: totals.manuallyResolved || 0,
+      retryDenied: recoveryRetryDenied || 0,
+    },
+  };
+}
+
+async function invocationControlSummary(receivingWorkspaceId, connectionIds, window) {
+  const [[row = {}], manuallyRetried, retryDenied] = await Promise.all([
+    Invocation.aggregate([
+      {
+        $match: {
+          receivingWorkspaceId,
+          ...(Array.isArray(connectionIds) ? { connectionId: { $in: connectionIds } } : {}),
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          cancellationRequested: {
+            $sum: { $cond: [{ $gte: ['$cancelRequestedAt', window.since] }, 1, 0] },
+          },
+          cancellationConfirmed: {
+            $sum: { $cond: [{ $gte: ['$cancellationConfirmedAt', window.since] }, 1, 0] },
+          },
+          cancellationOutcomeUnknown: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$cancellationState', 'outcome_unknown'] },
+                    { $gte: ['$cancelRequestedAt', window.since] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          stuckDetected: {
+            $sum: { $cond: [{ $gte: ['$stuckDetectedAt', window.since] }, 1, 0] },
+          },
+          recoveryRequired: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$lifecycleState', 'recovery_required'] },
+                    { $ne: ['$recoveryState', 'resolved'] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          manuallyResolved: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$recoveryState', 'resolved'] },
+                    {
+                      $in: [
+                        '$recoveryDecision',
+                        ['resolve_as_failed_allowed', 'resolve_as_cancelled_allowed'],
+                      ],
+                    },
+                    { $gte: ['$recoveryCompletedAt', window.since] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]),
+    AuditLog.countDocuments({
+      ...ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds),
+      action: 'invocation.recovery.retry_allowed',
+      createdAt: { $gte: window.since },
+    }),
+    AuditLog.countDocuments({
+      ...ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds),
+      action: 'invocation.recovery.retry_denied',
+      createdAt: { $gte: window.since },
+    }),
+  ]);
+  return {
+    cancellationRequested: row.cancellationRequested || 0,
+    cancellationConfirmed: row.cancellationConfirmed || 0,
+    cancellationOutcomeUnknown: row.cancellationOutcomeUnknown || 0,
+    stuckDetected: row.stuckDetected || 0,
+    recoveryRequired: row.recoveryRequired || 0,
+    manuallyRetried: manuallyRetried || 0,
+    manuallyResolved: row.manuallyResolved || 0,
+    retryDenied: retryDenied || 0,
   };
 }
 
@@ -398,9 +595,10 @@ async function recentFailures(receivingWorkspaceId, connectionIds, window, limit
 }
 
 async function connectionSummary(receivingWorkspaceId, window, connectionIds = []) {
+  const scopedConnections = connectionMatch(receivingWorkspaceId, connectionIds);
   const [[counts = {}], healthFailures] = await Promise.all([
     PassportConnection.aggregate([
-      { $match: { receivingWorkspaceId } },
+      { $match: scopedConnections },
       {
         $group: {
           _id: null,
@@ -464,13 +662,13 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
       },
     ]),
     AuditLog.countDocuments({
-      'metadata.receivingWorkspaceId': receivingWorkspaceId,
+      ...ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds),
       action: 'connection.health_checked',
       'metadata.result': { $in: ['unhealthy', 'unreachable'] },
       ...(window ? { createdAt: { $gte: window.since } } : {}),
     }),
   ]);
-  const items = await PassportConnection.find({ receivingWorkspaceId, status: 'connected' })
+  const items = await PassportConnection.find({ ...scopedConnections, status: 'connected' })
     .select(
       '_id status runtimeType healthStatus lastHealthStatus lastHealthCheckedAt resolvedPassportSnapshot.agent.name updatedAt',
     )
@@ -521,7 +719,7 @@ async function connectionSummary(receivingWorkspaceId, window, connectionIds = [
   };
 }
 
-async function reliabilitySummary(receivingWorkspaceId, window) {
+async function reliabilitySummary(receivingWorkspaceId, window, connectionIds) {
   const lifecycle = serviceLifecycle.snapshot();
   if (mongoose.connection.readyState !== 1) {
     return {
@@ -535,20 +733,33 @@ async function reliabilitySummary(receivingWorkspaceId, window) {
   const [circuitRows, rateLimitedConnections, capacityRows, capacityRejections] = await Promise.all(
     [
       CircuitBreaker.aggregate([
-        { $match: { workspaceId: receivingWorkspaceId, state: { $in: ['open', 'half_open'] } } },
+        {
+          $match: {
+            workspaceId: receivingWorkspaceId,
+            ...(Array.isArray(connectionIds) ? { connectionId: { $in: connectionIds } } : {}),
+            state: { $in: ['open', 'half_open'] },
+          },
+        },
         { $group: { _id: '$state', count: { $sum: 1 } } },
       ]),
       CircuitBreaker.distinct('connectionId', {
         workspaceId: receivingWorkspaceId,
+        ...(Array.isArray(connectionIds) ? { connectionId: { $in: connectionIds } } : {}),
         rateLimitedUntil: { $gt: now },
       }).then((ids) => ids.length),
       RuntimeCapacitySlot.aggregate([
-        { $match: { workspaceId: receivingWorkspaceId, leaseExpiresAt: { $gt: now } } },
+        {
+          $match: {
+            workspaceId: receivingWorkspaceId,
+            ...(Array.isArray(connectionIds) ? { connectionId: { $in: connectionIds } } : {}),
+            leaseExpiresAt: { $gt: now },
+          },
+        },
         { $group: { _id: '$leaseId', slots: { $sum: 1 } } },
         { $group: { _id: null, activeInvocations: { $sum: 1 }, activeSlots: { $sum: '$slots' } } },
       ]),
       AuditLog.countDocuments({
-        'metadata.receivingWorkspaceId': receivingWorkspaceId,
+        ...ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds),
         action: 'capacity.rejected',
         ...(window ? { createdAt: { $gte: window.since } } : {}),
       }),
@@ -567,9 +778,9 @@ async function reliabilitySummary(receivingWorkspaceId, window) {
   };
 }
 
-async function passportSummary(receivingWorkspaceId, window) {
+async function passportSummary(receivingWorkspaceId, window, connectionIds) {
   const [counts = {}] = await PassportConnection.aggregate([
-    { $match: { receivingWorkspaceId } },
+    { $match: connectionMatch(receivingWorkspaceId, connectionIds) },
     { $group: { _id: '$passportId' } },
     {
       $lookup: {
@@ -611,15 +822,24 @@ async function passportSummary(receivingWorkspaceId, window) {
   };
 }
 
-async function installationFunnel(receivingWorkspaceId, connectionIds, window) {
+async function installationFunnel(receivingWorkspaceId, connectionIds, window, partnerId) {
+  const partnerInstallKeyIds = partnerId
+    ? (await PassportInstallKey.distinct('_id', { partnerId })).map(String)
+    : null;
   const [resolvedKeys, [connectionCounts = {}], firstSuccessRows, auditRows] = await Promise.all([
     PassportInstallKey.countDocuments({
       usedByWorkspaceId: receivingWorkspaceId,
+      ...(partnerId ? { partnerId } : {}),
       status: 'used',
       usedAt: { $gte: window.since },
     }),
     PassportConnection.aggregate([
-      { $match: { receivingWorkspaceId, createdAt: { $gte: window.since } } },
+      {
+        $match: {
+          ...connectionMatch(receivingWorkspaceId, connectionIds),
+          createdAt: { $gte: window.since },
+        },
+      },
       {
         $group: {
           _id: null,
@@ -704,6 +924,8 @@ async function installationFunnel(receivingWorkspaceId, connectionIds, window) {
       {
         $match: {
           'metadata.receivingWorkspaceId': receivingWorkspaceId,
+          entityType: 'PassportInstallKey',
+          ...(partnerInstallKeyIds ? { entityId: { $in: partnerInstallKeyIds } } : {}),
           action: 'install_key.resolve_denied',
           createdAt: { $gte: window.since },
         },
@@ -745,10 +967,13 @@ async function installationFunnel(receivingWorkspaceId, connectionIds, window) {
   };
 }
 
-async function getLatency(input) {
+async function getLatency(input, actor = {}) {
   const identity = requireIdentity(input);
   const window = parseWindow(input?.window);
-  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
+  const connectionIds = await connectionIdsForWorkspace(
+    identity.receivingWorkspaceId,
+    partnerIdFrom(actor),
+  );
   const match = invocationMatch(identity.receivingWorkspaceId, connectionIds, window.since, {
     ...successfulInvocationFilter(),
     durationMs: { $type: 'number' },
@@ -786,11 +1011,14 @@ async function getLatency(input) {
   };
 }
 
-async function getErrors(input) {
+async function getErrors(input, actor = {}) {
   const identity = requireIdentity(input);
   const window = parseWindow(input?.window);
   const pagination = pageFromInput(input);
-  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
+  const connectionIds = await connectionIdsForWorkspace(
+    identity.receivingWorkspaceId,
+    partnerIdFrom(actor),
+  );
   const match = invocationMatch(
     identity.receivingWorkspaceId,
     connectionIds,
@@ -910,6 +1138,10 @@ function alertRulesFromSignals(signals) {
     rateLimitedConnections: 0,
   };
   const audit = signals.audit || {};
+  const ambiguousRemoteOutcomeCount = Math.max(
+    audit.ambiguousRemoteOutcomes || 0,
+    audit.cancellationOutcomeUnknown || 0,
+  );
   const add = (condition, rule) => {
     if (condition) rules.push(rule);
   };
@@ -1025,6 +1257,110 @@ function alertRulesFromSignals(signals) {
     observedValue: audit.shutdownInterrupted,
     thresholdValue: 1,
     safeValues: { count: audit.shutdownInterrupted },
+  });
+  add(ambiguousRemoteOutcomeCount >= env.OPS_ALERT_AMBIGUOUS_OUTCOME_COUNT, {
+    type: 'high_ambiguous_remote_outcomes',
+    severity: 'critical',
+    title: 'Ambiguous remote outcomes are elevated',
+    summary: 'Multiple transmitted invocations require explicit operator review.',
+    metricName: 'ambiguous_remote_outcome_events',
+    observedValue: ambiguousRemoteOutcomeCount,
+    thresholdValue: env.OPS_ALERT_AMBIGUOUS_OUTCOME_COUNT,
+    safeValues: { count: ambiguousRemoteOutcomeCount },
+  });
+  add((audit.finalizationStalled || 0) >= env.OPS_ALERT_FINALIZATION_STALL_COUNT, {
+    type: 'repeated_finalization_stalls',
+    severity: 'critical',
+    title: 'Invocation finalization is repeatedly stalled',
+    summary: 'Remote responses were received but safe local finalization did not complete.',
+    metricName: 'finalization_stalled_events',
+    observedValue: audit.finalizationStalled,
+    thresholdValue: env.OPS_ALERT_FINALIZATION_STALL_COUNT,
+    safeValues: { count: audit.finalizationStalled },
+  });
+  add((audit.recoveryEligible || 0) >= env.OPS_ALERT_RECOVERY_GROWTH_COUNT, {
+    type: 'recovery_queue_increasing',
+    severity: 'critical',
+    title: 'Recovery review queue is increasing',
+    summary: 'New invocations are entering controlled recovery review rapidly.',
+    metricName: 'recovery_eligible_events',
+    observedValue: audit.recoveryEligible,
+    thresholdValue: env.OPS_ALERT_RECOVERY_GROWTH_COUNT,
+    safeValues: { count: audit.recoveryEligible },
+  });
+  add((audit.cancellationOutcomeUnknown || 0) > 0, {
+    type: 'cancellation_outcome_unknown',
+    severity: 'warning',
+    title: 'Cancellation outcome is not confirmed',
+    summary: 'A local abort could not prove that remote execution stopped.',
+    metricName: 'cancellation_outcome_unknown_events',
+    observedValue: audit.cancellationOutcomeUnknown,
+    thresholdValue: 1,
+    safeValues: { count: audit.cancellationOutcomeUnknown },
+  });
+  for (const item of audit.stuckByConnection || []) {
+    add(item.count >= env.OPS_ALERT_STUCK_INVOCATION_COUNT, {
+      type: 'repeated_stuck_invocations',
+      scopeKey: item.connectionId,
+      severity: 'warning',
+      title: 'A connection has repeated stuck invocations',
+      summary: 'Bounded recovery scans found repeated stale or overdue work for one connection.',
+      metricName: 'stuck_invocation_events_per_connection',
+      observedValue: item.count,
+      thresholdValue: env.OPS_ALERT_STUCK_INVOCATION_COUNT,
+      safeValues: { connectionId: item.connectionId, count: item.count },
+    });
+  }
+  add((audit.leaseExpired || 0) >= env.OPS_ALERT_LEASE_EXPIRY_COUNT, {
+    type: 'execution_leases_frequently_expiring',
+    severity: 'warning',
+    title: 'Execution leases are frequently expiring',
+    summary: 'Repeated ownership expiry requires runtime recovery review.',
+    metricName: 'execution_lease_expiry_events',
+    observedValue: audit.leaseExpired,
+    thresholdValue: env.OPS_ALERT_LEASE_EXPIRY_COUNT,
+    safeValues: { count: audit.leaseExpired },
+  });
+  add((audit.manualRetryDenied || 0) >= env.OPS_ALERT_RETRY_DENIAL_COUNT, {
+    type: 'manual_retries_repeatedly_denied',
+    severity: 'warning',
+    title: 'Manual retries are repeatedly denied',
+    summary: 'Recovery policy could not prove repeated replay requests safe.',
+    metricName: 'manual_retry_denied_events',
+    observedValue: audit.manualRetryDenied,
+    thresholdValue: env.OPS_ALERT_RETRY_DENIAL_COUNT,
+    safeValues: { count: audit.manualRetryDenied },
+  });
+  add((audit.cancellationConfirmed || 0) > 0, {
+    type: 'invocation_cancellation_confirmed',
+    severity: 'info',
+    title: 'Invocation cancellation was confirmed',
+    summary: 'One or more invocations were cancelled before uncertain remote execution.',
+    metricName: 'cancellation_confirmed_events',
+    observedValue: audit.cancellationConfirmed,
+    thresholdValue: 1,
+    safeValues: { count: audit.cancellationConfirmed },
+  });
+  add((audit.recoveryResolved || 0) > 0, {
+    type: 'invocation_recovery_completed',
+    severity: 'info',
+    title: 'Invocation recovery action completed',
+    summary: 'Operator-reviewed recovery work reached a controlled resolution.',
+    metricName: 'recovery_resolved_events',
+    observedValue: audit.recoveryResolved,
+    thresholdValue: 1,
+    safeValues: { count: audit.recoveryResolved },
+  });
+  add((audit.stuckResolved || 0) > 0, {
+    type: 'stuck_invocation_resolved',
+    severity: 'info',
+    title: 'Stuck invocation was resolved',
+    summary:
+      'Operator-reviewed work previously classified as stuck reached a controlled resolution.',
+    metricName: 'stuck_invocation_resolved_events',
+    observedValue: audit.stuckResolved,
+    thresholdValue: 1,
+    safeValues: { count: audit.stuckResolved },
   });
   add(
     signals.invocations.total >= env.OPS_ALERT_FAILURE_RATE_MIN_INVOCATIONS &&
@@ -1275,75 +1611,236 @@ async function alertErrorSignals(receivingWorkspaceId, connectionIds, window) {
   };
 }
 
-async function alertAuditSignals(receivingWorkspaceId, window) {
-  const [row = {}] = await AuditLog.aggregate([
-    {
-      $match: {
-        'metadata.receivingWorkspaceId': receivingWorkspaceId,
-        createdAt: { $gte: window.since },
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        authFailures: {
-          $sum: {
-            $cond: [
-              { $in: ['$metadata.errorCode', ['AUTHENTICATION_REQUIRED', 'FORBIDDEN']] },
-              1,
-              0,
-            ],
-          },
+async function alertAuditSignals(receivingWorkspaceId, connectionIds, window) {
+  const [facet = { totals: [], stuckByConnection: [], ambiguousInvocations: [] }] =
+    await AuditLog.aggregate([
+      {
+        $match: {
+          ...ownedConnectionAuditMatch(receivingWorkspaceId, connectionIds),
+          createdAt: { $gte: window.since },
         },
-        circuitClosed: { $sum: { $cond: [{ $eq: ['$action', 'circuit.closed'] }, 1, 0] } },
-        circuitOpened: { $sum: { $cond: [{ $eq: ['$action', 'circuit.opened'] }, 1, 0] } },
-        connectionReturnedHealthy: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $eq: ['$action', 'connection.health_changed'] },
-                  { $eq: ['$metadata.toState', 'healthy'] },
+      },
+      {
+        $facet: {
+          totals: [
+            {
+              $group: {
+                _id: null,
+                authFailures: {
+                  $sum: {
+                    $cond: [
+                      { $in: ['$metadata.errorCode', ['AUTHENTICATION_REQUIRED', 'FORBIDDEN']] },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                circuitClosed: {
+                  $sum: { $cond: [{ $eq: ['$action', 'circuit.closed'] }, 1, 0] },
+                },
+                circuitOpened: {
+                  $sum: { $cond: [{ $eq: ['$action', 'circuit.opened'] }, 1, 0] },
+                },
+                connectionReturnedHealthy: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$action', 'connection.health_changed'] },
+                          { $eq: ['$metadata.toState', 'healthy'] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                shutdownInterrupted: {
+                  $sum: {
+                    $cond: [{ $eq: ['$action', 'invocation.shutdown_interrupted'] }, 1, 0],
+                  },
+                },
+                cancellationConfirmed: {
+                  $sum: {
+                    $cond: [{ $eq: ['$action', 'invocation.cancel.confirmed'] }, 1, 0],
+                  },
+                },
+                cancellationOutcomeUnknown: {
+                  $sum: {
+                    $cond: [{ $eq: ['$action', 'invocation.cancel.outcome_unknown'] }, 1, 0],
+                  },
+                },
+                stuckDetected: {
+                  $sum: { $cond: [{ $eq: ['$action', 'invocation.stuck.detected'] }, 1, 0] },
+                },
+                finalizationStalled: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$action', 'invocation.stuck.detected'] },
+                          { $eq: ['$metadata.stuckClassification', 'finalization_stalled'] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                leaseExpired: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ['$action', 'invocation.stuck.detected'] },
+                          { $eq: ['$metadata.reasonCode', 'EXECUTION_LEASE_EXPIRED'] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                recoveryEligible: {
+                  $sum: { $cond: [{ $eq: ['$action', 'invocation.recovery.eligible'] }, 1, 0] },
+                },
+                manualRetryDenied: {
+                  $sum: {
+                    $cond: [{ $eq: ['$action', 'invocation.recovery.retry_denied'] }, 1, 0],
+                  },
+                },
+                recoveryResolved: {
+                  $sum: { $cond: [{ $eq: ['$action', 'invocation.recovery.resolved'] }, 1, 0] },
+                },
+                stuckResolved: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $or: [
+                          { $eq: ['$action', 'invocation.stuck.resolved'] },
+                          {
+                            $and: [
+                              { $eq: ['$action', 'invocation.recovery.resolved'] },
+                              {
+                                $in: [
+                                  '$metadata.stuckClassification',
+                                  [
+                                    'stale_before_runtime',
+                                    'external_runtime_overdue',
+                                    'lease_expired',
+                                    'finalization_stalled',
+                                    'shutdown_interrupted',
+                                    'outcome_ambiguous',
+                                  ],
+                                ],
+                              },
+                            ],
+                          },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+          stuckByConnection: [
+            {
+              $match: {
+                action: 'invocation.stuck.detected',
+                'metadata.connectionId': { $type: 'string' },
+              },
+            },
+            { $group: { _id: '$metadata.connectionId', count: { $sum: 1 } } },
+            { $sort: { count: -1, _id: 1 } },
+            { $limit: 100 },
+          ],
+          ambiguousInvocations: [
+            {
+              $match: {
+                $or: [
+                  { action: 'invocation.cancel.outcome_unknown' },
+                  {
+                    action: 'invocation.recovery.eligible',
+                    'metadata.reasonCode': {
+                      $in: [
+                        'REMOTE_OUTCOME_UNKNOWN',
+                        'REMOTE_OUTCOME_AMBIGUOUS',
+                        'REMOTE_TIMEOUT_OUTCOME_AMBIGUOUS',
+                        'AMBIGUOUS_REMOTE_OUTCOME',
+                        'RESPONSE_PERSISTENCE_UNCERTAIN',
+                        'RUNTIME_DEADLINE_EXCEEDED',
+                        'EXECUTION_LEASE_EXPIRED',
+                        'FINALIZATION_STALLED',
+                        'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
+                        'RECOVERY_CLAIM_INTERRUPTED',
+                        'CHILD_REMOTE_OUTCOME_UNKNOWN',
+                      ],
+                    },
+                  },
                 ],
               },
-              1,
-              0,
-            ],
-          },
-        },
-        shutdownInterrupted: {
-          $sum: {
-            $cond: [{ $eq: ['$action', 'invocation.shutdown_interrupted'] }, 1, 0],
-          },
+            },
+            { $group: { _id: { $ifNull: ['$invocationId', '$metadata.invocationId'] } } },
+            { $match: { _id: { $type: 'string' } } },
+            { $count: 'count' },
+          ],
         },
       },
-    },
-  ]);
+    ]);
+  const row = facet.totals?.[0] || {};
   return {
     authFailures: row.authFailures || 0,
     circuitClosed: row.circuitClosed || 0,
     circuitOpened: row.circuitOpened || 0,
     connectionReturnedHealthy: row.connectionReturnedHealthy || 0,
     shutdownInterrupted: row.shutdownInterrupted || 0,
+    cancellationConfirmed: row.cancellationConfirmed || 0,
+    cancellationOutcomeUnknown: row.cancellationOutcomeUnknown || 0,
+    ambiguousRemoteOutcomes: facet.ambiguousInvocations?.[0]?.count || 0,
+    stuckDetected: row.stuckDetected || 0,
+    finalizationStalled: row.finalizationStalled || 0,
+    leaseExpired: row.leaseExpired || 0,
+    recoveryEligible: row.recoveryEligible || 0,
+    manualRetryDenied: row.manualRetryDenied || 0,
+    recoveryResolved: row.recoveryResolved || 0,
+    stuckResolved: row.stuckResolved || 0,
+    stuckByConnection: (facet.stuckByConnection || []).map((item) => ({
+      connectionId: String(item._id),
+      count: Number(item.count || 0),
+    })),
   };
 }
 
-async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date()) {
-  const existing = await OperationalAlert.find({ receivingWorkspaceId }).lean();
-  const byType = new Map(existing.map((alert) => [alert.type, alert]));
-  const activeTypes = new Set(rules.map((rule) => rule.type));
+async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date(), actor = {}) {
+  const partnerId = partnerIdFrom(actor);
+  const scopeFilter = {
+    receivingWorkspaceId,
+    ...(partnerId ? { partnerId } : { partnerId: { $exists: false } }),
+  };
+  const existing = await OperationalAlert.find(scopeFilter).lean();
+  const byDedupeKey = new Map(existing.map((alert) => [alert.dedupeKey, alert]));
+  const dedupeKeyFor = (rule) =>
+    partnerId
+      ? `${String(partnerId)}:${receivingWorkspaceId}:${rule.type}:${rule.scopeKey || 'workspace'}`
+      : `${receivingWorkspaceId}:${rule.type}${rule.scopeKey ? `:${rule.scopeKey}` : ''}`;
+  const activeDedupeKeys = new Set(rules.map(dedupeKeyFor));
   const operations = [];
   for (const rule of rules) {
-    const current = byType.get(rule.type);
-    const dedupeKey = `${receivingWorkspaceId}:${rule.type}`;
+    const dedupeKey = dedupeKeyFor(rule);
+    const current = byDedupeKey.get(dedupeKey);
     if (!current) {
       operations.push({
         updateOne: {
           filter: { dedupeKey },
           update: {
             $setOnInsert: {
+              ...(partnerId ? { partnerId } : {}),
               receivingWorkspaceId,
               type: rule.type,
+              ...(rule.scopeKey ? { scopeKey: rule.scopeKey } : {}),
               dedupeKey,
               occurrenceCount: 1,
               firstSeenAt: now,
@@ -1405,7 +1902,7 @@ async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date
     }
   }
   for (const current of existing) {
-    if (!activeTypes.has(current.type) && current.status !== 'resolved') {
+    if (!activeDedupeKeys.has(current.dedupeKey) && current.status !== 'resolved') {
       operations.push({
         updateOne: {
           filter: { _id: current._id, status: { $ne: 'resolved' } },
@@ -1417,20 +1914,29 @@ async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date
   if (operations.length) await OperationalAlert.bulkWrite(operations, { ordered: false });
 }
 
-async function evaluateWorkspaceAlerts(receivingWorkspaceId, connectionIds, now = new Date()) {
+async function evaluateWorkspaceAlerts(
+  receivingWorkspaceId,
+  connectionIds,
+  now = new Date(),
+  actor = {},
+) {
   const window = parseWindow(ALERT_WINDOW, now);
+  const partnerId = partnerIdFrom(actor);
   const [connections, invocations, funnel, latency, errors, audit, protection] = await Promise.all([
     connectionSummary(receivingWorkspaceId, window, connectionIds),
     invocationSummary(receivingWorkspaceId, connectionIds, window),
-    installationFunnel(receivingWorkspaceId, connectionIds, window),
-    getLatency({
-      receivingWorkspaceId,
-      receivingUserId: 'system-alert-evaluator',
-      window: ALERT_WINDOW,
-    }),
+    installationFunnel(receivingWorkspaceId, connectionIds, window, partnerId),
+    getLatency(
+      {
+        receivingWorkspaceId,
+        receivingUserId: 'system-alert-evaluator',
+        window: ALERT_WINDOW,
+      },
+      actor,
+    ),
     alertErrorSignals(receivingWorkspaceId, connectionIds, window),
-    alertAuditSignals(receivingWorkspaceId, window),
-    reliabilitySummary(receivingWorkspaceId, window),
+    alertAuditSignals(receivingWorkspaceId, connectionIds, window),
+    reliabilitySummary(receivingWorkspaceId, window, connectionIds),
   ]);
   const database = databaseStatus();
   const runtimeConfiguration = runtimeConfigurationStatus();
@@ -1452,12 +1958,19 @@ async function evaluateWorkspaceAlerts(receivingWorkspaceId, connectionIds, now 
     audit,
     protection,
   };
-  await syncOperationalAlerts(receivingWorkspaceId, alertRulesFromSignals(signals), now);
+  await syncOperationalAlerts(receivingWorkspaceId, alertRulesFromSignals(signals), now, actor);
 }
 
-async function alertCounts(receivingWorkspaceId) {
+async function alertCounts(receivingWorkspaceId, actor = {}) {
+  const partnerId = partnerIdFrom(actor);
   const rows = await OperationalAlert.aggregate([
-    { $match: { receivingWorkspaceId, status: { $in: ['active', 'acknowledged'] } } },
+    {
+      $match: {
+        receivingWorkspaceId,
+        ...(partnerId ? { partnerId } : { partnerId: { $exists: false } }),
+        status: { $in: ['active', 'acknowledged'] },
+      },
+    },
     { $group: { _id: '$severity', count: { $sum: 1 } } },
   ]);
   const counts = Object.fromEntries(rows.map((row) => [row._id, row.count]));
@@ -1469,19 +1982,22 @@ async function alertCounts(receivingWorkspaceId) {
   };
 }
 
-async function getSummary(input) {
+async function getSummary(input, actor = {}) {
   const identity = requireIdentity(input);
   const window = parseWindow(input?.window);
-  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
-  const [passports, connections, invocations, failures, funnel, protection] = await Promise.all([
-    passportSummary(identity.receivingWorkspaceId, window),
-    connectionSummary(identity.receivingWorkspaceId, window, connectionIds),
-    invocationSummary(identity.receivingWorkspaceId, connectionIds, window),
-    recentFailures(identity.receivingWorkspaceId, connectionIds, window),
-    installationFunnel(identity.receivingWorkspaceId, connectionIds, window),
-    reliabilitySummary(identity.receivingWorkspaceId, window),
-  ]);
-  await evaluateWorkspaceAlerts(identity.receivingWorkspaceId, connectionIds);
+  const partnerId = partnerIdFrom(actor);
+  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId, partnerId);
+  const [passports, connections, invocations, controls, failures, funnel, protection] =
+    await Promise.all([
+      passportSummary(identity.receivingWorkspaceId, window, connectionIds),
+      connectionSummary(identity.receivingWorkspaceId, window, connectionIds),
+      invocationSummary(identity.receivingWorkspaceId, connectionIds, window),
+      invocationControlSummary(identity.receivingWorkspaceId, connectionIds, window),
+      recentFailures(identity.receivingWorkspaceId, connectionIds, window),
+      installationFunnel(identity.receivingWorkspaceId, connectionIds, window, partnerId),
+      reliabilitySummary(identity.receivingWorkspaceId, window, connectionIds),
+    ]);
+  await evaluateWorkspaceAlerts(identity.receivingWorkspaceId, connectionIds, new Date(), actor);
   const database = databaseStatus();
   const runtimeConfiguration = runtimeConfigurationStatus();
   const lifecycle = serviceLifecycle.snapshot();
@@ -1500,7 +2016,7 @@ async function getSummary(input) {
     },
     passports,
     connections,
-    invocations: { ...invocations, recentFailures: failures },
+    invocations: { ...invocations, controls, recentFailures: failures },
     installations: {
       keysIssued: null,
       keysIssuedAvailability: 'unavailable',
@@ -1515,18 +2031,19 @@ async function getSummary(input) {
       connectionsCreated: funnelCounts.connectionsCreated || 0,
       verifiedConnections: funnelCounts.connectionsVerified || 0,
     },
-    alerts: await alertCounts(identity.receivingWorkspaceId),
+    alerts: await alertCounts(identity.receivingWorkspaceId, actor),
     protection,
   };
 }
 
-async function getPassportFunnel(input) {
+async function getPassportFunnel(input, actor = {}) {
   const identity = requireIdentity(input);
   const window = parseWindow(input?.window);
-  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId);
+  const partnerId = partnerIdFrom(actor);
+  const connectionIds = await connectionIdsForWorkspace(identity.receivingWorkspaceId, partnerId);
   return {
     window: windowView(window),
-    ...(await installationFunnel(identity.receivingWorkspaceId, connectionIds, window)),
+    ...(await installationFunnel(identity.receivingWorkspaceId, connectionIds, window, partnerId)),
   };
 }
 
@@ -1551,10 +2068,14 @@ function serializeAlert(alert) {
   };
 }
 
-async function listAlerts(input) {
+async function listAlerts(input, actor = {}) {
   const identity = requireIdentity(input);
   const pagination = pageFromInput(input);
-  const filter = { receivingWorkspaceId: identity.receivingWorkspaceId };
+  const partnerId = partnerIdFrom(actor);
+  const filter = {
+    receivingWorkspaceId: identity.receivingWorkspaceId,
+    ...(partnerId ? { partnerId } : { partnerId: { $exists: false } }),
+  };
   if (input?.status) {
     if (!SAFE_ALERT_STATUSES.has(input.status)) {
       throw validationError('status', 'status must be active, acknowledged, or resolved.');
@@ -1577,20 +2098,24 @@ async function listAlerts(input) {
   };
 }
 
-async function acknowledgeAlert(alertId, input) {
+async function acknowledgeAlert(alertId, input, actor = {}) {
   const identity = requireIdentity(input);
+  const partnerId = partnerIdFrom(actor);
   const now = new Date();
   const alert = await OperationalAlert.findOneAndUpdate(
     {
       _id: alertId,
       receivingWorkspaceId: identity.receivingWorkspaceId,
+      ...(partnerId ? { partnerId } : { partnerId: { $exists: false } }),
       status: { $in: ['active', 'acknowledged'] },
     },
     {
       $set: {
         status: 'acknowledged',
         acknowledgedAt: now,
-        acknowledgedByUserId: identity.receivingUserId,
+        acknowledgedByUserId: actor.partner?._id
+          ? `partner:${String(actor.partner._id)}`
+          : identity.receivingUserId,
       },
     },
     { new: true, runValidators: true },
@@ -1606,7 +2131,9 @@ module.exports = {
   percentile,
   latencyStatistics,
   invocationSummary,
+  invocationControlSummary,
   safeFailure,
+  alertAuditSignals,
   alertRulesFromSignals,
   reliabilitySummary,
   syncOperationalAlerts,

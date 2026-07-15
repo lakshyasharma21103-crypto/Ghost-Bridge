@@ -363,16 +363,23 @@ function transitionUpdate(fromState, toState, options = {}) {
     $push: {
       stateHistory: { $each: [entry], $slice: -MAX_INVOCATION_STATE_HISTORY },
     },
+    $inc: { __v: 1 },
   };
 
-  if (isTerminalState(toState)) update.$set.terminalAt = entry.at;
+  if (isTerminalState(toState)) {
+    update.$set.terminalAt = entry.at;
+    update.$set.terminalizedAt = entry.at;
+    update.$set.lastProgressAt = entry.at;
+    update.$set.lastProgressStage = 'terminalized';
+  }
   if (toState === 'succeeded') update.$set.retryState = 'completed';
   if (toState === 'recovery_required') {
     update.$set.retryState = 'recovery_required';
     update.$set.recoveryReasonCode = safeReasonCode(options.reasonCode, { required: true });
-  }
-  if (fromState === 'recovery_required' && toState !== 'recovery_required') {
-    update.$unset = { recoveryReasonCode: 1 };
+    update.$set.recoveryState = 'required';
+    update.$set.recoveryEligible = true;
+    update.$set.recoveryDecision = 'operator_review_required';
+    update.$set.recoveryDecisionReason = 'REQUIRES_OPERATOR_REVIEW';
   }
   if (isTerminalState(toState) || toState === 'recovery_required') {
     update.$unset = {
@@ -399,7 +406,9 @@ function initialLifecycleFields(options = {}) {
     lifecycleTimestamps: { [LIFECYCLE_TIMESTAMP_FIELDS[state]]: at },
     stateHistory: [entry],
     lastTransitionAt: at,
-    ...(isTerminalState(state) ? { terminalAt: at } : {}),
+    lastProgressAt: at,
+    lastProgressStage: state === 'accepted' ? 'accepted' : undefined,
+    ...(isTerminalState(state) ? { terminalAt: at, terminalizedAt: at } : {}),
   };
 }
 
@@ -419,6 +428,30 @@ function emitStateChange(observer, invocation, fromState, toState, entry) {
     attemptNumber: entry.attemptNumber,
     status: 'completed',
   });
+}
+
+async function reportRecoveryRequired(options, invocation, fromState, reasonCode) {
+  options?.observer?.emit?.('warn', 'invocation.recovery_required', {
+    invocationId: String(invocation?._id || invocation?.id || ''),
+    fromState,
+    toState: 'recovery_required',
+    reasonCode,
+    status: 'recovery_required',
+  });
+  if (typeof options?.onRecoveryRequired !== 'function') return;
+  try {
+    await options.onRecoveryRequired(invocation, {
+      fromState,
+      toState: 'recovery_required',
+      reasonCode,
+    });
+  } catch {
+    options?.observer?.emit?.('warn', 'persistence.audit.failed', {
+      action: 'invocation.recovery.eligible',
+      invocationId: String(invocation?._id || invocation?.id || ''),
+      status: 'failed',
+    });
+  }
 }
 
 async function transitionInvocation(options) {
@@ -489,13 +522,7 @@ async function markExpiredInvocationLeaseRecovery(options) {
     if (invocation) {
       const entry = update.$push.stateHistory.$each[0];
       emitStateChange(options?.observer, invocation, fromState, 'recovery_required', entry);
-      options?.observer?.emit?.('warn', 'invocation.recovery_required', {
-        invocationId,
-        fromState,
-        toState: 'recovery_required',
-        reasonCode,
-        status: 'recovery_required',
-      });
+      await reportRecoveryRequired(options, invocation, fromState, reasonCode);
       return invocation;
     }
   }
@@ -525,6 +552,7 @@ async function markActiveInvocationRecovery(options) {
     if (invocation) {
       const entry = update.$push.stateHistory.$each[0];
       emitStateChange(options?.observer, invocation, fromState, 'recovery_required', entry);
+      await reportRecoveryRequired(options, invocation, fromState, reasonCode);
       return invocation;
     }
   }
@@ -564,6 +592,10 @@ async function claimInvocationExecution(options) {
     reasonCode: options?.reasonCode || 'EXECUTION_CLAIMED',
   });
   Object.assign(update.$set, { executionLeaseId, executionLeaseExpiresAt, executionOwner });
+  Object.assign(update.$set, {
+    lastProgressAt: now,
+    lastProgressStage: 'execution_claimed',
+  });
 
   const invocation = await Invocation.findOneAndUpdate(
     {

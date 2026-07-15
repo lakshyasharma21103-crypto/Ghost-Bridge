@@ -3,20 +3,38 @@ const { SERVICE_NAME, SERVICE_VERSION } = require('../constants');
 const { logger: defaultLogger, safeLogPayload } = require('./logger');
 const { isRetryableError } = require('./retryability');
 
-const SAFE_RECOVERY_REASONS = new Set(['FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH']);
+const SAFE_RECOVERY_REASONS = new Set([
+  'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
+  'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
+]);
+const SAFE_TIMEOUT_REASONS = new Set([
+  'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  'GEMINI_DEADLINE_EXCEEDED',
+]);
+const SAFE_LIFECYCLE_REASONS = Object.freeze({
+  REQUEST_CANCELLED: 'CLIENT_DISCONNECTED',
+  SERVICE_SHUTDOWN: 'SERVICE_SHUTDOWN',
+});
 
 function definedFields(value) {
   return Object.fromEntries(Object.entries(value || {}).filter(([, item]) => item !== undefined));
 }
 
 function safeErrorFields(error) {
+  const timeoutReason =
+    error?.code === 'GEMINI_REQUEST_TIMEOUT' &&
+    SAFE_TIMEOUT_REASONS.has(error?.timeoutReason || error?.reason)
+      ? error.timeoutReason || error.reason
+      : undefined;
+  const reason = SAFE_LIFECYCLE_REASONS[error?.code] === error?.reason ? error.reason : undefined;
   return definedFields({
     errorCode: error?.code || 'INTERNAL_SERVER_ERROR',
     internalCode: error?.internalCode,
     operation: error?.operation,
     statusCode: error?.statusCode,
     retryable: isRetryableError(error),
-    timeoutReason: error?.timeoutReason || error?.reason,
+    timeoutReason,
+    reason,
     recoveryRequired: error?.recoveryRequired === true ? true : undefined,
     recoveryReason:
       error?.recoveryRequired === true && SAFE_RECOVERY_REASONS.has(error?.recoveryReason)

@@ -6,7 +6,7 @@ Agent Passport Runtime Gateway lets a partner platform register an Agent Passpor
 
 Read the complete implementation, architecture, route, security, and verification report in [FINAL_IMPLEMENTATION_REPORT.md](FINAL_IMPLEMENTATION_REPORT.md).
 
-Operational metric definitions, alert rules, privacy boundaries, and dashboard usage are documented in [OPERATIONS.md](OPERATIONS.md). The tracing and safe-diagnostics foundation is documented in [OBSERVABILITY.md](OBSERVABILITY.md). Deterministic invocation states, attempts, idempotency, leases, and retry safety are documented in [INVOCATION_LIFECYCLE.md](INVOCATION_LIFECYCLE.md).
+Operational metrics, recovery review, alert rules, privacy boundaries, and dashboard usage are documented in [OPERATIONS.md](OPERATIONS.md). The tracing and safe-diagnostics foundation is documented in [OBSERVABILITY.md](OBSERVABILITY.md). Deterministic invocation states, cancellation, progress, stuck detection, manual recovery, attempts, idempotency, leases, and retry safety are documented in [INVOCATION_LIFECYCLE.md](INVOCATION_LIFECYCLE.md).
 Persistent circuit breakers, connection health transitions, runtime capacity bulkheads, graceful shutdown, and ambiguous-outcome containment are documented in [RUNTIME_RELIABILITY.md](RUNTIME_RELIABILITY.md).
 
 ## Quick Start

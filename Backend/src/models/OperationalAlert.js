@@ -2,8 +2,14 @@ const mongoose = require('mongoose');
 
 const operationalAlertSchema = new mongoose.Schema(
   {
+    partnerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Partner',
+      index: true,
+    },
     receivingWorkspaceId: { type: String, required: true, trim: true, index: true },
     type: { type: String, required: true, trim: true },
+    scopeKey: { type: String, trim: true, maxlength: 128 },
     dedupeKey: { type: String, required: true, unique: true, index: true },
     severity: { type: String, enum: ['critical', 'warning', 'info'], required: true, index: true },
     status: {
@@ -29,6 +35,7 @@ const operationalAlertSchema = new mongoose.Schema(
 );
 
 operationalAlertSchema.index({ receivingWorkspaceId: 1, status: 1, severity: 1, lastSeenAt: -1 });
+operationalAlertSchema.index({ partnerId: 1, receivingWorkspaceId: 1, status: 1, lastSeenAt: -1 });
 
 module.exports =
   mongoose.models.OperationalAlert || mongoose.model('OperationalAlert', operationalAlertSchema);

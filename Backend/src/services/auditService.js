@@ -1,4 +1,5 @@
 const AuditLog = require('../models/AuditLog');
+const PassportConnection = require('../models/PassportConnection');
 const { redactSecrets } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
@@ -85,11 +86,35 @@ function serializeAuditLog(log) {
   };
 }
 
-async function listAuditLogs(input) {
+async function listAuditLogs(input, actor = {}) {
   const identity = requireIdentity(input);
+  const partnerId = actor?.partner?._id;
+  let ownershipFilter = {};
+  if (partnerId) {
+    const connections = await PassportConnection.find({
+      partnerId,
+      receivingWorkspaceId: identity.receivingWorkspaceId,
+      receivingUserId: identity.receivingUserId,
+    })
+      .select('_id passportId')
+      .lean();
+    if (!connections.length) {
+      throw new AppError(404, ErrorCodes.CONNECTION_NOT_FOUND, 'Audit scope was not found.');
+    }
+    const connectionIds = connections.map((item) => String(item._id));
+    const passportIds = [...new Set(connections.map((item) => String(item.passportId)))];
+    ownershipFilter = {
+      $or: [
+        { 'metadata.connectionId': { $in: connectionIds } },
+        { entityType: 'PassportConnection', entityId: { $in: connectionIds } },
+        { 'metadata.passportId': { $in: passportIds } },
+      ],
+    };
+  }
   const logs = await AuditLog.find({
     'metadata.receivingWorkspaceId': identity.receivingWorkspaceId,
     'metadata.receivingUserId': identity.receivingUserId,
+    ...ownershipFilter,
   })
     .sort({ createdAt: -1 })
     .limit(limitFromInput(input?.limit))

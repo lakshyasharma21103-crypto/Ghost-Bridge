@@ -123,21 +123,40 @@ and recovery-required invocations. No reset control was added.
 
 Workspace alert evaluation now covers multiple/one open circuit, half-open recovery, rate-limit
 protection, degraded connections, repeated capacity rejection, database/readiness failure, credential
-decryption failure, and recovery-required outcomes. Alert dedupe continues to use workspace-scoped
-type keys. Structured events and audits use only safe IDs, states, reason codes, counts, and durations.
+decryption failure, and recovery-required outcomes. Current alert dedupe uses authenticated Partner,
+workspace, type, and an optional safe scope key; repeated-stuck alerts use connection scope and most
+other rules use workspace scope. Structured events and audits use only safe IDs, states, reason codes,
+counts, and durations.
 
 Protection API errors may include only established IDs plus `retryable`, `retryAfterMs`, circuit
 state, and an allowlisted reason. They do not return endpoint URLs, credentials, prompts, inputs,
 outputs, raw remote messages, response headers, or sources.
 
-## Known limitations and Phase 13B3
+## Known limitations after Phase 13B3
 
 Without Redis, a queue, or workers, capacity is lease-based and work remains tied to an HTTP process.
 There is no durable scheduling, automatic failover, cross-region coordination, manual circuit reset,
-or replay of ambiguous work. Circuit state updates use optimistic version checks; a highly contended
-scope can reject an update after bounded retries rather than risk a lost update.
+or automatic replay of ambiguous work. Phase 13B3 adds authorized cancellation, bounded stuck scans,
+and operator-controlled retry/resolution, but active `AbortController` state remains local to one
+process. Circuit state updates use optimistic version checks; a highly contended scope can reject an
+update after bounded retries rather than risk a lost update.
 
-Recommended Phase 13B3 work is a durable, tenant-fair execution queue with worker heartbeats,
-transactional capacity accounting, explicit operator-reviewed recovery workflows, controlled circuit
-administration with authorization/audit, and multi-region health aggregation. It should preserve the
-same Agent Passport and idempotency contracts and keep billable retry policy opt-in.
+Two inherited Phase 13B2 persistence scopes remain explicit limitations:
+
+- Workspace `RuntimeCapacitySlot` keys use the raw `receivingWorkspaceId` and do not include
+  `partnerId`. Partners that independently choose the same workspace string can therefore contend for
+  the same workspace bulkhead. This phase preserves B2 capacity behavior; Phase 13B4 should migrate
+  the scope to a Partner/tenant namespace without weakening existing lease cleanup.
+- A claimed half-open circuit probe has no durable owner or expiry/TTL. Normal success, failure, or
+  in-process cleanup releases it, but a process crash or acknowledged-write ambiguity can strand the
+  persisted in-flight probe marker. Phase 13B4 should add probe ownership, expiry, and safe reclaim.
+
+Control-plane `AuditLog` writes are also best-effort rather than transactionally coupled to invocation
+state. Invocation lifecycle/control fields remain authoritative; a transactional outbox and audit
+reconciliation are recommended before claiming compliance-grade complete audit delivery.
+
+Recommended Phase 13B4 or production-hardening work is a durable, tenant-fair execution queue with
+worker heartbeats, cross-replica cancellation, transactional capacity accounting, a versioned Agent
+Passport cancellation/idempotency protocol, controlled circuit administration with
+authorization/audit, and multi-region health aggregation. It should preserve the same Agent Passport
+and idempotency contracts and keep billable retry policy opt-in.

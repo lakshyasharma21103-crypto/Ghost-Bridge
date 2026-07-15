@@ -1,5 +1,18 @@
 const mongoose = require('mongoose');
 
+const runtimeControlSchema = new mongoose.Schema(
+  {
+    cancellationMode: {
+      type: String,
+      enum: ['unsupported', 'request_abort', 'protocol_cancel'],
+      default: 'unsupported',
+    },
+    remoteIdempotencySupported: { type: Boolean, default: false },
+    statusLookupSupported: { type: Boolean, default: false },
+  },
+  { _id: false, strict: 'throw' },
+);
+
 const passportConnectionSchema = new mongoose.Schema(
   {
     passportId: {
@@ -46,6 +59,8 @@ const passportConnectionSchema = new mongoose.Schema(
     lastHealthSuccessAt: { type: Date },
     lastHealthFailureAt: { type: Date },
     lastHealthReasonCode: { type: String, trim: true, match: /^[A-Z][A-Z0-9_]{0,127}$/ },
+    // Internal-only until a future Agent Passport protocol version declares these capabilities.
+    runtimeControl: { type: runtimeControlSchema, default: () => ({}) },
   },
   { timestamps: true },
 );

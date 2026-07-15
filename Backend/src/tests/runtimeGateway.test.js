@@ -15,6 +15,10 @@ const { encryptPayload } = require('../utils/crypto');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { AppError } = require('../utils/AppError');
 const {
+  createServiceLifecycle,
+  serviceLifecycle,
+} = require('../services/serviceLifecycle.service');
+const {
   invoke,
   getCapabilities,
   listInvocations,
@@ -32,6 +36,10 @@ function restore(patches) {
   for (const [object, key, value] of patches.reverse()) {
     object[key] = value;
   }
+}
+
+async function beginTransmission(options) {
+  await options?.beforeTransmit?.();
 }
 
 function passport(auth = { type: 'no_auth_dev' }) {
@@ -169,6 +177,18 @@ function patchInvocationContext(patches, context = {}) {
     },
     patches,
   );
+  patch(
+    InvocationAttempt,
+    'findOneAndUpdate',
+    async (filter, update) => {
+      if (!latestAttemptDocument) return null;
+      if (filter._id && String(filter._id) !== String(latestAttemptDocument._id)) return null;
+      if (filter.status && latestAttemptDocument.status !== filter.status) return null;
+      Object.assign(latestAttemptDocument, update.$set || {});
+      return latestAttemptDocument;
+    },
+    patches,
+  );
   patch(AuditLog, 'create', async (payload) => payload, patches);
 }
 
@@ -214,6 +234,7 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
     safeFetchUtility,
     'safeFetch',
     async (url, options) => {
+      await beginTransmission(options);
       outboundCallCount += 1;
       outbound = { url, options };
       return {
@@ -291,6 +312,108 @@ test('a connected REST agent validates, invokes, stores the result, and creates 
       assert.equal(typeof entry.durationMs, 'number');
     }
     assert.equal(JSON.stringify(diagnostics).includes('remaining FIFA matches'), false);
+  } finally {
+    restore(patches);
+  }
+});
+
+test('a rejected recovery-child linkage hook fails before attempt creation or outbound I/O', async () => {
+  const patches = [];
+  let outboundCalls = 0;
+  patchInvocationContext(patches);
+  patch(Invocation, 'create', async (doc) => invocationDocument(doc), patches);
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async () => {
+      outboundCalls += 1;
+      throw new Error('outbound I/O must not begin');
+    },
+    patches,
+  );
+
+  try {
+    await assert.rejects(
+      () =>
+        invoke(
+          'connection_123',
+          'research_topic',
+          { topic: 'safe topic' },
+          {
+            receivingWorkspaceId: 'workspace_123',
+            receivingUserId: 'user_123',
+            enforceConnectionOwnership: true,
+            async onInvocationCreated() {
+              throw new AppError(
+                409,
+                ErrorCodes.INVOCATION_RECOVERY_CONFLICT,
+                'Recovery claim expired.',
+              );
+            },
+          },
+        ),
+      { code: ErrorCodes.INVOCATION_RECOVERY_CONFLICT },
+    );
+    assert.equal(outboundCalls, 0);
+    assert.equal(latestAttemptDocument, undefined);
+    assert.equal(latestInvocationDocument.lifecycleState, 'failed');
+  } finally {
+    restore(patches);
+  }
+});
+
+test('shutdown during invocation reservation aborts admitted work before outbound I/O', async () => {
+  const patches = [];
+  const lifecycle = createServiceLifecycle();
+  lifecycle.markReady();
+  let outboundCalls = 0;
+  const audits = [];
+  patchInvocationContext(patches);
+  patch(
+    AuditLog,
+    'create',
+    async (payload) => {
+      audits.push(payload);
+      return payload;
+    },
+    patches,
+  );
+  patch(serviceLifecycle, 'beginInvocationAdmission', lifecycle.beginInvocationAdmission, patches);
+  patch(serviceLifecycle, 'registerInvocation', lifecycle.registerInvocation, patches);
+  patch(
+    Invocation,
+    'create',
+    async (doc) => {
+      const created = invocationDocument(doc);
+      lifecycle.beginDraining();
+      lifecycle.abortActiveInvocations();
+      return created;
+    },
+    patches,
+  );
+  patch(Invocation, 'findOne', async () => latestInvocationDocument, patches);
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async () => {
+      outboundCalls += 1;
+      throw new Error('outbound I/O must not start');
+    },
+    patches,
+  );
+
+  try {
+    await assert.rejects(
+      () => invoke('connection_123', 'research_topic', { topic: 'shutdown admission race' }),
+      { code: ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION },
+    );
+    assert.equal(outboundCalls, 0);
+    assert.equal(latestInvocationDocument.lifecycleState, 'cancelled');
+    assert.equal(latestInvocationDocument.cancellationState, 'confirmed');
+    assert.ok(audits.some((entry) => entry.action === 'invocation.cancel.requested'));
+    assert.ok(audits.some((entry) => entry.action === 'invocation.cancel.confirmed'));
+    assert.equal(lifecycle.snapshot().activeInvocationCount, 0);
+    assert.equal(await lifecycle.waitForIdle(10), true);
   } finally {
     restore(patches);
   }
@@ -374,6 +497,153 @@ test('an open circuit rejects before attempt creation or outbound runtime I/O', 
     assert.equal(outboundCalls, 0);
     assert.equal(latestAttemptDocument, undefined);
     assert.equal(latestInvocationDocument.lifecycleState, 'failed');
+  } finally {
+    restore(patches);
+  }
+});
+
+test('caller cancellation releases an owned half-open probe without counting a circuit failure', async () => {
+  const patches = [];
+  const breaker = {
+    _id: 'breaker_123',
+    connectionId: 'connection_123',
+    state: 'half_open',
+    version: 0,
+    halfOpenProbeInFlight: false,
+    halfOpenProbesInFlight: 0,
+    halfOpenProbeCount: 0,
+    successCountSinceClose: 0,
+  };
+  let probeReleaseUpdates = 0;
+  patchInvocationContext(patches);
+  patch(Invocation, 'create', async (doc) => invocationDocument(doc), patches);
+  patch(Invocation, 'findOne', async () => latestInvocationDocument, patches);
+  patch(
+    CircuitBreaker,
+    'findOneAndUpdate',
+    async (filter, update) => {
+      if (filter._id && update.$set?.halfOpenProbesInFlight === 0) probeReleaseUpdates += 1;
+      Object.assign(breaker, update.$set || {});
+      for (const [key, value] of Object.entries(update.$inc || {})) {
+        breaker[key] = Number(breaker[key] || 0) + value;
+      }
+      return { ...breaker };
+    },
+    patches,
+  );
+  patch(
+    RuntimeCapacitySlot,
+    'findOneAndUpdate',
+    async (_filter, update) => ({ _id: 'capacity-slot', ...update.$set }),
+    patches,
+  );
+  patch(RuntimeCapacitySlot, 'deleteMany', async () => ({ deletedCount: 2 }), patches);
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async (_url, options) => {
+      await beginTransmission(options);
+      Object.assign(latestInvocationDocument, {
+        lifecycleState: 'recovery_required',
+        status: 'failed',
+        cancellationState: 'outcome_unknown',
+        cancellationOutcome: 'remote_unconfirmed',
+        recoveryState: 'required',
+      });
+      throw new AppError(409, ErrorCodes.INVOCATION_CANCELLED, 'Invocation was cancelled.', [], {
+        recoveryRequired: true,
+      });
+    },
+    patches,
+  );
+
+  try {
+    await assert.rejects(
+      () =>
+        invoke(
+          'connection_123',
+          'research_topic',
+          { topic: 'safe topic' },
+          {
+            runtimeProtectionOptions: { forcePersistence: true },
+          },
+        ),
+      { code: ErrorCodes.INVOCATION_CANCELLED },
+    );
+    assert.equal(probeReleaseUpdates, 1);
+    assert.equal(breaker.state, 'half_open');
+    assert.equal(breaker.halfOpenProbesInFlight, 0);
+    assert.equal(breaker.failureCountInWindow || 0, 0);
+  } finally {
+    restore(patches);
+  }
+});
+
+test('a half-open probe is released when success-protection persistence fails', async () => {
+  const patches = [];
+  const breaker = {
+    _id: 'breaker_123',
+    connectionId: 'connection_123',
+    state: 'half_open',
+    version: 0,
+    halfOpenProbeInFlight: false,
+    halfOpenProbesInFlight: 0,
+    halfOpenProbeCount: 0,
+    successCountSinceClose: 0,
+  };
+  let releaseUpdates = 0;
+  patchInvocationContext(patches);
+  patch(Invocation, 'create', async (doc) => invocationDocument(doc), patches);
+  patch(
+    CircuitBreaker,
+    'findOneAndUpdate',
+    async (_filter, update) => {
+      if (update.$set?.lastSuccessAt) {
+        throw new AppError(503, ErrorCodes.SERVICE_UNAVAILABLE, 'Circuit write unavailable.');
+      }
+      if (update.$set?.halfOpenProbesInFlight === 0) releaseUpdates += 1;
+      Object.assign(breaker, update.$set || {});
+      for (const [key, value] of Object.entries(update.$inc || {})) {
+        breaker[key] = Number(breaker[key] || 0) + value;
+      }
+      return { ...breaker };
+    },
+    patches,
+  );
+  patch(
+    RuntimeCapacitySlot,
+    'findOneAndUpdate',
+    async (_filter, update) => ({ _id: 'capacity-slot', ...update.$set }),
+    patches,
+  );
+  patch(RuntimeCapacitySlot, 'deleteMany', async () => ({ deletedCount: 2 }), patches);
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async (_url, options) => {
+      await beginTransmission(options);
+      return {
+        ok: true,
+        status: 200,
+        bodyText: JSON.stringify({ response: { summary: 'remote success' } }),
+      };
+    },
+    patches,
+  );
+
+  try {
+    const result = await invoke(
+      'connection_123',
+      'research_topic',
+      { topic: 'safe topic' },
+      {
+        runtimeProtectionOptions: { forcePersistence: true },
+      },
+    );
+    assert.equal(result.lifecycleState, 'succeeded');
+    assert.equal(releaseUpdates, 1);
+    assert.equal(breaker.state, 'half_open');
+    assert.equal(breaker.halfOpenProbesInFlight, 0);
   } finally {
     restore(patches);
   }
@@ -546,11 +816,14 @@ test('runtime failures are structured and stored without remote response bodies'
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => ({
-      ok: false,
-      status: 503,
-      bodyText: 'private remote error body',
-    }),
+    async (_url, options) => {
+      await beginTransmission(options);
+      return {
+        ok: false,
+        status: 503,
+        bodyText: 'private remote error body',
+      };
+    },
     patches,
   );
 
@@ -573,17 +846,20 @@ test('safe external authentication errors remain non-retryable despite an upstre
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => ({
-      ok: false,
-      status: 502,
-      bodyText: JSON.stringify({
-        error: {
-          code: 'GEMINI_AUTHENTICATION_FAILED',
-          message: 'Authorization: Bearer private-provider-token',
-          retryable: false,
-        },
-      }),
-    }),
+    async (_url, options) => {
+      await beginTransmission(options);
+      return {
+        ok: false,
+        status: 502,
+        bodyText: JSON.stringify({
+          error: {
+            code: 'GEMINI_AUTHENTICATION_FAILED',
+            message: 'Authorization: Bearer private-provider-token',
+            retryable: false,
+          },
+        }),
+      };
+    },
     patches,
   );
 
@@ -631,11 +907,14 @@ test('runtime output must match the capability output schema before completion',
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => ({
-      ok: true,
-      status: 200,
-      bodyText: JSON.stringify({ response: { unexpected: true } }),
-    }),
+    async (_url, options) => {
+      await beginTransmission(options);
+      return {
+        ok: true,
+        status: 200,
+        bodyText: JSON.stringify({ response: { unexpected: true } }),
+      };
+    },
     patches,
   );
 
@@ -699,6 +978,7 @@ test('REST invocation applies the passport auth header and never persists its cr
     safeFetchUtility,
     'safeFetch',
     async (_url, options) => {
+      await beginTransmission(options);
       outbound = options;
       return { ok: true, status: 200, bodyText: JSON.stringify({ response: { summary: 'ok' } }) };
     },
@@ -748,7 +1028,8 @@ test('same idempotency key and request replays one stored invocation without ano
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => {
+    async (_url, options) => {
+      await beginTransmission(options);
       runtimeCalls += 1;
       return {
         ok: true,
@@ -825,7 +1106,8 @@ test('same idempotency key with a different normalized request returns a conflic
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => {
+    async (_url, options) => {
+      await beginTransmission(options);
       runtimeCalls += 1;
       return {
         ok: true,
@@ -895,7 +1177,8 @@ test('simultaneous duplicate requests reserve one invocation and execute the run
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => {
+    async (_url, options) => {
+      await beginTransmission(options);
       runtimeCalls += 1;
       await new Promise((resolve) => setImmediate(resolve));
       return {
@@ -942,7 +1225,8 @@ test('an ambiguous outbound timeout enters recovery_required and is never retrie
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => {
+    async (_url, options) => {
+      await beginTransmission(options);
       runtimeCalls += 1;
       throw new AppError(504, ErrorCodes.SAFE_FETCH_TIMEOUT, 'Outbound request timed out.');
     },
@@ -987,7 +1271,8 @@ test('exhausted formatting-only recovery metadata never triggers a second ground
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => {
+    async (_url, options) => {
+      await beginTransmission(options);
       runtimeCalls += 1;
       return {
         ok: false,
@@ -1039,11 +1324,14 @@ test('audit persistence failure cannot overwrite a successfully persisted invoca
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => ({
-      ok: true,
-      status: 200,
-      bodyText: JSON.stringify({ response: { summary: 'persisted success' } }),
-    }),
+    async (_url, options) => {
+      await beginTransmission(options);
+      return {
+        ok: true,
+        status: 200,
+        bodyText: JSON.stringify({ response: { summary: 'persisted success' } }),
+      };
+    },
     patches,
   );
 
@@ -1058,7 +1346,7 @@ test('audit persistence failure cannot overwrite a successfully persisted invoca
   }
 });
 
-test('success persistence uncertainty becomes recovery_required without a second runtime call', async () => {
+test('success persistence uncertainty preserves succeeded attempt evidence without a second runtime call', async () => {
   const patches = [];
   let runtimeCalls = 0;
   let rejectedSuccessWrite = false;
@@ -1082,7 +1370,8 @@ test('success persistence uncertainty becomes recovery_required without a second
   patch(
     safeFetchUtility,
     'safeFetch',
-    async () => {
+    async (_url, options) => {
+      await beginTransmission(options);
       runtimeCalls += 1;
       return {
         ok: true,
@@ -1101,7 +1390,7 @@ test('success persistence uncertainty becomes recovery_required without a second
     assert.equal(runtimeCalls, 1);
     assert.equal(latestInvocationDocument.lifecycleState, 'recovery_required');
     assert.equal(latestInvocationDocument.recoveryReasonCode, 'RESPONSE_PERSISTENCE_UNCERTAIN');
-    assert.equal(latestAttemptDocument.status, 'recovery_required');
+    assert.equal(latestAttemptDocument.status, 'succeeded');
   } finally {
     restore(patches);
   }
@@ -1130,12 +1419,16 @@ test('capabilities are returned from the stored connection passport', async () =
 
 test('invocation history is scoped to the receiving workspace and user', async () => {
   const patches = [];
+  let connectionFilter;
   patch(
     PassportConnection,
     'find',
-    () => ({
-      select: () => ({ lean: async () => [{ _id: 'connection_123' }] }),
-    }),
+    (filter) => {
+      connectionFilter = filter;
+      return {
+        select: () => ({ lean: async () => [{ _id: 'connection_123' }] }),
+      };
+    },
     patches,
   );
   patch(
@@ -1160,10 +1453,14 @@ test('invocation history is scoped to the receiving workspace and user', async (
   );
 
   try {
-    const result = await listInvocations({
-      receivingWorkspaceId: 'workspace_123',
-      receivingUserId: 'user_123',
-    });
+    const result = await listInvocations(
+      {
+        receivingWorkspaceId: 'workspace_123',
+        receivingUserId: 'user_123',
+      },
+      { partner: { _id: 'partner_123' } },
+    );
+    assert.equal(connectionFilter.partnerId, 'partner_123');
     assert.equal(result.items.length, 1);
     assert.equal(result.items[0].invocationId, 'invocation_123');
   } finally {
@@ -1193,10 +1490,14 @@ test('invocation detail is unavailable outside its receiving workspace and user'
   try {
     await assert.rejects(
       () =>
-        getInvocation('invocation_123', {
-          receivingWorkspaceId: 'other_workspace',
-          receivingUserId: 'other_user',
-        }),
+        getInvocation(
+          'invocation_123',
+          {
+            receivingWorkspaceId: 'other_workspace',
+            receivingUserId: 'other_user',
+          },
+          { partner: { _id: 'partner_123' } },
+        ),
       { code: ErrorCodes.INVOCATION_NOT_FOUND },
     );
   } finally {
@@ -1275,12 +1576,16 @@ test('invocation attempts are tenant-authorized, paginated, and safely projected
   patch(InvocationAttempt, 'countDocuments', async () => 1, patches);
 
   try {
-    const result = await listInvocationAttempts('invocation_123', {
-      receivingWorkspaceId: 'workspace_123',
-      receivingUserId: 'user_123',
-      page: '1',
-      limit: '10',
-    });
+    const result = await listInvocationAttempts(
+      'invocation_123',
+      {
+        receivingWorkspaceId: 'workspace_123',
+        receivingUserId: 'user_123',
+        page: '1',
+        limit: '10',
+      },
+      { partner: { _id: 'partner_123' } },
+    );
     assert.equal(attemptFilter.receivingWorkspaceId, 'workspace_123');
     assert.equal(result.pagination.total, 1);
     assert.equal(result.items[0].retryReason, 'REMOTE_IDEMPOTENCY_NOT_CONFIRMED');
@@ -1333,10 +1638,14 @@ test('cross-tenant invocation-attempt access is denied before attempt documents 
   try {
     await assert.rejects(
       () =>
-        listInvocationAttempts('invocation_123', {
-          receivingWorkspaceId: 'workspace_a',
-          receivingUserId: 'user_a',
-        }),
+        listInvocationAttempts(
+          'invocation_123',
+          {
+            receivingWorkspaceId: 'workspace_a',
+            receivingUserId: 'user_a',
+          },
+          { partner: { _id: 'partner_123' } },
+        ),
       { code: ErrorCodes.INVOCATION_NOT_FOUND },
     );
     assert.equal(attemptsQueried, false);

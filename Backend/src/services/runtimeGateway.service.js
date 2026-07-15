@@ -26,7 +26,6 @@ const { env } = require('../config/env');
 const {
   initialLifecycleFields,
   claimInvocationExecution,
-  markExpiredInvocationLeaseRecovery,
   transitionInvocation,
   transitionUpdate,
 } = require('./invocationLifecycle.service');
@@ -48,6 +47,7 @@ const {
   recordConnectionSuccess,
 } = require('./connectionHealth.service');
 const { serviceLifecycle } = require('./serviceLifecycle.service');
+const { serializeOperationalInvocation } = require('../utils/invocationControlView');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
@@ -67,11 +67,30 @@ function requireString(value, path) {
 
 function actorFor(connection, actor = {}) {
   return {
-    actorType: actor.actorType === 'system' ? 'system' : 'user',
+    actorType: ['system', 'partner'].includes(actor.actorType) ? actor.actorType : 'user',
     actorId: actor.actorId || connection.receivingUserId,
     requestId: actor.requestId,
     traceId: actor.traceId,
   };
+}
+
+async function releaseNonFailureProbe(context, circuitEvaluation, actor, observer, reasonCode) {
+  if (!circuitEvaluation?.probe || !context?.connection) return false;
+  try {
+    await releaseCircuitProbe(context.connection, 'runtime', actor.runtimeProtectionOptions);
+    observer?.emit?.('info', 'circuit.probe_completed', {
+      status: 'deferred',
+      circuitState: 'half_open',
+      reasonCode,
+    });
+    return true;
+  } catch (error) {
+    observer?.emit?.('warn', 'persistence.runtime_protection.failed', {
+      ...errorFields(error),
+      status: 'failed',
+    });
+    return false;
+  }
 }
 
 function assertConnectionOwnership(connection, actor = {}) {
@@ -248,6 +267,66 @@ async function persistStageMetrics(invocation, stageMetrics) {
   }
 }
 
+async function persistInvocationProgress({
+  invocation,
+  receivingWorkspaceId,
+  stage,
+  observer,
+  connection,
+  actor,
+  extra = {},
+}) {
+  if (!invocation) return invocation;
+  const at = new Date();
+  try {
+    const updated = await Invocation.findOneAndUpdate(
+      {
+        _id: invocation._id,
+        receivingWorkspaceId,
+        lifecycleState: {
+          $in: ['accepted', 'validating', 'authorized', 'running', 'waiting_for_runtime'],
+        },
+      },
+      {
+        $set: {
+          lastProgressAt: at,
+          lastProgressStage: stage,
+          ...(stage === 'outbound_request_started'
+            ? { runtimeDeadlineAt: new Date(at.getTime() + env.RUNTIME_INVOCATION_TIMEOUT_MS) }
+            : {}),
+          ...extra,
+        },
+      },
+      { new: true, runValidators: true },
+    );
+    if (!updated) return invocation;
+    observer?.emit?.('info', 'invocation.progress.updated', {
+      invocationId: idOf(invocation),
+      stage,
+      status: 'completed',
+    });
+    if (connection && actor) {
+      await bestEffortInvocationAudit({
+        action: 'invocation.progress.updated',
+        actor,
+        connection,
+        invocation: updated,
+        observer,
+        metadata: { reasonCode: 'PROGRESS_STAGE_CHANGED', stage },
+      });
+    }
+    return updated;
+  } catch (error) {
+    observer?.emit?.('warn', 'persistence.invocation_progress.failed', {
+      invocationId: idOf(invocation),
+      stage,
+      errorCode: safeCode(error?.code) || ErrorCodes.INTERNAL_SERVER_ERROR,
+      status: 'failed',
+    });
+    return invocation;
+  }
+}
+
 const SAFE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
 const SAFE_CAUSE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
 
@@ -381,7 +460,9 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
       passportId: connection.passportId,
       receivingWorkspaceId: connection.receivingWorkspaceId,
       capability: capabilityName,
-      inputSummary: redactSecrets(input),
+      inputSummary: actor.recoveryParentInvocationId
+        ? { recoveryReplay: true }
+        : redactSecrets(input),
       runtimeType: connection.runtimeType,
       traceId: actor.traceId,
       requestId: actor.requestId,
@@ -389,6 +470,9 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
       idempotencyKeyHash: idempotency.keyHash,
       requestFingerprint: idempotency.requestFingerprint,
       clientIdempotencyProvided: idempotency.clientProvided,
+      ...(actor.recoveryParentInvocationId
+        ? { recoveryParentInvocationId: actor.recoveryParentInvocationId }
+        : {}),
       ...lifecycle,
     });
     return { invocation, idempotency, replayed: false };
@@ -418,20 +502,6 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
       ErrorCodes.IDEMPOTENCY_CONFLICT,
       'Idempotency-Key was already used for a different invocation request.',
     );
-  }
-
-  if (
-    ['running', 'waiting_for_runtime'].includes(existing.lifecycleState) &&
-    existing.executionLeaseExpiresAt &&
-    new Date(existing.executionLeaseExpiresAt).getTime() <= Date.now()
-  ) {
-    existing =
-      (await markExpiredInvocationLeaseRecovery({
-        invocationId: idOf(existing),
-        receivingWorkspaceId: connection.receivingWorkspaceId,
-        reasonCode: 'EXECUTION_LEASE_EXPIRED',
-        observer,
-      })) || existing;
   }
 
   await bestEffortInvocationAudit({
@@ -541,7 +611,7 @@ async function finishInvocationAttempt({
     throw new TypeError('Attempt completion status is invalid.');
   }
   const completedAt = new Date();
-  Object.assign(attempt, {
+  const completion = {
     status,
     completedAt,
     durationMs: Math.max(0, completedAt.getTime() - new Date(attempt.startedAt).getTime()),
@@ -556,18 +626,30 @@ async function finishInvocationAttempt({
             : {}),
         }
       : { retryDecision: 'not_evaluated' }),
-  });
-  await attempt.save();
+  };
+  const completedAttempt = await InvocationAttempt.findOneAndUpdate(
+    { _id: attempt._id, status: 'started' },
+    { $set: completion },
+    { new: true, runValidators: true },
+  );
+  if (!completedAttempt) {
+    observer.emit('info', 'invocation.attempt.terminal_preserved', {
+      invocationId: idOf(invocation),
+      attemptNumber: attempt.attemptNumber,
+      status: 'preserved',
+    });
+    return attempt;
+  }
   const action =
     status === 'succeeded' ? 'invocation.attempt.completed' : 'invocation.attempt.failed';
   observer.emit(status === 'succeeded' ? 'info' : 'warn', action, {
     invocationId: idOf(invocation),
-    attemptNumber: attempt.attemptNumber,
-    durationMs: attempt.durationMs,
+    attemptNumber: completedAttempt.attemptNumber,
+    durationMs: completedAttempt.durationMs,
     status,
-    errorCode: attempt.errorCode,
-    retryDecision: attempt.retryDecision,
-    retryReason: attempt.retryDecisionReason,
+    errorCode: completedAttempt.errorCode,
+    retryDecision: completedAttempt.retryDecision,
+    retryReason: completedAttempt.retryDecisionReason,
   });
   await bestEffortInvocationAudit({
     action,
@@ -576,14 +658,14 @@ async function finishInvocationAttempt({
     invocation,
     observer,
     metadata: {
-      attemptNumber: attempt.attemptNumber,
-      durationMs: attempt.durationMs,
-      errorCode: attempt.errorCode,
-      retryDecision: attempt.retryDecision,
-      reasonCode: attempt.retryDecisionReason,
+      attemptNumber: completedAttempt.attemptNumber,
+      durationMs: completedAttempt.durationMs,
+      errorCode: completedAttempt.errorCode,
+      retryDecision: completedAttempt.retryDecision,
+      reasonCode: completedAttempt.retryDecisionReason,
     },
   });
-  return attempt;
+  return completedAttempt;
 }
 
 function ambiguousRuntimeOutcome(error, execution = {}) {
@@ -729,7 +811,7 @@ async function loadInvocationContext(
 }
 
 async function invoke(connectionId, capabilityName, input, actor = {}) {
-  serviceLifecycle.assertAcceptingInvocations();
+  let lifecycleAdmission = serviceLifecycle.beginInvocationAdmission();
   const startedAt = Date.now();
   const stageMetrics = [];
   const onStageMetric = stageMetricCollector(stageMetrics);
@@ -755,6 +837,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
   let externalCallStarted = false;
   let responseValidated = false;
   let circuitEvaluation;
+  let circuitProbeSettled = false;
   let capacityLease;
   let lifecycleRegistration;
   observer.emit('info', 'runtime.invocation.started', { status: 'started' });
@@ -778,13 +861,8 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     invocation = reservation.invocation;
     idempotency = reservation.idempotency;
     observer = observer.child({ invocationId: idOf(invocation) });
-    actor.onInvocationCreated?.(idOf(invocation));
-    lifecycleRegistration = serviceLifecycle.registerInvocation(idOf(invocation), {
-      workspaceId: connection.receivingWorkspaceId,
-      connectionId: idOf(connection),
-    });
-
     if (reservation.replayed) {
+      await actor.onInvocationCreated?.(idOf(invocation));
       observer.emit('info', 'runtime.invocation.idempotency_replayed', {
         status: 'replayed',
         lifecycleState: invocation.lifecycleState,
@@ -793,6 +871,16 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         ...serializeInvocation(invocation),
         idempotencyReplayed: true,
       };
+    }
+
+    lifecycleRegistration = serviceLifecycle.registerInvocation(idOf(invocation), {
+      workspaceId: connection.receivingWorkspaceId,
+      connectionId: idOf(connection),
+      admission: lifecycleAdmission,
+    });
+    lifecycleAdmission = undefined;
+    if (lifecycleRegistration.signal.aborted) {
+      throw lifecycleRegistration.signal.reason;
     }
 
     observer.emit('info', 'invocation.state.changed', {
@@ -822,6 +910,15 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       connection,
       actor: auditActor,
     });
+    await actor.onInvocationCreated?.(idOf(invocation));
+    invocation = await persistInvocationProgress({
+      invocation,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      stage: 'validation_started',
+      observer,
+      connection,
+      actor: auditActor,
+    });
 
     context = await loadInvocationContext(
       connectionId,
@@ -847,6 +944,14 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       reasonCode: 'INVOCATION_AUTHORIZED',
       traceId: actor.traceId,
       requestId: actor.requestId,
+      observer,
+      connection,
+      actor: auditActor,
+    });
+    invocation = await persistInvocationProgress({
+      invocation,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      stage: 'authorized',
       observer,
       connection,
       actor: auditActor,
@@ -948,16 +1053,33 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       );
     }
 
+    const executionOwner = `gateway-${process.pid}-${crypto.randomUUID()}`;
     const claim = await claimInvocationExecution({
       invocationId: idOf(invocation),
       receivingWorkspaceId: connection.receivingWorkspaceId,
-      executionOwner: `gateway-${process.pid}-${crypto.randomUUID()}`,
+      executionOwner,
+      executionLeaseId: capacityLease?.leaseId,
       reasonCode: 'EXECUTION_CLAIMED',
       traceId: actor.traceId,
       requestId: actor.requestId,
       observer,
+      onRecoveryRequired: (recovered, metadata) =>
+        bestEffortInvocationAudit({
+          action: 'invocation.recovery.eligible',
+          actor: auditActor,
+          connection,
+          invocation: recovered,
+          observer,
+          metadata,
+        }),
     });
     invocation = claim.invocation;
+    lifecycleRegistration?.setExecutionOwnership({
+      workspaceId: connection.receivingWorkspaceId,
+      connectionId: idOf(connection),
+      executionOwner,
+      executionLeaseId: claim.executionLeaseId,
+    });
     await recordStateAudit({
       invocation,
       connection,
@@ -979,24 +1101,45 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     invocation = startedAttempt.invocation;
     attempt = startedAttempt.attempt;
     attemptNumber = startedAttempt.attemptNumber;
-    invocation = await transitionAndAudit({
-      invocationId: idOf(invocation),
+    let result;
+    invocation = await persistInvocationProgress({
+      invocation,
       receivingWorkspaceId: connection.receivingWorkspaceId,
-      fromState: 'running',
-      toState: 'waiting_for_runtime',
-      reasonCode: 'RUNTIME_REQUEST_TRANSMISSION_STARTED',
-      attemptNumber,
-      traceId: actor.traceId,
-      requestId: actor.requestId,
+      stage: 'request_mapped',
       observer,
       connection,
       actor: auditActor,
     });
-
-    let result;
-    externalCallStarted = true;
-    lifecycleRegistration?.markExternalCallStarted();
+    const beforeTransmit = async () => {
+      if (lifecycleRegistration?.signal?.aborted) {
+        throw lifecycleRegistration.signal.reason;
+      }
+      invocation = await transitionAndAudit({
+        invocationId: idOf(invocation),
+        receivingWorkspaceId: connection.receivingWorkspaceId,
+        fromState: 'running',
+        toState: 'waiting_for_runtime',
+        reasonCode: 'RUNTIME_REQUEST_TRANSMISSION_STARTED',
+        attemptNumber,
+        traceId: actor.traceId,
+        requestId: actor.requestId,
+        observer,
+        connection,
+        actor: auditActor,
+      });
+      invocation = await persistInvocationProgress({
+        invocation,
+        receivingWorkspaceId: connection.receivingWorkspaceId,
+        stage: 'outbound_request_started',
+        observer,
+        connection,
+        actor: auditActor,
+      });
+      externalCallStarted = true;
+      lifecycleRegistration?.markExternalCallStarted();
+    };
     if (context.connection.runtimeType === 'mcp') {
+      await beforeTransmit();
       result = await adapter.invoke(context.connection, context.capability, input);
     } else {
       result = await adapter.invoke({
@@ -1008,19 +1151,41 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
           traceId: actor.traceId,
           requestId: actor.requestId,
           invocationId: idOf(invocation),
-          idempotencyKey: idempotency.keyHash,
+          idempotencyKey: actor.remoteIdempotencyKeyHash || idempotency.keyHash,
           signal: lifecycleRegistration?.signal,
+          beforeTransmit,
         },
       });
     }
     adapterResultOrThrow(result, context.connection.runtimeType);
+    invocation = await persistInvocationProgress({
+      invocation,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      stage: 'remote_response_received',
+      observer,
+      connection,
+      actor: auditActor,
+    });
+    invocation = await persistInvocationProgress({
+      invocation,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      stage: 'response_validation_started',
+      observer,
+      connection,
+      actor: auditActor,
+    });
     await observer.stage('response_validation', async () =>
       validateCapabilityOutput(context.capability, result.output),
     );
     responseValidated = true;
     try {
       const [circuitResult, healthResult] = await Promise.all([
-        recordCircuitSuccess(context.connection, 'runtime', actor.runtimeProtectionOptions),
+        recordCircuitSuccess(context.connection, 'runtime', actor.runtimeProtectionOptions).then(
+          (result) => {
+            if (circuitEvaluation?.probe) circuitProbeSettled = true;
+            return result;
+          },
+        ),
         recordConnectionSuccess(context.connection, actor.runtimeProtectionOptions),
       ]);
       if (circuitResult.transitioned === 'closed') {
@@ -1080,6 +1245,14 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       invocation,
       observer,
     });
+    invocation = await persistInvocationProgress({
+      invocation,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      stage: 'finalization_started',
+      observer,
+      connection,
+      actor: auditActor,
+    });
     invocation = await observer.stage('invocation_persistence', () =>
       transitionAndAudit({
         invocationId: idOf(invocation),
@@ -1138,15 +1311,83 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       idempotencyReplayed: false,
     };
   } catch (error) {
-    const runtimeError = normalizedError(error);
+    let runtimeError = normalizedError(error);
+    const lifecycleSignal = lifecycleRegistration?.signal || lifecycleAdmission?.signal;
+    if (
+      lifecycleSignal?.aborted &&
+      lifecycleSignal.reason instanceof AppError &&
+      ![ErrorCodes.INVOCATION_CANCELLED, ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION].includes(
+        runtimeError.code,
+      )
+    ) {
+      // A lifecycle transition may lose a race with cancellation. The registered abort
+      // reason remains authoritative and must not be mislabeled as a persistence failure.
+      runtimeError = lifecycleSignal.reason;
+    }
     runtimeError.retryable = isRetryableError(runtimeError);
     runtimeError.traceId ||= actor.traceId;
     runtimeError.requestId ||= actor.requestId;
     runtimeError.connectionId ||= connectionId;
+    if (runtimeError.code === ErrorCodes.INVOCATION_CANCELLED) {
+      const current = invocation
+        ? await Invocation.findOne({
+            _id: invocation._id,
+            receivingWorkspaceId: connection?.receivingWorkspaceId,
+          })
+        : null;
+      if (attempt && connection && current) {
+        try {
+          await finishInvocationAttempt({
+            attempt,
+            status:
+              current.lifecycleState === 'recovery_required' ? 'recovery_required' : 'cancelled',
+            error: runtimeError,
+            retryDecision: {
+              allowed: false,
+              reason:
+                current.lifecycleState === 'recovery_required'
+                  ? 'REMOTE_OUTCOME_UNKNOWN'
+                  : 'INVOCATION_CANCELLED',
+              delayMs: null,
+            },
+            outcomeAmbiguous: current.lifecycleState === 'recovery_required',
+            actor,
+            connection,
+            invocation: current,
+            observer,
+          });
+        } catch (attemptPersistenceError) {
+          runtimeError.attemptPersistenceErrorCode =
+            safeCode(attemptPersistenceError?.code) || ErrorCodes.INTERNAL_SERVER_ERROR;
+        }
+      }
+      runtimeError.invocationId ||= current ? idOf(current) : invocation && idOf(invocation);
+      runtimeError.lifecycleState = current?.lifecycleState;
+      runtimeError.cancellationState = current?.cancellationState || 'aborting';
+      runtimeError.recoveryRequired = current?.lifecycleState === 'recovery_required';
+      observer.emit('info', 'runtime.invocation.cancelled', {
+        invocationId: runtimeError.invocationId,
+        lifecycleState: runtimeError.lifecycleState,
+        cancellationState: runtimeError.cancellationState,
+        status: 'cancelled',
+      });
+      circuitProbeSettled =
+        (await releaseNonFailureProbe(
+          context,
+          circuitEvaluation,
+          actor,
+          observer,
+          'INVOCATION_CANCELLED',
+        )) || circuitProbeSettled;
+      throw runtimeError;
+    }
     if (runtimeError.code === ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION) {
+      const shutdownAmbiguous = externalCallStarted || runtimeError.recoveryRequired === true;
       observer.emit('warn', 'invocation.shutdown_interrupted', {
-        status: 'recovery_required',
-        reasonCode: 'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
+        status: shutdownAmbiguous ? 'recovery_required' : 'failed',
+        reasonCode: shutdownAmbiguous
+          ? 'SHUTDOWN_DURING_EXTERNAL_INVOCATION'
+          : 'SERVICE_SHUTDOWN_BEFORE_TRANSMISSION',
         invocationId: invocation ? idOf(invocation) : undefined,
       });
       if (invocation && connection) {
@@ -1156,8 +1397,104 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
           connection,
           invocation,
           observer,
-          metadata: { reasonCode: 'SHUTDOWN_DURING_EXTERNAL_INVOCATION' },
+          metadata: {
+            reasonCode: shutdownAmbiguous
+              ? 'SHUTDOWN_DURING_EXTERNAL_INVOCATION'
+              : 'SERVICE_SHUTDOWN_BEFORE_TRANSMISSION',
+          },
         });
+      }
+      if (!shutdownAmbiguous && invocation && connection) {
+        const current = await Invocation.findOne({
+          _id: invocation._id,
+          receivingWorkspaceId: connection.receivingWorkspaceId,
+        });
+        if (
+          current &&
+          ['accepted', 'validating', 'authorized', 'running', 'waiting_for_runtime'].includes(
+            current.lifecycleState,
+          )
+        ) {
+          const now = new Date();
+          const update = transitionUpdate(current.lifecycleState, 'cancelled', {
+            reasonCode: 'SERVICE_SHUTDOWN',
+            traceId: actor.traceId,
+            requestId: actor.requestId,
+            now,
+          });
+          Object.assign(update.$set, {
+            cancellationState: 'confirmed',
+            cancellationOutcome: 'local_confirmed',
+            cancellationConfirmedAt: now,
+            cancelRequestedAt: now,
+            cancelRequestedBy: 'system:service-shutdown',
+            cancelReasonCode: 'SERVICE_SHUTDOWN',
+            recoveryState: 'not_required',
+            recoveryEligible: false,
+          });
+          const cancelled = await Invocation.findOneAndUpdate(
+            {
+              _id: current._id,
+              receivingWorkspaceId: connection.receivingWorkspaceId,
+              lifecycleState: current.lifecycleState,
+            },
+            update,
+            { new: true, runValidators: true },
+          );
+          invocation = cancelled || current;
+          if (cancelled) {
+            await bestEffortInvocationAudit({
+              action: 'invocation.cancel.requested',
+              actor: auditActor,
+              connection,
+              invocation: cancelled,
+              observer,
+              metadata: { reasonCode: 'SERVICE_SHUTDOWN' },
+            });
+            await bestEffortInvocationAudit({
+              action: 'invocation.cancel.confirmed',
+              actor: auditActor,
+              connection,
+              invocation: cancelled,
+              observer,
+              metadata: {
+                reasonCode: 'SERVICE_SHUTDOWN',
+                fromState: current.lifecycleState,
+                toState: 'cancelled',
+              },
+            });
+          }
+          if (cancelled && attempt) {
+            await finishInvocationAttempt({
+              attempt,
+              status: 'cancelled',
+              error: runtimeError,
+              retryDecision: {
+                allowed: false,
+                reason: 'SERVICE_SHUTDOWN_BEFORE_TRANSMISSION',
+                delayMs: null,
+              },
+              outcomeAmbiguous: false,
+              actor,
+              connection,
+              invocation: cancelled,
+              observer,
+            });
+          }
+        }
+        runtimeError.invocationId ||= idOf(invocation);
+        runtimeError.lifecycleState = invocation?.lifecycleState;
+        runtimeError.cancellationState = invocation?.cancellationState;
+        runtimeError.recoveryRequired = false;
+        circuitProbeSettled =
+          (await releaseNonFailureProbe(
+            context,
+            circuitEvaluation,
+            actor,
+            observer,
+            'SERVICE_SHUTDOWN_BEFORE_TRANSMISSION',
+          )) || circuitProbeSettled;
+        throw runtimeError;
       }
     }
     if (
@@ -1196,7 +1533,12 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
             'runtime',
             runtimeError,
             actor.runtimeProtectionOptions,
-          ),
+          ).then((result) => {
+            if (circuitEvaluation?.probe && result.classification?.countsTowardCircuit) {
+              circuitProbeSettled = true;
+            }
+            return result;
+          }),
           recordConnectionFailure(context.connection, runtimeError, actor.runtimeProtectionOptions),
         ]);
         if (circuitResult.rateLimited) {
@@ -1243,6 +1585,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
           });
         } else if (circuitEvaluation?.probe) {
           await releaseCircuitProbe(context.connection, 'runtime', actor.runtimeProtectionOptions);
+          circuitProbeSettled = true;
           observer.emit('info', 'circuit.probe_completed', {
             status: 'deferred',
             circuitState: 'half_open',
@@ -1430,6 +1773,14 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
               observer,
               metadata: { attemptNumber, reasonCode },
             });
+            await bestEffortInvocationAudit({
+              action: 'invocation.recovery.eligible',
+              actor: auditActor,
+              connection,
+              invocation,
+              observer,
+              metadata: { attemptNumber, reasonCode },
+            });
           }
         } catch (persistenceError) {
           runtimeError.persistenceErrorCode =
@@ -1478,6 +1829,15 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     });
     throw runtimeError;
   } finally {
+    if (circuitEvaluation?.probe && !circuitProbeSettled && context?.connection) {
+      circuitProbeSettled = await releaseNonFailureProbe(
+        context,
+        circuitEvaluation,
+        actor,
+        observer,
+        'PROBE_CLEANUP_AFTER_PERSISTENCE_FAILURE',
+      );
+    }
     if (capacityLease) {
       try {
         const released = await releaseRuntimeCapacity(
@@ -1506,6 +1866,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       }
     }
     lifecycleRegistration?.complete();
+    lifecycleAdmission?.complete();
   }
 }
 
@@ -1654,50 +2015,57 @@ function requireReceivingIdentity(input) {
   };
 }
 
-async function listInvocations(input) {
+function requirePartnerActor(actor = {}) {
+  if (!actor.partner?._id) {
+    throw new AppError(401, ErrorCodes.AUTHENTICATION_REQUIRED, 'Partner API key is required.');
+  }
+  return actor.partner._id;
+}
+
+async function listInvocations(input, actor = {}) {
   const identity = requireReceivingIdentity(input);
+  const partnerId = requirePartnerActor(actor);
   const connections = await PassportConnection.find({
+    partnerId,
     receivingWorkspaceId: identity.receivingWorkspaceId,
     receivingUserId: identity.receivingUserId,
   })
-    .select('_id')
+    .select('_id status healthStatus runtimeControl')
     .lean();
+  const connectionsById = new Map(connections.map((connection) => [idOf(connection), connection]));
   const connectionIds = connections.map((connection) => connection._id);
   if (!connectionIds.length) return { items: [] };
 
   const invocations = await Invocation.find({ connectionId: { $in: connectionIds } })
     .sort({ createdAt: -1 })
     .lean();
-  return { items: invocations.map(serializeInvocation) };
+  return {
+    items: invocations.map((invocation) =>
+      serializeOperationalInvocation(
+        invocation,
+        connectionsById.get(idOf(invocation.connectionId)),
+      ),
+    ),
+  };
 }
 
-async function getInvocation(invocationId, input) {
+async function getInvocation(invocationId, input, actor = {}) {
   const identity = requireReceivingIdentity(input);
+  const partnerId = requirePartnerActor(actor);
   let invocation = await queryWithPrivateInvocationFields({ _id: invocationId });
   if (!invocation) {
     throw new AppError(404, ErrorCodes.INVOCATION_NOT_FOUND, 'Invocation was not found.');
   }
   const connection = await PassportConnection.findOne({
     _id: invocation.connectionId,
+    partnerId,
     receivingWorkspaceId: identity.receivingWorkspaceId,
     receivingUserId: identity.receivingUserId,
   });
   if (!connection) {
     throw new AppError(404, ErrorCodes.INVOCATION_NOT_FOUND, 'Invocation was not found.');
   }
-  if (
-    ['running', 'waiting_for_runtime'].includes(invocation.lifecycleState) &&
-    invocation.executionLeaseExpiresAt &&
-    new Date(invocation.executionLeaseExpiresAt).getTime() <= Date.now()
-  ) {
-    invocation =
-      (await markExpiredInvocationLeaseRecovery({
-        invocationId: idOf(invocation),
-        receivingWorkspaceId: identity.receivingWorkspaceId,
-        reasonCode: 'EXECUTION_LEASE_EXPIRED',
-      })) || invocation;
-  }
-  return serializeInvocation(invocation);
+  return serializeOperationalInvocation(invocation, connection);
 }
 
 function attemptPagination(input = {}) {
@@ -1747,8 +2115,9 @@ function serializeInvocationAttempt(attempt) {
   };
 }
 
-async function listInvocationAttempts(invocationId, input) {
+async function listInvocationAttempts(invocationId, input, actor = {}) {
   const identity = requireReceivingIdentity(input);
+  const partnerId = requirePartnerActor(actor);
   const pagination = attemptPagination(input);
   const invocation = await Invocation.findOne({ _id: invocationId }).lean();
   if (!invocation) {
@@ -1756,6 +2125,7 @@ async function listInvocationAttempts(invocationId, input) {
   }
   const connection = await PassportConnection.findOne({
     _id: invocation.connectionId,
+    partnerId,
     receivingWorkspaceId: identity.receivingWorkspaceId,
     receivingUserId: identity.receivingUserId,
   })

@@ -6,6 +6,7 @@ const { logger, safeLogPayload } = require('./utils/logger');
 const { databaseStatus } = require('./config/db');
 const { serviceLifecycle } = require('./services/serviceLifecycle.service');
 const { markActiveInvocationRecovery } = require('./services/invocationLifecycle.service');
+const { createAuditLog } = require('./services/auditService');
 
 async function start(options = {}) {
   const activeLogger = options.logger || logger;
@@ -50,6 +51,26 @@ async function start(options = {}) {
               invocationId: entry.invocationId,
               receivingWorkspaceId: entry.workspaceId,
               reasonCode: 'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
+              onRecoveryRequired: (invocation, metadata) =>
+                createAuditLog(
+                  'system',
+                  'system:backend-shutdown',
+                  'invocation.recovery.eligible',
+                  'Invocation',
+                  entry.invocationId,
+                  {
+                    receivingWorkspaceId: entry.workspaceId,
+                    connectionId: entry.connectionId,
+                    invocationId: entry.invocationId,
+                    lifecycleState: invocation.lifecycleState,
+                    ...metadata,
+                  },
+                  {
+                    requestId: invocation.requestId,
+                    traceId: invocation.traceId,
+                    invocationId: entry.invocationId,
+                  },
+                ),
             });
           } catch (error) {
             activeLogger.error(

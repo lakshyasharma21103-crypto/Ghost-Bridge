@@ -264,7 +264,78 @@ async function assertResolvedHostIsSafe(parsed, options = {}) {
   }
 }
 
-async function readLimitedBody(response, maxBytes) {
+function callerCancellationError(reason) {
+  if (reason instanceof AppError) return reason;
+  const causeName =
+    typeof reason?.name === 'string' && /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(reason.name)
+      ? reason.name
+      : undefined;
+  const causeCode =
+    typeof reason?.code === 'string' && /^[A-Z][A-Z0-9_]{0,127}$/.test(reason.code)
+      ? reason.code
+      : undefined;
+  return new AppError(
+    409,
+    ErrorCodes.INVOCATION_CANCELLED,
+    'Outbound request was cancelled by the caller.',
+    detail('request', 'The caller cancelled the outbound request.'),
+    {
+      reasonCode: 'CALLER_CANCELLED',
+      ...(causeName || causeCode ? { cause: { name: causeName, code: causeCode } } : {}),
+    },
+  );
+}
+
+function deadlineError(timeoutMs) {
+  return new AppError(
+    504,
+    ErrorCodes.SAFE_FETCH_TIMEOUT,
+    'Outbound request timed out.',
+    detail('timeout', 'safeFetch exceeded the configured absolute deadline.'),
+    {
+      timeoutReason: 'SAFE_FETCH_DEADLINE_EXCEEDED',
+      configuredTimeoutMs: timeoutMs,
+    },
+  );
+}
+
+function signalError(signal) {
+  return signal?.reason instanceof AppError
+    ? signal.reason
+    : callerCancellationError(signal?.reason);
+}
+
+function raceWithSignal(operation, signal, onAbort) {
+  if (!signal) return Promise.resolve(operation);
+  if (signal.aborted) {
+    onAbort?.();
+    return Promise.reject(signalError(signal));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', abort);
+      callback(value);
+    };
+    const abort = () => {
+      try {
+        onAbort?.();
+      } catch {
+        // Abort cleanup is best-effort and must not replace the cancellation reason.
+      }
+      finish(reject, signalError(signal));
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve(operation).then(
+      (value) => finish(resolve, value),
+      (error) => finish(reject, error),
+    );
+  });
+}
+
+async function readLimitedBody(response, maxBytes, signal) {
   if (!response.body) return '';
 
   const reader = response.body.getReader();
@@ -272,11 +343,17 @@ async function readLimitedBody(response, maxBytes) {
   let total = 0;
 
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = await raceWithSignal(reader.read(), signal, () => {
+      Promise.resolve(reader.cancel(signal?.reason)).catch(() => {});
+    });
     if (done) break;
     total += value.byteLength;
     if (total > maxBytes) {
-      await reader.cancel();
+      try {
+        Promise.resolve(reader.cancel()).catch(() => {});
+      } catch {
+        // The bounded-body error remains authoritative even if stream cleanup fails.
+      }
       throw new AppError(
         502,
         ErrorCodes.SAFE_FETCH_RESPONSE_TOO_LARGE,
@@ -317,15 +394,16 @@ function redirectUrl(response, currentUrl) {
   return new URL(location, currentUrl).toString();
 }
 
-function sanitizeFetchError(error) {
+function sanitizeFetchError(error, context = {}) {
   if (error instanceof AppError) return error;
+  if (context.signal?.aborted) {
+    if (context.signal.reason instanceof AppError) return context.signal.reason;
+    if (context.deadlineExceeded === true) return deadlineError(context.timeoutMs);
+    return callerCancellationError(context.callerSignal?.reason || context.signal.reason);
+  }
   if (error?.name === 'AbortError') {
-    return new AppError(
-      504,
-      ErrorCodes.SAFE_FETCH_TIMEOUT,
-      'Outbound request timed out.',
-      detail('timeout', 'safeFetch aborted the request after the configured timeout.'),
-    );
+    if (context.deadlineExceeded === true) return deadlineError(context.timeoutMs);
+    return callerCancellationError(context.callerSignal?.reason || error);
   }
   return new AppError(
     502,
@@ -336,35 +414,57 @@ function sanitizeFetchError(error) {
 }
 
 async function safeFetch(rawUrl, options = {}) {
-  const timeoutMs = Number(options.timeoutMs || DEFAULT_TIMEOUT_MS);
+  const suppliedTimeoutMs = Number(options.timeoutMs || DEFAULT_TIMEOUT_MS);
+  const timeoutMs =
+    Number.isFinite(suppliedTimeoutMs) && suppliedTimeoutMs > 0
+      ? Math.max(1, Math.floor(suppliedTimeoutMs))
+      : DEFAULT_TIMEOUT_MS;
   const maxBytes = Number(options.maxBytes || DEFAULT_MAX_BYTES);
   const maxRedirects = Number(options.maxRedirects ?? DEFAULT_MAX_REDIRECTS);
   let nextUrl = String(rawUrl);
   let requestHeaders = options.headers || {};
+  let deadlineExceeded = false;
+  let transmissionStarted = false;
+  const controller = new AbortController();
+  const callerSignal = options.signal;
+  const abortFromCaller = () => {
+    if (!controller.signal.aborted) {
+      controller.abort(callerCancellationError(callerSignal?.reason));
+    }
+  };
+  if (callerSignal?.aborted) abortFromCaller();
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  const timeout = setTimeout(() => {
+    if (controller.signal.aborted) return;
+    deadlineExceeded = true;
+    controller.abort(deadlineError(timeoutMs));
+  }, timeoutMs);
 
   try {
     for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+      if (controller.signal.aborted) throw signalError(controller.signal);
       const parsed = parseSafeUrl(nextUrl, options);
-      await assertResolvedHostIsSafe(parsed, options);
+      await raceWithSignal(assertResolvedHostIsSafe(parsed, options), controller.signal);
 
-      const controller = new AbortController();
-      const abortFromCaller = () => controller.abort(options.signal?.reason);
-      if (options.signal?.aborted) controller.abort(options.signal.reason);
-      else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      let response;
-      try {
-        response = await fetch(parsed, {
+      if (!transmissionStarted && typeof options.beforeTransmit === 'function') {
+        await raceWithSignal(
+          Promise.resolve().then(() => options.beforeTransmit()),
+          controller.signal,
+        );
+      }
+      if (controller.signal.aborted) throw signalError(controller.signal);
+      transmissionStarted = true;
+      const fetchImplementation = options.fetchImpl || fetch;
+      const response = await raceWithSignal(
+        fetchImplementation(parsed, {
           method: options.method || 'GET',
           headers: requestHeaders,
           body: options.body,
           redirect: 'manual',
           signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeout);
-        options.signal?.removeEventListener('abort', abortFromCaller);
-      }
+        }),
+        controller.signal,
+      );
 
       if (response.status >= 300 && response.status < 400) {
         const location = redirectUrl(response, parsed);
@@ -384,6 +484,12 @@ async function safeFetch(rawUrl, options = {}) {
             detail('redirect', 'Too many redirects.', { maxRedirects }),
           );
         }
+        try {
+          await raceWithSignal(Promise.resolve(response.body?.cancel()), controller.signal);
+        } catch {
+          if (controller.signal.aborted) throw signalError(controller.signal);
+          // Redirect body cleanup is best-effort and contains no returned application data.
+        }
         if (new URL(location).origin !== parsed.origin) {
           requestHeaders = stripSensitiveHeadersForCrossOriginRedirect(requestHeaders);
         }
@@ -396,11 +502,19 @@ async function safeFetch(rawUrl, options = {}) {
         status: response.status,
         url: parsed.toString(),
         headers: headersToObject(response.headers),
-        bodyText: await readLimitedBody(response, maxBytes),
+        bodyText: await readLimitedBody(response, maxBytes, controller.signal),
       };
     }
   } catch (error) {
-    throw sanitizeFetchError(error);
+    throw sanitizeFetchError(error, {
+      signal: controller.signal,
+      callerSignal,
+      deadlineExceeded,
+      timeoutMs,
+    });
+  } finally {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
   }
 
   throw new AppError(

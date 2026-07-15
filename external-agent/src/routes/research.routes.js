@@ -16,13 +16,23 @@ function validationDetails(error) {
   }));
 }
 
+function responseChannelAvailable(response) {
+  return (
+    response.destroyed !== true && response.writableEnded !== true && response.writable !== false
+  );
+}
+
 function researchRouter(runtimeToken, researchService, lifecycle) {
   const router = express.Router();
 
   router.post('/invoke', authenticateRuntime(runtimeToken), async (request, response, next) => {
     let activeRequest;
     try {
-      activeRequest = lifecycle?.register(request.requestId);
+      activeRequest = lifecycle?.register({
+        invocationId: request.invocationId,
+        requestId: request.requestId,
+        traceId: request.traceId,
+      });
     } catch (error) {
       next(error);
       return;
@@ -52,9 +62,10 @@ function researchRouter(runtimeToken, researchService, lifecycle) {
     }
 
     try {
-      const providerSignal = activeRequest?.signal
-        ? AbortSignal.any([request.runtimeAbortSignal, activeRequest.signal])
-        : request.runtimeAbortSignal;
+      const providerSignals = [request.runtimeAbortSignal, activeRequest?.signal].filter(Boolean);
+      const providerSignal =
+        providerSignals.length > 1 ? AbortSignal.any(providerSignals) : providerSignals[0];
+      providerSignal?.throwIfAborted();
       const result = await researchService.researchTopic({
         topic: parsed.data.topic,
         requestId: request.requestId,
@@ -63,7 +74,8 @@ function researchRouter(runtimeToken, researchService, lifecycle) {
         observer: request.observer,
         signal: providerSignal,
       });
-      if (response.writableEnded || response.destroyed) return;
+      providerSignal?.throwIfAborted();
+      if (!responseChannelAvailable(response)) return;
       await request.observer.stage('response_serialization', async () => {
         response.json({
           response: result,
@@ -77,11 +89,21 @@ function researchRouter(runtimeToken, researchService, lifecycle) {
         status: 'completed',
       });
     } catch (error) {
-      request.observer?.emit('error', 'external_agent.invocation.failed', {
-        status: 'failed',
-        errorCode: error.code,
-        stage: error.stage,
-      });
+      if (error?.code === 'REQUEST_CANCELLED') {
+        request.observer?.emit('info', 'external_agent.invocation.cancelled', {
+          status: 'cancelled',
+          errorCode: 'REQUEST_CANCELLED',
+          reason: 'CLIENT_DISCONNECTED',
+          stage: error.stage,
+        });
+      } else {
+        request.observer?.emit('error', 'external_agent.invocation.failed', {
+          status: 'failed',
+          errorCode: error.code,
+          stage: error.stage,
+        });
+      }
+      if (!responseChannelAvailable(response)) return;
       next(error);
     } finally {
       activeRequest?.complete();

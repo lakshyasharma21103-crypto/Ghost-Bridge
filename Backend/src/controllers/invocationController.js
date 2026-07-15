@@ -5,6 +5,11 @@ const {
   getInvocation: getGatewayInvocation,
   listInvocationAttempts: listGatewayInvocationAttempts,
 } = require('../services/runtimeGateway.service');
+const {
+  requestCancellation,
+  manualRetry,
+  manualResolve,
+} = require('../services/invocationControl.service');
 
 async function invokeConnection(request, response, next) {
   try {
@@ -46,7 +51,7 @@ async function importConnectionMcpTools(request, response, next) {
 
 async function listInvocations(request, response, next) {
   try {
-    const data = await listGatewayInvocations(request.query);
+    const data = await listGatewayInvocations(request.query, { partner: request.partner });
     response.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -55,7 +60,9 @@ async function listInvocations(request, response, next) {
 
 async function getInvocation(request, response, next) {
   try {
-    const data = await getGatewayInvocation(request.params.id, request.query);
+    const data = await getGatewayInvocation(request.params.id, request.query, {
+      partner: request.partner,
+    });
     response.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -64,7 +71,48 @@ async function getInvocation(request, response, next) {
 
 async function listInvocationAttempts(request, response, next) {
   try {
-    const data = await listGatewayInvocationAttempts(request.params.id, request.query);
+    const data = await listGatewayInvocationAttempts(request.params.id, request.query, {
+      partner: request.partner,
+    });
+    response.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+function controlActor(request) {
+  return {
+    partner: request.partner,
+    requestId: request.requestId,
+    traceId: request.traceId,
+    observer: request.observer,
+  };
+}
+
+async function cancelInvocation(request, response, next) {
+  try {
+    const data = await requestCancellation(request.params.id, request.body, controlActor(request));
+    response.status(data.cancellationState === 'outcome_unknown' ? 202 : 200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function retryInvocation(request, response, next) {
+  try {
+    const data = await manualRetry(request.params.id, request.body, controlActor(request));
+    response.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function resolveInvocation(request, response, next) {
+  try {
+    const data = await manualResolve(request.params.id, request.body, controlActor(request));
     response.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -77,4 +125,7 @@ module.exports = {
   listInvocations,
   getInvocation,
   listInvocationAttempts,
+  cancelInvocation,
+  retryInvocation,
+  resolveInvocation,
 };

@@ -75,6 +75,8 @@ test('authoritative circuit failure classification excludes caller failures and 
     'INSTALL_KEY_INVALID',
     'IDEMPOTENCY_CONFLICT',
     'UNSAFE_URL',
+    'INVOCATION_CANCELLED',
+    'SERVICE_SHUTDOWN',
   ]) {
     assert.equal(classifyCircuitFailure({ code }).countsTowardCircuit, false, code);
   }
@@ -402,6 +404,184 @@ test('service lifecycle becomes unready immediately, drains active work, and abo
   assert.equal(active.signal.reason.code, ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION);
   active.complete();
   assert.equal(await lifecycle.waitForIdle(50), true);
+});
+
+test('pending invocation admission is drain-counted, abortable, and transfers without an idle gap', async () => {
+  const lifecycle = createServiceLifecycle();
+  lifecycle.markReady();
+  const admission = lifecycle.beginInvocationAdmission();
+  assert.equal(lifecycle.snapshot().activeInvocationCount, 1);
+  assert.equal(lifecycle.snapshot().pendingAdmissionCount, 1);
+
+  lifecycle.beginDraining();
+  assert.equal(await lifecycle.waitForIdle(1), false);
+  assert.equal(lifecycle.abortActiveInvocations(), 1);
+  assert.equal(admission.signal.reason.code, ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION);
+
+  const registered = lifecycle.registerInvocation('invocation-admitted-before-drain', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+    admission,
+  });
+  assert.equal(registered.signal, admission.signal);
+  assert.equal(registered.signal.aborted, true);
+  assert.equal(lifecycle.snapshot().pendingAdmissionCount, 0);
+  assert.equal(lifecycle.snapshot().activeInvocationCount, 1);
+  assert.equal(registered.complete(), true);
+  assert.equal(await lifecycle.waitForIdle(50), true);
+});
+
+test('active execution cancellation is ownership-verified, idempotent, and replay-safe', () => {
+  const lifecycle = createServiceLifecycle();
+  lifecycle.markReady();
+  const preClaim = lifecycle.registerInvocation('invocation-pre-claim', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+  });
+  const preClaimRejected = lifecycle.requestCancellation('invocation-pre-claim', {
+    workspaceId: 'workspace-other',
+    connectionId: 'connection-a',
+    reasonCode: 'USER_REQUESTED',
+  });
+  assert.equal(preClaimRejected.requested, false);
+  const preClaimCancelled = lifecycle.requestCancellation('invocation-pre-claim', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+    reasonCode: 'USER_REQUESTED',
+  });
+  assert.equal(preClaimCancelled.requested, true);
+  assert.equal(preClaim.signal.reason.recoveryRequired, undefined);
+  preClaim.complete();
+  const active = lifecycle.registerInvocation('invocation-1', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+  });
+  const replay = lifecycle.registerInvocation('invocation-1', {
+    workspaceId: 'workspace-other',
+    connectionId: 'connection-other',
+  });
+
+  assert.equal(active.registered, true);
+  assert.equal(replay.registered, false);
+  assert.equal(replay.signal, active.signal);
+  assert.equal(replay.complete(), false);
+  assert.equal(lifecycle.snapshot().activeInvocationCount, 1);
+  assert.equal(
+    active.setExecutionOwnership({
+      workspaceId: 'workspace-a',
+      connectionId: 'connection-a',
+      executionOwner: 'worker-a',
+      executionLeaseId: 'lease-a',
+    }),
+    true,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(lifecycle.snapshot()),
+    /worker-a|lease-a|executionOwner|executionLeaseId/,
+  );
+
+  const rejected = lifecycle.requestCancellation('invocation-1', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+    executionOwner: 'worker-b',
+    executionLeaseId: 'lease-a',
+    reasonCode: 'USER_REQUESTED',
+  });
+  assert.equal(rejected.found, true);
+  assert.equal(rejected.requested, false);
+  assert.equal(rejected.reasonCode, 'EXECUTION_OWNERSHIP_MISMATCH');
+  assert.equal(active.signal.aborted, false);
+
+  active.markExternalCallStarted();
+  const requested = lifecycle.requestCancellation('invocation-1', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+    executionOwner: 'worker-a',
+    executionLeaseId: 'lease-a',
+    reasonCode: 'USER_REQUESTED',
+    requestId: 'req-cancel-safe',
+    traceId: 'trace-cancel-safe',
+  });
+  assert.equal(requested.found, true);
+  assert.equal(requested.requested, true);
+  assert.equal(requested.alreadyRequested, false);
+  assert.equal(requested.externalCallStarted, true);
+  assert.equal(active.signal.reason.code, ErrorCodes.INVOCATION_CANCELLED);
+  assert.equal(active.signal.reason.reasonCode, 'USER_REQUESTED');
+  assert.equal(active.signal.reason.recoveryRequired, true);
+  assert.equal(active.signal.reason.requestId, 'req-cancel-safe');
+  assert.equal(active.signal.reason.traceId, 'trace-cancel-safe');
+
+  const repeated = lifecycle.requestCancellation('invocation-1', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+    executionOwner: 'worker-a',
+    executionLeaseId: 'lease-a',
+    reasonCode: 'ADMIN_REQUESTED',
+  });
+  assert.equal(repeated.requested, true);
+  assert.equal(repeated.alreadyRequested, true);
+  assert.equal(repeated.reasonCode, 'USER_REQUESTED');
+  assert.equal(isRetryableError(active.signal.reason), false);
+  assert.equal(classifyCircuitFailure(active.signal.reason).countsTowardCircuit, false);
+
+  assert.equal(active.complete(), true);
+  const replacement = lifecycle.registerInvocation('invocation-1', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+  });
+  assert.equal(active.complete(), false);
+  assert.equal(lifecycle.snapshot().activeInvocationCount, 1);
+  replacement.complete();
+});
+
+test('shutdown and caller cancellation retain distinct non-retryable abort reasons', () => {
+  const lifecycle = createServiceLifecycle();
+  const active = lifecycle.registerInvocation('invocation-shutdown', {
+    workspaceId: 'workspace-a',
+    connectionId: 'connection-a',
+    executionOwner: 'worker-a',
+    executionLeaseId: 'lease-a',
+  });
+  active.markExternalCallStarted();
+  assert.equal(lifecycle.abortActiveInvocations(), 1);
+  assert.equal(active.signal.reason.code, ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION);
+  assert.notEqual(active.signal.reason.code, ErrorCodes.INVOCATION_CANCELLED);
+  assert.equal(isRetryableError(active.signal.reason), false);
+  assert.equal(classifyCircuitFailure(active.signal.reason).countsTowardCircuit, false);
+  active.complete();
+});
+
+test('REST adapter forwards cancellation and before-transmit controls into safeFetch', async () => {
+  const controller = new AbortController();
+  const beforeTransmit = () => {};
+  let captured;
+  const restore = patch(safeFetchUtility, 'safeFetch', async (_url, options) => {
+    captured = options;
+    return {
+      ok: true,
+      status: 200,
+      headers: {},
+      bodyText: JSON.stringify({ response: { ok: true } }),
+    };
+  });
+  try {
+    const result = await invokeRest({
+      runtime: {
+        endpoint: 'https://runtime.example.test/invoke',
+        method: 'POST',
+        inputField: 'topic',
+        outputField: 'response',
+      },
+      input: { topic: 'bounded cancellation test' },
+      observability: { signal: controller.signal, beforeTransmit },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(captured.signal, controller.signal);
+    assert.equal(captured.beforeTransmit, beforeTransmit);
+  } finally {
+    restore();
+  }
 });
 
 test('safe protection errors expose identifiers and timing but not runtime URLs or secrets', () => {

@@ -11,6 +11,14 @@ Successful invocation responses retain the existing `response.summary`, `respons
 
 If grounded research succeeds but transient structured formatting cannot complete within its configured attempts, the error envelope adds `recoveryRequired: true` and the allowlisted reason `FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH`. Callers must not replay the full grounded-research request automatically; the service never returns or persists the intermediate research text.
 
+## Cancellation and shutdown
+
+Closing an active invocation's HTTP connection cooperatively aborts its current provider signal as `REQUEST_CANCELLED` with the safe reason `CLIENT_DISCONNECTED`. Cancellation is checked before every Gemini call and retry, so structured formatting cannot begin after grounded research is cancelled. The per-request active registry contains only safe correlation identifiers, an `AbortController`, and registration time; it is process-local, non-durable, and always removed when request handling ends.
+
+Shutdown remains distinct. The service first drains existing work; after `SHUTDOWN_DRAIN_TIMEOUT_MS`, remaining provider work is aborted as `SERVICE_SHUTDOWN` with `recoveryRequired: true`. Provider stage deadlines remain `GEMINI_REQUEST_TIMEOUT`, and the outer HTTP deadline remains `REQUEST_TIMEOUT`.
+
+A closed response channel cannot receive a cancellation result and does not prove the remote provider stopped before transmission. The Gateway must therefore treat a transmitted operation as outcome-unknown unless a separately declared runtime capability provides trusted cancellation confirmation. This service has no cancellation endpoint, durable job ID, or status-lookup capability.
+
 ## Environment
 
 Copy `.env.example` to `.env` only for local use and replace the placeholder token. Never commit `.env`.
@@ -125,6 +133,7 @@ Bearer authentication uses a timing-safe digest comparison. The app also applies
 ## Known limitations
 
 - There is no database or service-side invocation persistence in the external service.
+- The active cancellation registry is local to one process. It cannot coordinate cancellation across replicas or recover cancellation state after a restart.
 - Grounded research exists only for the lifetime of a request. If transient formatting cannot complete within its bounded attempts, the safe error envelope marks recovery as required; it never persists or returns the grounded text for replay.
 - The in-memory rate limiter is per process and should be replaced by shared infrastructure for horizontally scaled deployments.
 - HTTPS depends on the deployment platform or reverse proxy.

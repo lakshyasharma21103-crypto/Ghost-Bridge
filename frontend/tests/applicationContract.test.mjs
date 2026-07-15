@@ -73,6 +73,8 @@ test('Operations uses tenant-scoped aggregate APIs and renders only safe operati
   assert.match(operations, /\/operations\/errors/);
   assert.match(operations, /\/operations\/passport-funnel/);
   assert.match(operations, /\/operations\/alerts/);
+  assert.match(operations, /\/operations\/recovery\?/);
+  assert.match(operations, /apiClient\.post\('\/operations\/recovery\/scan'/);
   assert.match(operations, /receivingWorkspaceId/);
   assert.match(operations, /No active operational alerts\./);
   assert.match(operations, /No failed invocations for this window\./);
@@ -83,9 +85,114 @@ test('Operations uses tenant-scoped aggregate APIs and renders only safe operati
   assert.match(operations, /attemptCount/);
   assert.match(operations, /retryDecision/);
   assert.match(operations, /recovery_required/);
+  assert.match(operations, /Cancellation requested/);
+  assert.match(operations, /Confirmed cancelled/);
+  assert.match(operations, /Cancellation outcome unknown/);
+  assert.match(operations, /Stuck invocations detected/);
+  assert.match(operations, /Manually retried/);
+  assert.match(operations, /Manually resolved/);
+  assert.match(operations, /Retry denied/);
+  assert.match(operations, /Recovery review queue/);
+  assert.match(operations, /No invocations currently require recovery review\./);
+  assert.match(operations, /\/invocations\?invocationId=/);
+  assert.match(operations, /<ConfirmationDialog/);
+  assert.match(
+    operations,
+    /const loadOperations = useCallback\(async \(\) => \{\s*if \(!partnerConfigured\) \{[\s\S]*?return;\s*\}[\s\S]*?apiClient\.get/,
+  );
+  assert.match(
+    operations,
+    /async function acknowledge\(alertId\) \{\s*if \(!partnerConfigured\) return false;/,
+  );
+  assert.match(
+    operations,
+    /async function runRecoveryScan\(\) \{\s*if \(!partnerConfigured\) return;/,
+  );
+  assert.match(operations, /disabled=\{state\.loading \|\| !partnerConfigured\}/);
   assert.doesNotMatch(
     operations,
     /inputSummary|\.output\b|sourceUrl|Authorization|encryptedPayload|accessToken|installKey|apiKey|idempotencyKeyHash/,
+  );
+});
+
+test('invocation detail exposes only safe lifecycle controls and confirms every state change', () => {
+  const invocations = read('src/pages/Invocations.jsx');
+  const confirmation = read('src/components/ConfirmationDialog.jsx');
+
+  assert.match(invocations, /useSearchParams/);
+  assert.match(invocations, /searchParams\.get\('invocationId'\)/);
+  assert.match(invocations, /\/invocations\/\$\{invocationId\}\/attempts/);
+  assert.match(invocations, /\/invocations\/\$\{invocationId\}\/\$\{request\.endpoint\}/);
+  assert.match(invocations, /endpoint: 'cancel'/);
+  assert.match(invocations, /endpoint: 'retry'/);
+  assert.match(invocations, /endpoint: 'resolve'/);
+  assert.match(invocations, /availableActions/);
+  assert.match(invocations, /partnerConfigured/);
+  assert.match(invocations, /Cancellation requested; remote termination is not confirmed\./);
+  assert.match(invocations, /Retry is blocked because the remote outcome is unknown\./);
+  assert.match(invocations, /This invocation requires operator review\./);
+  assert.match(invocations, /<ConfirmationDialog/);
+  assert.match(
+    invocations,
+    /const load = useCallback\(async \(\) => \{\s*if \(!partnerConfigured\) \{[\s\S]*?return;\s*\}[\s\S]*?apiClient\.get/,
+  );
+  assert.match(
+    invocations,
+    /if \(!partnerConfigured \|\| !invocationId\) \{[\s\S]*?return;\s*\}[\s\S]*?apiClient\.get/,
+  );
+  assert.match(
+    invocations,
+    /async function runControlAction\(\) \{\s*if \(!partnerConfigured \|\| !confirmation/,
+  );
+  assert.doesNotMatch(
+    invocations,
+    /item\.output|JSON\.stringify\(item\.error|inputSummary|sourceUrl|Authorization|encryptedPayload|accessToken|installKey|apiKey|idempotencyKeyHash/,
+  );
+
+  assert.match(confirmation, /role="dialog"/);
+  assert.match(confirmation, /aria-modal="true"/);
+  assert.match(confirmation, /event\.key === 'Escape'/);
+  assert.match(confirmation, /cancelButtonRef\.current\?\.focus/);
+});
+
+test('the API client authenticates Phase 13B3 operator paths and allowlists control errors', () => {
+  const apiClient = read('src/api/apiClient.js');
+
+  assert.match(apiClient, /function isPhase13B3Control/);
+  assert.match(apiClient, /pathname\.startsWith\('\/operations\/'\)/);
+  assert.match(apiClient, /pathname\.startsWith\('\/audit-logs\/'\)/);
+  assert.match(apiClient, /\^\\\/invocations/);
+  assert.match(apiClient, /cancel\|retry\|resolve/);
+  assert.match(apiClient, /isPhase13B3Control\(path, options\.method\)/);
+  assert.match(apiClient, /X-Partner-Api-Key/);
+  assert.match(apiClient, /PARTNER_API_KEY_REQUIRED/);
+  assert.match(apiClient, /SAFE_CANCELLATION_STATES/);
+  assert.match(apiClient, /SAFE_RECOVERY_DECISIONS/);
+  assert.match(apiClient, /reasonCode: safeCode/);
+  assert.doesNotMatch(apiClient, /Object\.assign\([^)]*error|\.\.\.error[,}]/);
+});
+
+test('Audit Logs suppresses protected reads until a Partner key is configured', () => {
+  const auditLogs = read('src/pages/AuditLogs.jsx');
+
+  assert.match(
+    auditLogs,
+    /const loadLogs = useCallback\(\(\) => \{\s*if \(!partnerConfigured\) \{[\s\S]*?return undefined;\s*\}[\s\S]*?apiClient\s*\.get\(`\/audit-logs/,
+  );
+  assert.match(auditLogs, /disabled=\{state\.loading \|\| !partnerConfigured\}/);
+  assert.match(auditLogs, /Configure a Partner API key in Settings/);
+});
+
+test('the overview does not request protected invocation or audit history without Partner access', () => {
+  const landing = read('src/pages/Landing.jsx');
+
+  assert.match(
+    landing,
+    /partnerConfigured \? apiClient\.get\(`\/invocations\?\$\{query\}`\) : Promise\.resolve\(null\)/,
+  );
+  assert.match(
+    landing,
+    /partnerConfigured \? apiClient\.get\(`\/audit-logs\?\$\{query\}`\) : Promise\.resolve\(null\)/,
   );
 });
 

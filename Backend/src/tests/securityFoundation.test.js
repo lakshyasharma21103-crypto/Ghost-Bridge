@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const dns = require('node:dns').promises;
 const test = require('node:test');
 const {
   generateInstallKey,
@@ -24,6 +25,16 @@ const { errorHandler } = require('../middleware/errorHandler');
 const { requestId } = require('../middleware/requestId');
 const { isRetryableError } = require('../utils/retryability');
 const { getHealth, getReadiness } = require('../controllers/healthController');
+
+async function withPublicDns(operation) {
+  const original = dns.lookup;
+  dns.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+  try {
+    return await operation();
+  } finally {
+    dns.lookup = original;
+  }
+}
 
 test('install keys are generated securely and hashes do not contain raw keys', () => {
   const first = generateInstallKey();
@@ -334,4 +345,134 @@ test('cross-origin redirects strip outbound credentials', () => {
   assert.equal(headers['x-api-key'], undefined);
   assert.equal(headers['x-partner-runtime'], undefined);
   assert.equal(headers.accept, 'application/json');
+});
+
+test('safeFetch preserves an explicit caller cancellation and does not transmit afterward', async () => {
+  const caller = new AbortController();
+  const cancellation = new AppError(
+    409,
+    ErrorCodes.INVOCATION_CANCELLED,
+    'Invocation execution was cancelled by the caller.',
+    [],
+    { reasonCode: 'USER_REQUESTED' },
+  );
+  let beforeTransmitCalls = 0;
+  let fetchCalls = 0;
+
+  await withPublicDns(async () => {
+    await assert.rejects(
+      () =>
+        safeFetch('https://example.com/runtime', {
+          timeoutMs: 1_000,
+          signal: caller.signal,
+          beforeTransmit() {
+            beforeTransmitCalls += 1;
+            caller.abort(cancellation);
+          },
+          fetchImpl: async () => {
+            fetchCalls += 1;
+            return new Response('unexpected');
+          },
+        }),
+      (error) => error === cancellation && error.code === ErrorCodes.INVOCATION_CANCELLED,
+    );
+  });
+
+  assert.equal(beforeTransmitCalls, 1);
+  assert.equal(fetchCalls, 0);
+  assert.equal(isRetryableError(cancellation), false);
+});
+
+test('safeFetch applies one absolute deadline across redirects and bounded body reading', async () => {
+  let fetchCalls = 0;
+  let beforeTransmitCalls = 0;
+  let bodyCancelled = 0;
+  let bodyTimer;
+
+  await withPublicDns(async () => {
+    await assert.rejects(
+      () =>
+        safeFetch('https://example.com/runtime', {
+          timeoutMs: 50,
+          beforeTransmit() {
+            beforeTransmitCalls += 1;
+          },
+          async fetchImpl() {
+            fetchCalls += 1;
+            if (fetchCalls === 1) {
+              await new Promise((resolve) => setTimeout(resolve, 20));
+              return new Response(null, {
+                status: 302,
+                headers: { location: 'https://example.com/redirected' },
+              });
+            }
+            return {
+              ok: true,
+              status: 200,
+              headers: new Headers(),
+              body: {
+                getReader() {
+                  return {
+                    read() {
+                      return new Promise((resolve) => {
+                        bodyTimer = setTimeout(
+                          () => resolve({ done: false, value: Buffer.from('late body') }),
+                          200,
+                        );
+                      });
+                    },
+                    cancel() {
+                      bodyCancelled += 1;
+                      clearTimeout(bodyTimer);
+                      return Promise.resolve();
+                    },
+                  };
+                },
+              },
+            };
+          },
+        }),
+      (error) => {
+        assert.equal(error.code, ErrorCodes.SAFE_FETCH_TIMEOUT);
+        assert.equal(error.timeoutReason, 'SAFE_FETCH_DEADLINE_EXCEEDED');
+        assert.equal(error.configuredTimeoutMs, 50);
+        return true;
+      },
+    );
+  });
+
+  assert.equal(fetchCalls, 2);
+  assert.equal(beforeTransmitCalls, 1);
+  assert.equal(bodyCancelled, 1);
+});
+
+test('safeFetch retains its response-size bound while using cancellation-aware reads', async () => {
+  let bodyCancelled = 0;
+  await withPublicDns(async () => {
+    await assert.rejects(
+      () =>
+        safeFetch('https://example.com/runtime', {
+          timeoutMs: 1_000,
+          maxBytes: 4,
+          fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            headers: new Headers(),
+            body: {
+              getReader() {
+                return {
+                  read: async () => ({ done: false, value: Buffer.from('too large') }),
+                  cancel() {
+                    bodyCancelled += 1;
+                    return Promise.resolve();
+                  },
+                };
+              },
+            },
+          }),
+        }),
+      { code: ErrorCodes.SAFE_FETCH_RESPONSE_TOO_LARGE },
+    );
+  });
+  assert.equal(bodyCancelled, 1);
 });

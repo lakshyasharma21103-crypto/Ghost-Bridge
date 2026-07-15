@@ -34,8 +34,8 @@ export function Landing() {
       apiClient.get('/health'),
       partnerConfigured ? apiClient.get('/partner/agents') : Promise.resolve(null),
       apiClient.get(`/connections?${query}`),
-      apiClient.get(`/invocations?${query}`),
-      apiClient.get(`/audit-logs?${query}`),
+      partnerConfigured ? apiClient.get(`/invocations?${query}`) : Promise.resolve(null),
+      partnerConfigured ? apiClient.get(`/audit-logs?${query}`) : Promise.resolve(null),
     ];
     const [health, passports, connections, invocations, auditLogs] =
       await Promise.allSettled(requests);

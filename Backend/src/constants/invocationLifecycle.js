@@ -42,8 +42,76 @@ const INVOCATION_ATTEMPT_STATUSES = Object.freeze([
   'started',
   'succeeded',
   'failed',
+  'cancelled',
   'timed_out',
   'recovery_required',
+]);
+
+const INVOCATION_CANCELLATION_STATES = Object.freeze([
+  'not_requested',
+  'requested',
+  'aborting',
+  'confirmed',
+  'rejected',
+  'outcome_unknown',
+]);
+
+const INVOCATION_CANCELLATION_OUTCOMES = Object.freeze([
+  'not_applicable',
+  'local_confirmed',
+  'remote_confirmed',
+  'remote_unconfirmed',
+]);
+
+const INVOCATION_CANCEL_REASON_CODES = Object.freeze([
+  'USER_REQUESTED',
+  'ADMIN_REQUESTED',
+  'CLIENT_DISCONNECTED',
+  'SERVICE_SHUTDOWN',
+  'EXECUTION_TIMEOUT',
+  'STUCK_INVOCATION',
+  'REMOTE_OUTCOME_UNKNOWN',
+  'OPERATOR_CONFIRMED_CANCELLED',
+]);
+
+const INVOCATION_RECOVERY_STATES = Object.freeze([
+  'not_required',
+  'required',
+  'retrying',
+  'resolved',
+]);
+
+const INVOCATION_RECOVERY_DECISIONS = Object.freeze([
+  'not_evaluated',
+  'retry_allowed',
+  'retry_denied',
+  'resolve_as_failed_allowed',
+  'resolve_as_cancelled_allowed',
+  'mark_succeeded_allowed',
+  'operator_review_required',
+]);
+
+const INVOCATION_PROGRESS_STAGES = Object.freeze([
+  'accepted',
+  'validation_started',
+  'authorized',
+  'execution_claimed',
+  'request_mapped',
+  'outbound_request_started',
+  'remote_response_received',
+  'response_validation_started',
+  'finalization_started',
+  'terminalized',
+]);
+
+const INVOCATION_STUCK_CLASSIFICATIONS = Object.freeze([
+  'not_stuck',
+  'stale_before_runtime',
+  'external_runtime_overdue',
+  'lease_expired',
+  'finalization_stalled',
+  'shutdown_interrupted',
+  'outcome_ambiguous',
 ]);
 
 const INVOCATION_RETRY_STATES = Object.freeze([
@@ -116,8 +184,15 @@ const LIFECYCLE_STATE_TO_LEGACY_STATUS = Object.freeze({
 module.exports = {
   ALLOWED_INVOCATION_TRANSITIONS,
   INVOCATION_ATTEMPT_STATUSES,
+  INVOCATION_CANCELLATION_OUTCOMES,
+  INVOCATION_CANCELLATION_STATES,
+  INVOCATION_CANCEL_REASON_CODES,
+  INVOCATION_PROGRESS_STAGES,
+  INVOCATION_RECOVERY_DECISIONS,
+  INVOCATION_RECOVERY_STATES,
   INVOCATION_RETRY_DECISIONS,
   INVOCATION_RETRY_STATES,
+  INVOCATION_STUCK_CLASSIFICATIONS,
   INVOCATION_STATES,
   LEGACY_STATUS_TO_LIFECYCLE_STATE,
   LIFECYCLE_STATE_TO_LEGACY_STATUS,

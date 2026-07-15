@@ -8,6 +8,23 @@ const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
 ]);
+const SAFE_CANCELLATION_STATES = new Set([
+  'not_requested',
+  'requested',
+  'aborting',
+  'confirmed',
+  'rejected',
+  'outcome_unknown',
+]);
+const SAFE_RECOVERY_DECISIONS = new Set([
+  'not_evaluated',
+  'retry_allowed',
+  'retry_denied',
+  'resolve_as_failed_allowed',
+  'resolve_as_cancelled_allowed',
+  'mark_succeeded_allowed',
+  'operator_review_required',
+]);
 
 function safeConfiguredTimeoutMs(value) {
   return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
@@ -70,6 +87,12 @@ function toApiErrorResponse(error, identifiers = {}) {
           ? { circuitState: appError.circuitState }
           : {}),
         ...(appError.reasonCode ? { reasonCode: redactString(appError.reasonCode) } : {}),
+        ...(SAFE_CANCELLATION_STATES.has(appError.cancellationState)
+          ? { cancellationState: appError.cancellationState }
+          : {}),
+        ...(SAFE_RECOVERY_DECISIONS.has(appError.recoveryDecision)
+          ? { recoveryDecision: appError.recoveryDecision }
+          : {}),
       },
     },
     appError,

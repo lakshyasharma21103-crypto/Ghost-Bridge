@@ -6,7 +6,7 @@ const {
   buildResearchInput,
   buildResearchInstruction,
 } = require('../prompts/research.prompt');
-const { RuntimeError } = require('../utils/errors');
+const { RuntimeError, requestCancelledError } = require('../utils/errors');
 const {
   inspectGeminiResponseShape,
   requireGeminiSources,
@@ -336,22 +336,37 @@ function abortableDelay(ms, signal) {
   });
 }
 
+function parentAbortReason(parentSignal) {
+  if (parentSignal?.reason instanceof RuntimeError) return parentSignal.reason;
+  return requestCancelledError();
+}
+
+function throwIfParentAborted(parentSignal) {
+  if (parentSignal?.aborted) throw parentAbortReason(parentSignal);
+}
+
 function createTimedSignal(parentSignal, timeoutMs) {
   const controller = new AbortController();
   let timedOut = false;
-  const abortFromParent = () =>
-    controller.abort(parentSignal.reason || new DOMException('Aborted', 'AbortError'));
+  let abortedByParent = false;
+  const abortFromParent = () => {
+    if (controller.signal.aborted) return;
+    abortedByParent = true;
+    controller.abort(parentAbortReason(parentSignal));
+  };
 
   if (parentSignal?.aborted) abortFromParent();
   else parentSignal?.addEventListener('abort', abortFromParent, { once: true });
 
   const timer = setTimeout(() => {
+    if (controller.signal.aborted) return;
     timedOut = true;
     controller.abort(new DOMException('Provider request timed out', 'TimeoutError'));
   }, timeoutMs);
 
   return {
     signal: controller.signal,
+    abortedByParent: () => abortedByParent,
     timedOut: () => timedOut,
     cleanup() {
       clearTimeout(timer);
@@ -397,6 +412,7 @@ class GeminiProvider extends AIProvider {
   async generate(params, maxAttempts, signal, attemptState = { count: 0 }) {
     const boundedMaxAttempts = Math.max(1, Math.min(2, Number(maxAttempts) || 1));
     for (let attemptNumber = 1; attemptNumber <= boundedMaxAttempts; attemptNumber += 1) {
+      signal?.throwIfAborted();
       attemptState.count = attemptNumber;
       try {
         return await this.client.models.generateContent(params);
@@ -420,6 +436,7 @@ class GeminiProvider extends AIProvider {
     maxAttempts = 1,
     parameters,
   }) {
+    throwIfParentAborted(parentSignal);
     const timed = createTimedSignal(parentSignal, timeoutMs);
     const startedAt = Date.now();
     const attemptState = { count: 0 };
@@ -443,8 +460,10 @@ class GeminiProvider extends AIProvider {
       return await this.generate(parameters(timed.signal), maxAttempts, timed.signal, attemptState);
     } catch (error) {
       operationError = error;
+      const operationFailure =
+        !timed.timedOut() && timed.abortedByParent() ? timed.signal.reason : error;
       const mapped = attachTimeoutDiagnostics(
-        mapGeminiError(error, {
+        mapGeminiError(operationFailure, {
           locallyAborted: timed.timedOut(),
           operation,
           webSearchEnabled: operation === 'grounded_research' && this.config.webSearchEnabled,
@@ -471,8 +490,10 @@ class GeminiProvider extends AIProvider {
         locallyAborted: timed.timedOut(),
         providerAttemptCount: attemptState.count,
       };
-      const providerHttpStatus = numericStatus(operationError);
-      const providerStatus = safeProviderStatus(operationError);
+      const providerHttpStatus =
+        operationError instanceof RuntimeError ? undefined : numericStatus(operationError);
+      const providerStatus =
+        operationError instanceof RuntimeError ? undefined : safeProviderStatus(operationError);
       if (providerHttpStatus !== undefined) diagnostic.providerHttpStatus = providerHttpStatus;
       if (providerStatus) diagnostic.providerStatus = providerStatus;
 
@@ -527,6 +548,8 @@ class GeminiProvider extends AIProvider {
           },
         }),
       });
+
+      throwIfParentAborted(signal);
 
       const responseShape = inspectGeminiResponseShape(researchResponse, {
         traceId,
@@ -590,6 +613,8 @@ class GeminiProvider extends AIProvider {
         }
       }
 
+      throwIfParentAborted(signal);
+
       try {
         const formattingResponse = await this.runOperation({
           traceId,
@@ -615,6 +640,8 @@ class GeminiProvider extends AIProvider {
             },
           }),
         });
+
+        throwIfParentAborted(signal);
 
         if (isBlockedResponse(formattingResponse)) {
           throw attachOperationDiagnostics(geminiError('GEMINI_RESPONSE_BLOCKED'), {

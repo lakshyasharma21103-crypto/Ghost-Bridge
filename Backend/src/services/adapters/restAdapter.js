@@ -178,6 +178,7 @@ async function invokeRest({ runtime, input, credentialHeaders = {}, observabilit
       },
       timeoutMs: env.RUNTIME_INVOCATION_TIMEOUT_MS,
       signal: observability.signal,
+      beforeTransmit: observability.beforeTransmit,
       allowDevelopmentDemo: true,
       allowDevelopmentExternalAgent: true,
     }),

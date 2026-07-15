@@ -11,6 +11,10 @@ const SAFE_RECOVERY_REASONS = new Set([
   'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
   'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
 ]);
+const SAFE_LIFECYCLE_REASONS = Object.freeze({
+  REQUEST_CANCELLED: 'CLIENT_DISCONNECTED',
+  SERVICE_SHUTDOWN: 'SERVICE_SHUTDOWN',
+});
 
 function safeConfiguredTimeoutMs(value) {
   return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
@@ -30,7 +34,7 @@ function normalizeError(error) {
 function errorHandler(logger) {
   return function handleError(error, request, response, _next) {
     if (response.headersSent) {
-      response.end();
+      if (!response.destroyed && !response.writableEnded) response.end();
       return;
     }
 
@@ -87,6 +91,16 @@ function errorHandler(logger) {
       normalized.code === 'GEMINI_REQUEST_TIMEOUT'
         ? safeConfiguredTimeoutMs(normalized.configuredTimeoutMs)
         : undefined;
+    const lifecycleReason =
+      SAFE_LIFECYCLE_REASONS[normalized.code] === normalized.reason ? normalized.reason : undefined;
+
+    if (
+      response.destroyed === true ||
+      response.writableEnded === true ||
+      response.writable === false
+    ) {
+      return;
+    }
 
     response.status(normalized.statusCode).json({
       success: false,
@@ -102,6 +116,7 @@ function errorHandler(logger) {
           ? { operation: normalized.operation }
           : {}),
         ...(timeoutReason ? { reason: timeoutReason, timeoutReason } : {}),
+        ...(lifecycleReason ? { reason: lifecycleReason } : {}),
         ...(configuredTimeoutMs !== undefined ? { configuredTimeoutMs } : {}),
         ...(recoveryReason ? { recoveryRequired: true, recoveryReason } : {}),
         ...(Number.isInteger(normalized.retryAfterMs) && normalized.retryAfterMs >= 0

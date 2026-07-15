@@ -6,12 +6,14 @@ import {
   Clock3,
   Database,
   RefreshCw,
+  ShieldAlert,
   ShieldCheck,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiClient } from '../api/apiClient.js';
 import { useAppState } from '../app/AppState.jsx';
+import { ConfirmationDialog } from '../components/ConfirmationDialog.jsx';
 
 const WINDOWS = ['1h', '24h', '7d', '30d'];
 const FUNNEL_LABELS = {
@@ -26,24 +28,48 @@ const FUNNEL_LABELS = {
 };
 
 export function Operations() {
-  const { identity } = useAppState();
+  const { identity, partnerConfigured } = useAppState();
   const [windowKey, setWindowKey] = useState('24h');
   const [state, setState] = useState({ loading: true, error: '', data: null });
   const [acknowledging, setAcknowledging] = useState('');
+  const [scanConfirmation, setScanConfirmation] = useState(false);
+  const [alertConfirmation, setAlertConfirmation] = useState(null);
+  const [scanState, setScanState] = useState({ busy: false, message: '' });
 
   const loadOperations = useCallback(async () => {
+    if (!partnerConfigured) {
+      setState({
+        loading: false,
+        error: '',
+        data: null,
+      });
+      return;
+    }
     setState((current) => ({ ...current, loading: true, error: '' }));
     const query = new URLSearchParams({ ...identity, window: windowKey });
     try {
-      const [summary, latency, errors, funnel] = await Promise.all([
+      const recoveryQuery = new URLSearchParams({ ...identity, limit: '50' });
+      const recoveryRequest = apiClient
+        .get(`/operations/recovery?${recoveryQuery}`)
+        .catch((error) => ({
+          items: [],
+          availability: 'unavailable',
+          errorCode: error.code,
+        }));
+      const [summary, latency, errors, funnel, recovery] = await Promise.all([
         apiClient.get(`/operations/summary?${query}`),
         apiClient.get(`/operations/latency?${query}`),
         apiClient.get(`/operations/errors?${query}`),
         apiClient.get(`/operations/passport-funnel?${query}`),
+        recoveryRequest,
       ]);
       const alertQuery = new URLSearchParams({ ...identity, limit: '50' });
       const alerts = await apiClient.get(`/operations/alerts?${alertQuery}`);
-      setState({ loading: false, error: '', data: { summary, latency, errors, funnel, alerts } });
+      setState({
+        loading: false,
+        error: '',
+        data: { summary, latency, errors, funnel, alerts, recovery },
+      });
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -51,13 +77,14 @@ export function Operations() {
         error: error.message || 'Operational metrics could not be loaded.',
       }));
     }
-  }, [identity.receivingUserId, identity.receivingWorkspaceId, windowKey]);
+  }, [identity.receivingUserId, identity.receivingWorkspaceId, partnerConfigured, windowKey]);
 
   useEffect(() => {
     loadOperations();
   }, [loadOperations]);
 
   async function acknowledge(alertId) {
+    if (!partnerConfigured) return false;
     setAcknowledging(alertId);
     try {
       await apiClient.post(`/operations/alerts/${alertId}/acknowledge`, identity);
@@ -67,13 +94,39 @@ export function Operations() {
         ...current,
         data: current.data ? { ...current.data, alerts } : current.data,
       }));
+      return true;
     } catch (error) {
       setState((current) => ({
         ...current,
         error: error.message || 'Alert could not be acknowledged.',
       }));
+      return false;
     } finally {
       setAcknowledging('');
+    }
+  }
+
+  async function confirmAlertAcknowledgement() {
+    if (!alertConfirmation || acknowledging) return;
+    await acknowledge(alertConfirmation.alertId);
+    setAlertConfirmation(null);
+  }
+
+  async function runRecoveryScan() {
+    if (!partnerConfigured) return;
+    setScanState({ busy: true, message: '' });
+    try {
+      const result = await apiClient.post('/operations/recovery/scan', identity);
+      setScanConfirmation(false);
+      setScanState({ busy: false, message: safeScanMessage(result) });
+      await loadOperations();
+    } catch (error) {
+      setScanConfirmation(false);
+      setScanState({ busy: false, message: '' });
+      setState((current) => ({
+        ...current,
+        error: error.message || 'Recovery scan could not be completed.',
+      }));
     }
   }
 
@@ -82,6 +135,8 @@ export function Operations() {
   const latency = data?.latency;
   const invocationMetrics = summary?.invocations || {};
   const attemptMetrics = invocationMetrics.attempts || {};
+  const controlMetrics = invocationMetrics.controls || summary?.recoveryControls || {};
+  const recoveryItems = data?.recovery?.items || data?.recovery?.queue || [];
 
   return (
     <>
@@ -107,7 +162,7 @@ export function Operations() {
             type="button"
             className="overview-refresh"
             onClick={loadOperations}
-            disabled={state.loading}
+            disabled={state.loading || !partnerConfigured}
           >
             <RefreshCw
               className={`h-3.5 w-3.5 ${state.loading ? 'animate-spin' : ''}`}
@@ -117,6 +172,19 @@ export function Operations() {
           </button>
         </div>
       </header>
+
+      {!partnerConfigured ? (
+        <div className="overview-warning" role="status">
+          <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>
+            <strong>Partner access required.</strong>{' '}
+            <Link className="font-semibold underline" to="/settings">
+              Configure a Partner API key in Settings
+            </Link>{' '}
+            to load workspace operations.
+          </span>
+        </div>
+      ) : null}
 
       {state.error ? (
         <div className="overview-warning" role="alert">
@@ -286,6 +354,170 @@ export function Operations() {
       </Section>
 
       <Section
+        title="Cancellation and recovery"
+        icon={ShieldAlert}
+        className="operations-section-spaced"
+      >
+        <div className="operations-stat-list">
+          <Stat
+            label="Cancellation requested"
+            value={number(
+              firstFinite(
+                controlMetrics.cancellationRequested,
+                invocationMetrics.cancellationRequested,
+              ),
+            )}
+            tone="warning"
+          />
+          <Stat
+            label="Confirmed cancelled"
+            value={number(
+              firstFinite(
+                controlMetrics.cancellationConfirmed,
+                controlMetrics.confirmedCancelled,
+                invocationMetrics.cancellationConfirmed,
+              ),
+            )}
+            tone="success"
+          />
+          <Stat
+            label="Cancellation outcome unknown"
+            value={number(
+              firstFinite(
+                controlMetrics.cancellationOutcomeUnknown,
+                invocationMetrics.cancellationOutcomeUnknown,
+              ),
+            )}
+            tone="danger"
+          />
+          <Stat
+            label="Stuck invocations detected"
+            value={number(
+              firstFinite(
+                controlMetrics.stuckDetected,
+                controlMetrics.stuckInvocationsDetected,
+                invocationMetrics.stuckDetected,
+              ),
+            )}
+            tone="warning"
+          />
+          <Stat
+            label="Recovery required"
+            value={number(
+              firstFinite(controlMetrics.recoveryRequired, invocationMetrics.recoveryRequired),
+            )}
+            tone="warning"
+          />
+          <Stat
+            label="Manually retried"
+            value={number(
+              firstFinite(controlMetrics.manuallyRetried, invocationMetrics.manuallyRetried),
+            )}
+          />
+          <Stat
+            label="Manually resolved"
+            value={number(
+              firstFinite(controlMetrics.manuallyResolved, invocationMetrics.manuallyResolved),
+            )}
+            tone="success"
+          />
+          <Stat
+            label="Retry denied"
+            value={number(firstFinite(controlMetrics.retryDenied, invocationMetrics.retryDenied))}
+            tone="danger"
+          />
+        </div>
+      </Section>
+
+      <Section
+        title="Recovery review queue"
+        icon={ShieldAlert}
+        className="operations-section-spaced"
+        action={
+          <button
+            type="button"
+            className="operations-ack"
+            onClick={() => setScanConfirmation(true)}
+            disabled={!partnerConfigured || scanState.busy}
+            title={
+              partnerConfigured
+                ? 'Run a bounded recovery scan'
+                : 'Configure a Partner API key in Settings to run a recovery scan'
+            }
+          >
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${scanState.busy ? 'animate-spin' : ''}`}
+              aria-hidden="true"
+            />
+            {scanState.busy ? 'Scanning' : 'Scan for stuck work'}
+          </button>
+        }
+      >
+        {scanState.message ? (
+          <div
+            className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900"
+            role="status"
+          >
+            {scanState.message}
+          </div>
+        ) : null}
+        {!partnerConfigured ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+            Configure a Partner API key in Settings before running a state-changing recovery scan.
+          </div>
+        ) : null}
+        {data?.recovery?.availability === 'unavailable' ? (
+          <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-950">
+            Recovery queue unavailable. {data.recovery.errorCode || 'REQUEST_FAILED'}
+          </div>
+        ) : null}
+        <Table
+          headers={[
+            'Invocation',
+            'Connection',
+            'Safe stage',
+            'Recovery reason',
+            'Last progress',
+            'Attempts',
+            'Available actions',
+            'Updated',
+          ]}
+          empty={!recoveryItems.length ? 'No invocations currently require recovery review.' : ''}
+        >
+          {recoveryItems.map((item) => (
+            <tr key={item.invocationId}>
+              <td>
+                <Link
+                  className="operations-link operations-code"
+                  to={`/invocations?invocationId=${encodeURIComponent(item.invocationId)}`}
+                >
+                  {shortId(item.invocationId)}
+                </Link>
+              </td>
+              <td>
+                <Link
+                  className="operations-link operations-code"
+                  to={`/connections/${item.connectionId}`}
+                >
+                  {shortId(item.connectionId)}
+                </Link>
+              </td>
+              <td>{humanize(item.lastProgressStage || item.safeStage)}</td>
+              <td>
+                <span className="operations-code">
+                  {item.recoveryReasonCode || item.recoveryReason || '—'}
+                </span>
+              </td>
+              <td>{formatDate(item.lastProgressAt)}</td>
+              <td>{number(firstFinite(item.attemptCount, item.attempts?.count))}</td>
+              <td>{availableActionLabel(item.availableActions || item.actions)}</td>
+              <td>{formatDate(item.updatedAt || item.recoveryRequestedAt || item.createdAt)}</td>
+            </tr>
+          ))}
+        </Table>
+      </Section>
+
+      <Section
         title="Internal alerts"
         icon={CircleAlert}
         className="operations-section-spaced"
@@ -325,7 +557,7 @@ export function Operations() {
                   <button
                     type="button"
                     className="operations-ack"
-                    onClick={() => acknowledge(alert.alertId)}
+                    onClick={() => setAlertConfirmation({ alertId: alert.alertId })}
                     disabled={acknowledging === alert.alertId}
                   >
                     <Check className="h-3.5 w-3.5" />{' '}
@@ -488,7 +720,10 @@ export function Operations() {
                 <span className="operations-code">{shortId(item.traceId)}</span>
               </td>
               <td>
-                <Link className="operations-link operations-code" to="/invocations">
+                <Link
+                  className="operations-link operations-code"
+                  to={`/invocations?invocationId=${encodeURIComponent(item.invocationId)}`}
+                >
                   {shortId(item.invocationId)}
                 </Link>
               </td>
@@ -522,6 +757,30 @@ export function Operations() {
           ))}
         </Table>
       </Section>
+      <ConfirmationDialog
+        open={scanConfirmation}
+        title="Scan for stuck invocations?"
+        description="The Gateway will evaluate a bounded workspace batch and atomically mark only invocations supported by deterministic evidence."
+        confirmLabel="Run recovery scan"
+        confirmTone="primary"
+        busy={scanState.busy}
+        onConfirm={runRecoveryScan}
+        onClose={() => !scanState.busy && setScanConfirmation(false)}
+      >
+        <p className="border-l-2 border-cyan-600 bg-cyan-50 px-4 py-3 text-sm leading-6 text-cyan-950">
+          The scan never re-executes remote work.
+        </p>
+      </ConfirmationDialog>
+      <ConfirmationDialog
+        open={Boolean(alertConfirmation)}
+        title="Acknowledge this alert?"
+        description="Acknowledgement records the current workspace operator action. It does not resolve or delete the underlying alert condition."
+        confirmLabel="Acknowledge alert"
+        confirmTone="primary"
+        busy={Boolean(acknowledging)}
+        onConfirm={confirmAlertAcknowledgement}
+        onClose={() => !acknowledging && setAlertConfirmation(null)}
+      />
     </>
   );
 }
@@ -636,8 +895,9 @@ function firstFinite(...values) {
 }
 
 function invocationState(item) {
-  if (item?.status) return item.status;
+  if (item?.lifecycleState) return item.lifecycleState;
   if (item?.recoveryRequired) return 'recovery_required';
+  if (item?.status) return item.status;
   return 'failed';
 }
 
@@ -675,4 +935,49 @@ function retryDecisionLabel(item) {
 function safeMetric(value) {
   if (Number.isFinite(value)) return number(value);
   return value ? humanize(value) : '—';
+}
+
+function availableActionLabel(source) {
+  const labels = new Map([
+    ['cancel', 'Cancel'],
+    ['cancel_invocation', 'Cancel'],
+    ['retry', 'Retry safely'],
+    ['retry_safely', 'Retry safely'],
+    ['retry_allowed', 'Retry safely'],
+    ['resolveFailed', 'Resolve failed'],
+    ['resolve_as_failed', 'Resolve failed'],
+    ['resolve_as_failed_allowed', 'Resolve failed'],
+    ['resolveCancelled', 'Resolve cancelled'],
+    ['resolve_as_cancelled', 'Resolve cancelled'],
+    ['resolve_as_cancelled_allowed', 'Resolve cancelled'],
+  ]);
+  const names = Array.isArray(source)
+    ? source
+    : source && typeof source === 'object'
+      ? Object.entries(source)
+          .filter(([, value]) =>
+            typeof value === 'boolean'
+              ? value
+              : value?.allowed === true || value?.available === true,
+          )
+          .map(([key]) => key)
+      : [];
+  const safeLabels = [...new Set(names.map((name) => labels.get(name)).filter(Boolean))];
+  return safeLabels.length ? safeLabels.join(', ') : 'None';
+}
+
+function safeScanMessage(result) {
+  const scanned = firstFinite(result?.scanned, result?.evaluated, result?.processed);
+  const recoveryRequired = firstFinite(
+    result?.recoveryRequired,
+    result?.markedRecoveryRequired,
+    result?.updated,
+  );
+  if (Number.isFinite(scanned) && Number.isFinite(recoveryRequired)) {
+    return `Recovery scan completed: ${number(scanned)} evaluated, ${number(recoveryRequired)} marked for review.`;
+  }
+  if (Number.isFinite(scanned)) {
+    return `Recovery scan completed: ${number(scanned)} invocations evaluated.`;
+  }
+  return 'Recovery scan completed.';
 }

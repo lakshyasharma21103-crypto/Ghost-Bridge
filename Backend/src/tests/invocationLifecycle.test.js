@@ -218,6 +218,7 @@ test('simultaneous execution claims allow one owner and reject the second safely
 test('an expired ambiguous execution lease atomically enters recovery_required', async () => {
   const original = Invocation.findOneAndUpdate;
   let captured;
+  let recoveryNotification;
   try {
     Invocation.findOneAndUpdate = async (filter, update) => {
       captured = { filter, update };
@@ -228,6 +229,9 @@ test('an expired ambiguous execution lease atomically enters recovery_required',
       invocationId: INVOCATION_ID,
       receivingWorkspaceId: WORKSPACE_ID,
       now,
+      onRecoveryRequired: async (recovered, metadata) => {
+        recoveryNotification = { recovered, metadata };
+      },
     });
     assert.equal(invocation.lifecycleState, 'recovery_required');
     assert.equal(captured.filter.lifecycleState, 'running');
@@ -238,6 +242,12 @@ test('an expired ambiguous execution lease atomically enters recovery_required',
       executionLeaseId: 1,
       executionLeaseExpiresAt: 1,
       executionOwner: 1,
+    });
+    assert.equal(recoveryNotification.recovered.lifecycleState, 'recovery_required');
+    assert.deepEqual(recoveryNotification.metadata, {
+      fromState: 'running',
+      toState: 'recovery_required',
+      reasonCode: 'EXECUTION_LEASE_EXPIRED',
     });
   } finally {
     Invocation.findOneAndUpdate = original;

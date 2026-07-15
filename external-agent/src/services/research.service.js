@@ -22,6 +22,8 @@ class ResearchService {
 
   async researchTopic({ topic, requestId, traceId, invocationId, observer, signal }) {
     const normalizedTopic = String(topic).trim().replace(/\s+/g, ' ');
+    const assertNotAborted = () => signal?.throwIfAborted();
+    assertNotAborted();
     const providerResult = await observer.stage('grounded_research', () =>
       this.provider.research({
         topic: normalizedTopic,
@@ -32,28 +34,34 @@ class ResearchService {
         signal,
       }),
     );
+    assertNotAborted();
     const result = await observer.stage('response_validation', async () =>
       providerResultSchema.parse(providerResult),
     );
+    assertNotAborted();
     const sources = await observer.stage('grounding_source_extraction', async () =>
       result.sourceReferences.map((source) => source.url),
     );
+    assertNotAborted();
 
-    return observer.stage('structured_formatting', async () => ({
-      summary: result.summary,
-      sources,
-      runtime: {
-        service: SERVICE_NAME,
-        version: SERVICE_VERSION,
-        provider: this.config.aiProvider,
-        model:
-          this.config.aiProvider === 'gemini'
-            ? this.config.gemini.model
-            : this.provider.model || 'deterministic-test',
-        webSearchUsed: result.webSearchUsed,
-        sourceCount: result.sourceReferences.length,
-      },
-    }));
+    return observer.stage('structured_formatting', async () => {
+      assertNotAborted();
+      return {
+        summary: result.summary,
+        sources,
+        runtime: {
+          service: SERVICE_NAME,
+          version: SERVICE_VERSION,
+          provider: this.config.aiProvider,
+          model:
+            this.config.aiProvider === 'gemini'
+              ? this.config.gemini.model
+              : this.provider.model || 'deterministic-test',
+          webSearchUsed: result.webSearchUsed,
+          sourceCount: result.sourceReferences.length,
+        },
+      };
+    });
   }
 }
 

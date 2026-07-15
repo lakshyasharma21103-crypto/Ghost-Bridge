@@ -1,8 +1,15 @@
 const mongoose = require('mongoose');
 const { OPERATION_STAGE_NAMES, MAX_INVOCATION_STAGE_METRICS } = require('../constants/operations');
 const {
+  INVOCATION_CANCELLATION_OUTCOMES,
+  INVOCATION_CANCELLATION_STATES,
+  INVOCATION_CANCEL_REASON_CODES,
+  INVOCATION_PROGRESS_STAGES,
+  INVOCATION_RECOVERY_DECISIONS,
+  INVOCATION_RECOVERY_STATES,
   INVOCATION_RETRY_STATES,
   INVOCATION_STATES,
+  INVOCATION_STUCK_CLASSIFICATIONS,
   LEGACY_STATUS_TO_LIFECYCLE_STATE,
   LIFECYCLE_TIMESTAMP_FIELDS,
   MAX_INVOCATION_STATE_HISTORY,
@@ -85,7 +92,73 @@ const invocationSchema = new mongoose.Schema(
     },
     lastTransitionAt: { type: Date },
     terminalAt: { type: Date },
+    terminalizedAt: { type: Date },
+    cancellationState: {
+      type: String,
+      enum: INVOCATION_CANCELLATION_STATES,
+      default: 'not_requested',
+      required: true,
+      index: true,
+    },
+    cancelRequestedAt: { type: Date },
+    cancelRequestedBy: { type: String, trim: true, maxlength: 128 },
+    cancelReasonCode: { type: String, enum: INVOCATION_CANCEL_REASON_CODES },
+    cancellationConfirmedAt: { type: Date },
+    cancellationOutcome: {
+      type: String,
+      enum: INVOCATION_CANCELLATION_OUTCOMES,
+      default: 'not_applicable',
+      required: true,
+    },
+    cancellationRequestId: { type: String, trim: true, maxlength: 128 },
+    cancellationTraceId: { type: String, trim: true, maxlength: 128 },
+    recoveryState: {
+      type: String,
+      enum: INVOCATION_RECOVERY_STATES,
+      default: 'not_required',
+      required: true,
+      index: true,
+    },
     recoveryReasonCode: { type: String, trim: true, match: SAFE_CODE_PATTERN },
+    recoveryEligible: { type: Boolean, default: false, index: true },
+    recoveryDecision: {
+      type: String,
+      enum: INVOCATION_RECOVERY_DECISIONS,
+      default: 'not_evaluated',
+      required: true,
+    },
+    recoveryDecisionReason: { type: String, trim: true, match: SAFE_CODE_PATTERN },
+    recoveryRequestedAt: { type: Date },
+    recoveryRequestedBy: { type: String, trim: true, maxlength: 128 },
+    recoveryCompletedAt: { type: Date },
+    recoveryClaimId: {
+      type: String,
+      trim: true,
+      match: SAFE_OWNER_PATTERN,
+      select: false,
+    },
+    recoveryClaimExpiresAt: { type: Date, index: true },
+    recoveryRetrySequence: { type: Number, default: 0, min: 0 },
+    recoveryParentInvocationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Invocation',
+      index: true,
+    },
+    recoveryChildInvocationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Invocation',
+    },
+    stuckDetectedAt: { type: Date, index: true },
+    stuckClassification: {
+      type: String,
+      enum: INVOCATION_STUCK_CLASSIFICATIONS,
+      default: 'not_stuck',
+      required: true,
+      index: true,
+    },
+    lastProgressAt: { type: Date, index: true },
+    lastProgressStage: { type: String, enum: INVOCATION_PROGRESS_STAGES },
+    runtimeDeadlineAt: { type: Date, index: true },
     attemptCount: { type: Number, default: 0, min: 0 },
     retryState: {
       type: String,
@@ -146,6 +219,12 @@ invocationSchema.index({ receivingWorkspaceId: 1, createdAt: -1 });
 invocationSchema.index({ receivingWorkspaceId: 1, status: 1, createdAt: -1 });
 invocationSchema.index({ receivingWorkspaceId: 1, lifecycleState: 1, createdAt: -1 });
 invocationSchema.index({ receivingWorkspaceId: 1, retryState: 1, createdAt: -1 });
+invocationSchema.index({ receivingWorkspaceId: 1, cancellationState: 1, createdAt: -1 });
+invocationSchema.index({ receivingWorkspaceId: 1, recoveryState: 1, updatedAt: -1 });
+invocationSchema.index({ receivingWorkspaceId: 1, recoveryEligible: 1, updatedAt: -1 });
+invocationSchema.index({ receivingWorkspaceId: 1, recoveryState: 1, recoveryClaimExpiresAt: 1 });
+invocationSchema.index({ receivingWorkspaceId: 1, lifecycleState: 1, lastProgressAt: 1 });
+invocationSchema.index({ receivingWorkspaceId: 1, lifecycleState: 1, runtimeDeadlineAt: 1 });
 invocationSchema.index({ lifecycleState: 1, executionLeaseExpiresAt: 1 });
 invocationSchema.index(
   { receivingWorkspaceId: 1, idempotencyScope: 1, idempotencyKeyHash: 1 },

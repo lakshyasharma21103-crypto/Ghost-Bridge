@@ -14,6 +14,7 @@ const {
   requireGeminiSources,
 } = require('../src/utils/extractGeminiSources');
 const { createLogger } = require('../src/utils/logger');
+const { RuntimeError, serviceShutdownError } = require('../src/utils/errors');
 
 const TEST_CONFIG = Object.freeze({
   apiKey: 'test-placeholder-not-a-real-api-key',
@@ -72,6 +73,16 @@ function fakeClient(responses) {
   };
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 test('Gemini provider uses grounded research then strict formatting', async () => {
   const client = fakeClient([
     candidate('Grounded facts with uncertainty.', {
@@ -103,6 +114,177 @@ test('Gemini provider uses grounded research then strict formatting', async () =
   assert.notEqual(client.calls[0].config.abortSignal, client.calls[1].config.abortSignal);
   assert.equal(client.calls[0].config.abortSignal instanceof AbortSignal, true);
   assert.equal(client.calls[1].config.abortSignal instanceof AbortSignal, true);
+});
+
+test('caller cancellation aborts grounded research without starting formatting', async () => {
+  const calls = [];
+  const started = deferred();
+  const client = {
+    models: {
+      generateContent(parameters) {
+        calls.push(parameters);
+        started.resolve(parameters.config.abortSignal);
+        return new Promise((_resolve, reject) => {
+          parameters.config.abortSignal.addEventListener(
+            'abort',
+            () => reject(parameters.config.abortSignal.reason),
+            { once: true },
+          );
+        });
+      },
+    },
+  };
+  const provider = new GeminiProvider(TEST_CONFIG, { client });
+  const caller = new AbortController();
+  const operation = provider.research({ topic: 'Cancel active research', signal: caller.signal });
+
+  const operationSignal = await started.promise;
+  caller.abort();
+
+  await assert.rejects(
+    operation,
+    (error) =>
+      error.code === 'REQUEST_CANCELLED' &&
+      error.reason === 'CLIENT_DISCONNECTED' &&
+      error.operation === 'grounded_research' &&
+      error.retryable !== true,
+  );
+  assert.equal(operationSignal.aborted, true);
+  assert.equal(operationSignal.reason.code, 'REQUEST_CANCELLED');
+  assert.equal(calls.length, 1);
+});
+
+test('a pre-aborted caller signal starts no Gemini operation', async () => {
+  const client = fakeClient([
+    candidate('This response must not be used.'),
+    candidate(JSON.stringify({ summary: 'This response must not be used.' })),
+  ]);
+  const provider = new GeminiProvider(TEST_CONFIG, { client });
+  const caller = new AbortController();
+  caller.abort();
+
+  await assert.rejects(
+    () => provider.research({ topic: 'Already cancelled', signal: caller.signal }),
+    (error) => error.code === 'REQUEST_CANCELLED' && error.reason === 'CLIENT_DISCONNECTED',
+  );
+  assert.equal(client.calls.length, 0);
+});
+
+test('cancellation after grounded response prevents the formatting provider call', async () => {
+  const calls = [];
+  const caller = new AbortController();
+  const client = {
+    models: {
+      async generateContent(parameters) {
+        calls.push(parameters);
+        caller.abort();
+        return candidate('Grounded facts that must not be formatted.', {
+          sources: [{ title: 'Source', uri: 'https://authority.example/cancelled' }],
+        });
+      },
+    },
+  };
+  const provider = new GeminiProvider(TEST_CONFIG, { client });
+
+  await assert.rejects(
+    () => provider.research({ topic: 'Cancel between stages', signal: caller.signal }),
+    (error) => error.code === 'REQUEST_CANCELLED' && error.reason === 'CLIENT_DISCONNECTED',
+  );
+  assert.equal(calls.length, 1);
+});
+
+test('cancellation during formatting prevents a formatting retry', async () => {
+  const calls = [];
+  const formattingStarted = deferred();
+  const caller = new AbortController();
+  const client = {
+    models: {
+      generateContent(parameters) {
+        calls.push(parameters);
+        if (calls.length === 1) {
+          return Promise.resolve(
+            candidate('Grounded facts.', {
+              sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
+            }),
+          );
+        }
+        formattingStarted.resolve(parameters.config.abortSignal);
+        return new Promise((_resolve, reject) => {
+          parameters.config.abortSignal.addEventListener(
+            'abort',
+            () => reject(parameters.config.abortSignal.reason),
+            { once: true },
+          );
+        });
+      },
+    },
+  };
+  const provider = new GeminiProvider(TEST_CONFIG, { client });
+  const operation = provider.research({ topic: 'Cancel formatting', signal: caller.signal });
+
+  await formattingStarted.promise;
+  caller.abort();
+
+  await assert.rejects(
+    operation,
+    (error) =>
+      error.code === 'REQUEST_CANCELLED' &&
+      error.reason === 'CLIENT_DISCONNECTED' &&
+      error.operation === 'structured_formatting' &&
+      error.stage === 'structured_formatting' &&
+      error.recoveryRequired !== true,
+  );
+  assert.equal(calls.length, 2);
+});
+
+test('service shutdown and outer request timeout retain their typed parent reasons', async () => {
+  const scenarios = [
+    {
+      abortReason: serviceShutdownError(),
+      expectedCode: 'SERVICE_SHUTDOWN',
+      expectedReason: 'SERVICE_SHUTDOWN',
+    },
+    {
+      abortReason: new RuntimeError(408, 'REQUEST_TIMEOUT', 'Request timed out.'),
+      expectedCode: 'REQUEST_TIMEOUT',
+      expectedReason: undefined,
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    const calls = [];
+    const started = deferred();
+    const client = {
+      models: {
+        generateContent(parameters) {
+          calls.push(parameters);
+          started.resolve();
+          return new Promise((_resolve, reject) => {
+            parameters.config.abortSignal.addEventListener(
+              'abort',
+              () => reject(parameters.config.abortSignal.reason),
+              { once: true },
+            );
+          });
+        },
+      },
+    };
+    const provider = new GeminiProvider(TEST_CONFIG, { client });
+    const parent = new AbortController();
+    const operation = provider.research({ topic: 'Typed abort reason', signal: parent.signal });
+    await started.promise;
+    parent.abort(scenario.abortReason);
+
+    await assert.rejects(
+      operation,
+      (error) =>
+        error.code === scenario.expectedCode &&
+        error.reason === scenario.expectedReason &&
+        error.operation === 'grounded_research' &&
+        error.code !== 'GEMINI_REQUEST_TIMEOUT',
+    );
+    assert.equal(calls.length, 1);
+  }
 });
 
 test('grounded research local timeout is stage-aware and does not begin formatting', async () => {

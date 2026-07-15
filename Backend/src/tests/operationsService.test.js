@@ -11,7 +11,9 @@ const {
   percentile,
   latencyStatistics,
   invocationSummary,
+  invocationControlSummary,
   safeFailure,
+  alertAuditSignals,
   alertRulesFromSignals,
   syncOperationalAlerts,
   getLatency,
@@ -22,6 +24,7 @@ const {
 } = require('../services/operationsService');
 const { stageMetricCollector } = require('../services/runtimeGateway.service');
 const { OPERATION_STAGE_NAMES, MAX_INVOCATION_STAGE_METRICS } = require('../constants/operations');
+const { env } = require('../config/env');
 
 function chainResult(value) {
   const chain = {
@@ -136,8 +139,154 @@ test('operational alert rules are deterministic and expose only safe aggregate v
   assert.doesNotMatch(JSON.stringify(first), /payload|bearer\s|api[_-]?key|runtimeEndpoint/i);
 });
 
+test('repeated-stuck alerts are evaluated independently for each safe connection scope', () => {
+  const signals = {
+    readiness: { status: 'ready', database: 'connected', runtimeConfiguration: 'valid' },
+    invocations: {
+      total: 0,
+      successful: 0,
+      failed: 0,
+      recoveryRequired: 0,
+      failureRatePercent: 0,
+      attempts: {},
+    },
+    connections: {
+      active: 0,
+      health: { healthy: 0, degraded: 0, unhealthy: 0, unknown: 0 },
+    },
+    errors: { credentialFailures: 0, providerErrors: 0, timeoutFailures: 0 },
+    audit: {
+      stuckByConnection: [
+        { connectionId: 'connection-below', count: env.OPS_ALERT_STUCK_INVOCATION_COUNT - 1 },
+        { connectionId: 'connection-over', count: env.OPS_ALERT_STUCK_INVOCATION_COUNT },
+      ],
+    },
+    latency: { p95Ms: null },
+    funnel: {
+      totals: {
+        resolutionAttempts: 0,
+        resolutionFailures: 0,
+        resolutionSuccessRatePercent: 0,
+        reusedKeyRejections: 0,
+      },
+    },
+  };
+
+  const stuckRules = alertRulesFromSignals(signals).filter(
+    (rule) => rule.type === 'repeated_stuck_invocations',
+  );
+  assert.equal(stuckRules.length, 1);
+  assert.equal(stuckRules[0].scopeKey, 'connection-over');
+  assert.deepEqual(stuckRules[0].safeValues, {
+    connectionId: 'connection-over',
+    count: env.OPS_ALERT_STUCK_INVOCATION_COUNT,
+  });
+});
+
+test('runtime recovery ambiguity contributes to the critical ambiguous-outcome alert', () => {
+  const signals = {
+    readiness: { status: 'ready', database: 'connected', runtimeConfiguration: 'valid' },
+    invocations: {
+      total: 0,
+      successful: 0,
+      failed: 0,
+      recoveryRequired: 0,
+      failureRatePercent: 0,
+      attempts: {},
+    },
+    connections: {
+      active: 0,
+      health: { healthy: 0, degraded: 0, unhealthy: 0, unknown: 0 },
+    },
+    errors: { credentialFailures: 0, providerErrors: 0, timeoutFailures: 0 },
+    audit: {
+      ambiguousRemoteOutcomes: env.OPS_ALERT_AMBIGUOUS_OUTCOME_COUNT,
+      cancellationOutcomeUnknown: 0,
+      stuckByConnection: [],
+    },
+    latency: { p95Ms: null },
+    funnel: {
+      totals: {
+        resolutionAttempts: 0,
+        resolutionFailures: 0,
+        resolutionSuccessRatePercent: 0,
+        reusedKeyRejections: 0,
+      },
+    },
+  };
+
+  const alert = alertRulesFromSignals(signals).find(
+    (rule) => rule.type === 'high_ambiguous_remote_outcomes',
+  );
+  assert.equal(alert.severity, 'critical');
+  assert.equal(alert.safeValues.count, env.OPS_ALERT_AMBIGUOUS_OUTCOME_COUNT);
+});
+
+test('ambiguous-outcome aggregation includes runtime and response-persistence recovery reasons', async () => {
+  const originalAggregate = AuditLog.aggregate;
+  let pipeline;
+  try {
+    AuditLog.aggregate = async (value) => {
+      pipeline = value;
+      return [{ totals: [], stuckByConnection: [], ambiguousInvocations: [] }];
+    };
+    await alertAuditSignals(
+      'workspace-a',
+      ['connection-a'],
+      parseWindow('24h', new Date('2026-07-13T12:00:00Z')),
+    );
+    const reasons =
+      pipeline[1].$facet.ambiguousInvocations[0].$match.$or[1]['metadata.reasonCode'].$in;
+    assert.ok(reasons.includes('AMBIGUOUS_REMOTE_OUTCOME'));
+    assert.ok(reasons.includes('RESPONSE_PERSISTENCE_UNCERTAIN'));
+  } finally {
+    AuditLog.aggregate = originalAggregate;
+  }
+});
+
+test('resolved stuck work emits a distinct tenant-safe information alert', () => {
+  const signals = {
+    readiness: { status: 'ready', database: 'connected', runtimeConfiguration: 'valid' },
+    invocations: {
+      total: 0,
+      successful: 0,
+      failed: 0,
+      recoveryRequired: 0,
+      failureRatePercent: 0,
+      attempts: {},
+    },
+    connections: {
+      active: 0,
+      health: { healthy: 0, degraded: 0, unhealthy: 0, unknown: 0 },
+    },
+    errors: { credentialFailures: 0, providerErrors: 0, timeoutFailures: 0 },
+    audit: { recoveryResolved: 1, stuckResolved: 1, stuckByConnection: [] },
+    latency: { p95Ms: null },
+    funnel: {
+      totals: {
+        resolutionAttempts: 0,
+        resolutionFailures: 0,
+        resolutionSuccessRatePercent: 0,
+        reusedKeyRejections: 0,
+      },
+    },
+  };
+
+  const rules = alertRulesFromSignals(signals);
+  assert.ok(rules.some((rule) => rule.type === 'invocation_recovery_completed'));
+  assert.ok(
+    rules.some(
+      (rule) =>
+        rule.type === 'stuck_invocation_resolved' &&
+        rule.severity === 'info' &&
+        rule.safeValues.count === 1,
+    ),
+  );
+});
+
 test('invocation summary includes lifecycle, recovery, and attempt metrics with legacy compatibility', async () => {
   const originalAggregate = Invocation.aggregate;
+  const originalAuditCount = AuditLog.countDocuments;
   let pipeline;
   try {
     Invocation.aggregate = async (value) => {
@@ -168,6 +317,7 @@ test('invocation summary includes lifecycle, recovery, and attempt metrics with 
         },
       ];
     };
+    AuditLog.countDocuments = async () => 2;
     const result = await invocationSummary(
       'workspace-a',
       ['connection-a'],
@@ -187,8 +337,66 @@ test('invocation summary includes lifecycle, recovery, and attempt metrics with 
       retryDenied: 3,
     });
     assert.match(JSON.stringify(pipeline), /effectiveLifecycleState|completed|succeeded/);
+    assert.equal(result.controls.manuallyRetried, 2);
+    assert.equal(result.controls.retryDenied, 2);
   } finally {
     Invocation.aggregate = originalAggregate;
+    AuditLog.countDocuments = originalAuditCount;
+  }
+});
+
+test('control summary counts child-linked manual resolutions and audit retry denials accurately', async () => {
+  const originalAggregate = Invocation.aggregate;
+  const originalAuditCount = AuditLog.countDocuments;
+  let pipeline;
+  const auditFilters = [];
+  try {
+    Invocation.aggregate = async (value) => {
+      pipeline = value;
+      return [
+        {
+          cancellationRequested: 0,
+          cancellationConfirmed: 0,
+          cancellationOutcomeUnknown: 0,
+          stuckDetected: 0,
+          recoveryRequired: 0,
+          manuallyRetried: 1,
+          manuallyResolved: 1,
+        },
+      ];
+    };
+    AuditLog.countDocuments = async (filter) => {
+      auditFilters.push(filter);
+      return filter.action === 'invocation.recovery.retry_allowed' ? 1 : 4;
+    };
+    const result = await invocationControlSummary(
+      'workspace-a',
+      ['connection-a'],
+      parseWindow('24h', new Date('2026-07-13T12:00:00Z')),
+    );
+    const manuallyResolvedExpression = pipeline[1].$group.manuallyResolved;
+    assert.match(
+      JSON.stringify(manuallyResolvedExpression),
+      /resolve_as_failed_allowed|resolve_as_cancelled_allowed/,
+    );
+    assert.doesNotMatch(JSON.stringify(manuallyResolvedExpression), /recoveryChildInvocationId/);
+    assert.equal(result.manuallyRetried, 1);
+    assert.equal(result.manuallyResolved, 1);
+    assert.equal(result.retryDenied, 4);
+    assert.deepEqual(
+      auditFilters.map((filter) => filter.action),
+      ['invocation.recovery.retry_allowed', 'invocation.recovery.retry_denied'],
+    );
+    assert.ok(
+      auditFilters.every(
+        (filter) =>
+          JSON.stringify(filter.$or[0]['metadata.connectionId']) ===
+          JSON.stringify({ $in: ['connection-a'] }),
+      ),
+    );
+  } finally {
+    Invocation.aggregate = originalAggregate;
+    AuditLog.countDocuments = originalAuditCount;
   }
 });
 
@@ -235,22 +443,99 @@ test('alert synchronization is idempotent and increments occurrence only on reac
   try {
     OperationalAlert.bulkWrite = async (operations) => writes.push(operations);
     OperationalAlert.find = () =>
-      chainResult([{ _id: 'alert-1', type: rule.type, status: 'active' }]);
+      chainResult([
+        {
+          _id: 'alert-1',
+          type: rule.type,
+          dedupeKey: 'workspace-a:provider_errors',
+          status: 'active',
+        },
+      ]);
     await syncOperationalAlerts('workspace-a', [rule], new Date('2026-07-13T10:00:00Z'));
     assert.equal(writes[0][0].updateOne.update.$inc, undefined);
     assert.equal(writes[0][0].updateOne.update.$set.status, undefined);
 
     OperationalAlert.find = () =>
-      chainResult([{ _id: 'alert-1', type: rule.type, status: 'resolved' }]);
+      chainResult([
+        {
+          _id: 'alert-1',
+          type: rule.type,
+          dedupeKey: 'workspace-a:provider_errors',
+          status: 'resolved',
+        },
+      ]);
     await syncOperationalAlerts('workspace-a', [rule], new Date('2026-07-13T11:00:00Z'));
     assert.equal(writes[1][0].updateOne.update.$inc.occurrenceCount, 1);
     assert.equal(writes[1][0].updateOne.update.$set.status, 'active');
     assert.equal(writes[1][0].updateOne.update.$unset.acknowledgedByUserId, 1);
 
     OperationalAlert.find = () =>
-      chainResult([{ _id: 'alert-1', type: rule.type, status: 'acknowledged' }]);
+      chainResult([
+        {
+          _id: 'alert-1',
+          type: rule.type,
+          dedupeKey: 'workspace-a:provider_errors',
+          status: 'acknowledged',
+        },
+      ]);
     await syncOperationalAlerts('workspace-a', [], new Date('2026-07-13T12:00:00Z'));
     assert.equal(writes[2][0].updateOne.update.$set.status, 'resolved');
+  } finally {
+    OperationalAlert.find = originalFind;
+    OperationalAlert.bulkWrite = originalBulkWrite;
+  }
+});
+
+test('partner and connection alert scopes have independent dedupe keys', async () => {
+  const originalFind = OperationalAlert.find;
+  const originalBulkWrite = OperationalAlert.bulkWrite;
+  let findFilter;
+  let writes;
+  try {
+    OperationalAlert.find = (filter) => {
+      findFilter = filter;
+      return chainResult([]);
+    };
+    OperationalAlert.bulkWrite = async (operations) => {
+      writes = operations;
+    };
+    await syncOperationalAlerts(
+      'workspace-a',
+      [
+        {
+          type: 'repeated_stuck_invocations',
+          scopeKey: 'connection-a',
+          severity: 'warning',
+          title: 'Stuck A',
+          summary: 'Safe A',
+          metricName: 'stuck',
+          observedValue: 2,
+          thresholdValue: 2,
+          safeValues: { connectionId: 'connection-a', count: 2 },
+        },
+        {
+          type: 'repeated_stuck_invocations',
+          scopeKey: 'connection-b',
+          severity: 'warning',
+          title: 'Stuck B',
+          summary: 'Safe B',
+          metricName: 'stuck',
+          observedValue: 3,
+          thresholdValue: 2,
+          safeValues: { connectionId: 'connection-b', count: 3 },
+        },
+      ],
+      new Date('2026-07-13T10:00:00Z'),
+      { partner: { _id: 'partner-a' } },
+    );
+    assert.equal(findFilter.receivingWorkspaceId, 'workspace-a');
+    assert.equal(findFilter.partnerId, 'partner-a');
+    assert.equal(writes.length, 2);
+    const keys = writes.map((operation) => operation.updateOne.filter.dedupeKey).sort();
+    assert.deepEqual(keys, [
+      'partner-a:workspace-a:repeated_stuck_invocations:connection-a',
+      'partner-a:workspace-a:repeated_stuck_invocations:connection-b',
+    ]);
   } finally {
     OperationalAlert.find = originalFind;
     OperationalAlert.bulkWrite = originalBulkWrite;
@@ -307,8 +592,12 @@ test('latency aggregation is tenant-scoped, bounded, and drops unapproved stages
   const originalAggregate = Invocation.aggregate;
   const originalCount = Invocation.countDocuments;
   let pipeline;
+  let connectionFilter;
   try {
-    PassportConnection.distinct = async () => ['connection-a'];
+    PassportConnection.distinct = async (_field, filter) => {
+      connectionFilter = filter;
+      return ['connection-a'];
+    };
     Invocation.aggregate = async (value) => {
       pipeline = value;
       return [
@@ -327,12 +616,24 @@ test('latency aggregation is tenant-scoped, bounded, and drops unapproved stages
       ];
     };
     Invocation.countDocuments = async () => 1;
-    const result = await getLatency({
+    const result = await getLatency(
+      {
+        receivingWorkspaceId: 'workspace-a',
+        receivingUserId: 'user-a',
+        window: '1h',
+      },
+      { partner: { _id: 'partner-a' } },
+    );
+    assert.deepEqual(connectionFilter, {
       receivingWorkspaceId: 'workspace-a',
-      receivingUserId: 'user-a',
-      window: '1h',
+      partnerId: 'partner-a',
     });
     assert.match(JSON.stringify(pipeline[0].$match), /workspace-a/);
+    assert.match(JSON.stringify(pipeline[0].$match), /connection-a/);
+    assert.deepEqual(pipeline[0].$match.$and[0], {
+      receivingWorkspaceId: 'workspace-a',
+      connectionId: { $in: ['connection-a'] },
+    });
     assert.equal(pipeline[2].$limit, 10000);
     assert.deepEqual(
       result.stages.map((item) => item.stage),
@@ -412,13 +713,18 @@ test('alert acknowledgement always includes the receiving workspace in its updat
       return { lean: async () => null };
     };
     await assert.rejects(
-      acknowledgeAlert('alert-from-workspace-b', {
-        receivingWorkspaceId: 'workspace-a',
-        receivingUserId: 'user-a',
-      }),
+      acknowledgeAlert(
+        'alert-from-workspace-b',
+        {
+          receivingWorkspaceId: 'workspace-a',
+          receivingUserId: 'user-a',
+        },
+        { partner: { _id: 'partner-a' } },
+      ),
       (error) => error.statusCode === 404,
     );
     assert.equal(filter.receivingWorkspaceId, 'workspace-a');
+    assert.equal(filter.partnerId, 'partner-a');
     assert.equal(filter._id, 'alert-from-workspace-b');
   } finally {
     OperationalAlert.findOneAndUpdate = original;
@@ -439,13 +745,18 @@ test('alert listing cannot return another workspace through the normal workspace
       countFilter = filter;
       return 0;
     };
-    const result = await listAlerts({
-      receivingWorkspaceId: 'workspace-a',
-      receivingUserId: 'user-a',
-    });
+    const result = await listAlerts(
+      {
+        receivingWorkspaceId: 'workspace-a',
+        receivingUserId: 'user-a',
+      },
+      { partner: { _id: 'partner-a' } },
+    );
     assert.deepEqual(result.items, []);
     assert.equal(findFilter.receivingWorkspaceId, 'workspace-a');
+    assert.equal(findFilter.partnerId, 'partner-a');
     assert.equal(countFilter.receivingWorkspaceId, 'workspace-a');
+    assert.equal(countFilter.partnerId, 'partner-a');
     assert.doesNotMatch(JSON.stringify(findFilter), /workspace-b/);
   } finally {
     OperationalAlert.find = originalFind;
