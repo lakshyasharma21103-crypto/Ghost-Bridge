@@ -48,6 +48,10 @@ function toApiErrorResponse(error, identifiers = {}) {
   const appError = normalizeError(error);
   appError.retryable = isRetryableError(appError);
   const isGeminiTimeout = appError.code === 'GEMINI_REQUEST_TIMEOUT';
+  const hasSafeGeminiOperation =
+    typeof appError.code === 'string' &&
+    appError.code.startsWith('GEMINI_') &&
+    SAFE_GEMINI_OPERATIONS.has(appError.operation);
   const timeoutReason =
     isGeminiTimeout && SAFE_TIMEOUT_REASONS.has(appError.timeoutReason || appError.reason)
       ? appError.timeoutReason || appError.reason
@@ -78,9 +82,7 @@ function toApiErrorResponse(error, identifiers = {}) {
         ...(Number.isInteger(appError.retryAfterMs) && appError.retryAfterMs >= 0
           ? { retryAfterMs: appError.retryAfterMs }
           : {}),
-        ...(isGeminiTimeout && SAFE_GEMINI_OPERATIONS.has(appError.operation)
-          ? { operation: appError.operation }
-          : {}),
+        ...(hasSafeGeminiOperation ? { operation: appError.operation } : {}),
         ...(timeoutReason ? { timeoutReason } : {}),
         ...(configuredTimeoutMs !== undefined ? { configuredTimeoutMs } : {}),
         ...(['closed', 'open', 'half_open'].includes(appError.circuitState)

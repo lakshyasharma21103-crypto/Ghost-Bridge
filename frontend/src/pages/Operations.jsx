@@ -35,6 +35,8 @@ export function Operations() {
   const [scanConfirmation, setScanConfirmation] = useState(false);
   const [alertConfirmation, setAlertConfirmation] = useState(null);
   const [scanState, setScanState] = useState({ busy: false, message: '' });
+  const [durableConfirmation, setDurableConfirmation] = useState(null);
+  const [durableActionState, setDurableActionState] = useState({ busy: false, message: '' });
 
   const loadOperations = useCallback(async () => {
     if (!partnerConfigured) {
@@ -56,19 +58,41 @@ export function Operations() {
           availability: 'unavailable',
           errorCode: error.code,
         }));
-      const [summary, latency, errors, funnel, recovery] = await Promise.all([
+      const durableQuery = new URLSearchParams({ ...identity, limit: '50' });
+      const durableRequest = apiClient
+        .get(`/operations/work-items?${durableQuery}`)
+        .catch((error) => ({
+          items: [],
+          metrics: null,
+          availability: 'unavailable',
+          errorCode: error.code,
+        }));
+      const workerRequest = apiClient
+        .get(`/operations/workers?${new URLSearchParams(identity)}`)
+        .catch((error) => ({
+          status: 'unavailable',
+          activeWorkers: 0,
+          readyWorkers: 0,
+          drainingWorkers: 0,
+          staleWorkers: 0,
+          availability: 'unavailable',
+          errorCode: error.code,
+        }));
+      const [summary, latency, errors, funnel, recovery, durableWork, workers] = await Promise.all([
         apiClient.get(`/operations/summary?${query}`),
         apiClient.get(`/operations/latency?${query}`),
         apiClient.get(`/operations/errors?${query}`),
         apiClient.get(`/operations/passport-funnel?${query}`),
         recoveryRequest,
+        durableRequest,
+        workerRequest,
       ]);
       const alertQuery = new URLSearchParams({ ...identity, limit: '50' });
       const alerts = await apiClient.get(`/operations/alerts?${alertQuery}`);
       setState({
         loading: false,
         error: '',
-        data: { summary, latency, errors, funnel, alerts, recovery },
+        data: { summary, latency, errors, funnel, alerts, recovery, durableWork, workers },
       });
     } catch (error) {
       setState((current) => ({
@@ -130,6 +154,43 @@ export function Operations() {
     }
   }
 
+  async function runDurableAction() {
+    if (!partnerConfigured || !durableConfirmation || durableActionState.busy) return;
+    setDurableActionState({ busy: true, message: '' });
+    try {
+      let result;
+      if (durableConfirmation.type === 'requeue') {
+        result = await apiClient.post(
+          `/operations/work-items/${durableConfirmation.workItemId}/requeue`,
+          {
+            ...identity,
+            connectionId: durableConfirmation.connectionId,
+            version: durableConfirmation.version,
+          },
+        );
+      } else {
+        const path =
+          durableConfirmation.type === 'scan'
+            ? '/operations/work-items/abandoned/scan'
+            : '/operations/work-items/reconcile';
+        result = await apiClient.post(path, { ...identity, limit: 50 });
+      }
+      setDurableConfirmation(null);
+      setDurableActionState({
+        busy: false,
+        message: safeDurableActionMessage(durableConfirmation.type, result),
+      });
+      await loadOperations();
+    } catch (error) {
+      setDurableConfirmation(null);
+      setDurableActionState({ busy: false, message: '' });
+      setState((current) => ({
+        ...current,
+        error: error.message || 'Durable work control could not be completed.',
+      }));
+    }
+  }
+
   const data = state.data;
   const summary = data?.summary;
   const latency = data?.latency;
@@ -137,6 +198,10 @@ export function Operations() {
   const attemptMetrics = invocationMetrics.attempts || {};
   const controlMetrics = invocationMetrics.controls || summary?.recoveryControls || {};
   const recoveryItems = data?.recovery?.items || data?.recovery?.queue || [];
+  const durableItems = data?.durableWork?.items || [];
+  const durableMetrics = data?.durableWork?.metrics || {};
+  const durableCounts = durableMetrics.counts || {};
+  const workerHealth = data?.workers || {};
 
   return (
     <>
@@ -351,6 +416,166 @@ export function Operations() {
             tone="warning"
           />
         </div>
+      </Section>
+
+      <Section
+        title="Durable execution"
+        icon={Database}
+        className="operations-section-spaced"
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              className="operations-ack"
+              onClick={() => setDurableConfirmation({ type: 'scan' })}
+              disabled={!partnerConfigured || durableActionState.busy}
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Scan abandoned
+            </button>
+            <button
+              type="button"
+              className="operations-ack"
+              onClick={() => setDurableConfirmation({ type: 'reconcile' })}
+              disabled={!partnerConfigured || durableActionState.busy}
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Reconcile missing work
+            </button>
+          </div>
+        }
+      >
+        {durableActionState.message ? (
+          <div
+            className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900"
+            role="status"
+          >
+            {durableActionState.message}
+          </div>
+        ) : null}
+        {data?.durableWork?.availability === 'unavailable' ||
+        data?.workers?.availability === 'unavailable' ? (
+          <div className="border-b border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-950">
+            Durable execution visibility is unavailable.{' '}
+            {data?.durableWork?.errorCode || data?.workers?.errorCode || 'REQUEST_FAILED'}
+          </div>
+        ) : null}
+        <div className="operations-stat-list">
+          <Stat label="Pending work" value={number(durableCounts.pending)} />
+          <Stat label="Running work" value={number(durableCounts.running)} />
+          <Stat label="Scheduled retries" value={number(durableCounts.retry_scheduled)} />
+          <Stat label="Due executable work" value={number(durableMetrics.dueExecutableCount)} />
+          <Stat
+            label="Abandoned leases"
+            value={number(durableMetrics.abandonedLeaseCount)}
+            tone={durableMetrics.abandonedLeaseCount ? 'warning' : ''}
+          />
+          <Stat
+            label="Recovery required"
+            value={number(durableCounts.recovery_required)}
+            tone={durableCounts.recovery_required ? 'warning' : ''}
+          />
+          <Stat
+            label="Dead-lettered"
+            value={number(durableCounts.dead_lettered)}
+            tone={durableCounts.dead_lettered ? 'danger' : ''}
+          />
+          <Stat
+            label="Active workers"
+            value={number(workerHealth.activeWorkers)}
+            tone={workerHealth.activeWorkers ? 'success' : 'danger'}
+          />
+          <Stat
+            label="Ready workers"
+            value={number(workerHealth.readyWorkers)}
+            tone={workerHealth.readyWorkers ? 'success' : 'danger'}
+          />
+          <Stat label="Draining workers" value={number(workerHealth.drainingWorkers)} />
+          <Stat
+            label="Stale worker heartbeats"
+            value={number(workerHealth.staleWorkers)}
+            tone={workerHealth.staleWorkers ? 'warning' : ''}
+          />
+          <Stat
+            label="Worker health"
+            value={humanize(workerHealth.status || 'unavailable')}
+            tone={workerHealth.status === 'healthy' ? 'success' : 'warning'}
+          />
+          <Stat label="Oldest pending age" value={duration(durableMetrics.oldestPendingAgeMs)} />
+          <Stat label="Average queue wait" value={duration(durableMetrics.averageQueueWaitMs)} />
+        </div>
+        <Table
+          headers={[
+            'Invocation',
+            'Connection',
+            'Status',
+            'Safe stage',
+            'Attempt',
+            'Available',
+            'Lease expiry',
+            'Recovery reason',
+            'Created',
+            '',
+          ]}
+          empty={!durableItems.length ? 'No durable work records in this workspace.' : ''}
+        >
+          {durableItems.map((item) => (
+            <tr key={item.workItemId}>
+              <td>
+                <Link
+                  className="operations-link operations-code"
+                  to={`/invocations?invocationId=${encodeURIComponent(item.invocationId)}`}
+                >
+                  {shortId(item.invocationId)}
+                </Link>
+              </td>
+              <td>
+                <Link
+                  className="operations-link operations-code"
+                  to={`/connections/${item.connectionId}`}
+                >
+                  {shortId(item.connectionId)}
+                </Link>
+              </td>
+              <td>
+                <span
+                  className={`operations-severity operations-severity-${durableStatusTone(item.status)}`}
+                >
+                  {humanize(item.status)}
+                </span>
+              </td>
+              <td>{humanize(item.safeStage)}</td>
+              <td>{number(item.attemptNumber)}</td>
+              <td>{formatDate(item.availableAt)}</td>
+              <td>{formatDate(item.leaseExpiresAt)}</td>
+              <td>
+                <span className="operations-code">{item.recoveryReasonCode || '—'}</span>
+              </td>
+              <td>{formatDate(item.createdAt)}</td>
+              <td className="operations-action-cell">
+                {item.status === 'dead_lettered' ? (
+                  <button
+                    type="button"
+                    className="operations-ack"
+                    disabled={durableActionState.busy}
+                    onClick={() =>
+                      setDurableConfirmation({
+                        type: 'requeue',
+                        workItemId: item.workItemId,
+                        connectionId: item.connectionId,
+                        version: item.version,
+                      })
+                    }
+                  >
+                    Requeue if safe
+                  </button>
+                ) : (
+                  <span className="operations-muted">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </Table>
       </Section>
 
       <Section
@@ -758,6 +983,20 @@ export function Operations() {
         </Table>
       </Section>
       <ConfirmationDialog
+        open={Boolean(durableConfirmation)}
+        title={durableActionTitle(durableConfirmation?.type)}
+        description={durableActionDescription(durableConfirmation?.type)}
+        confirmLabel={durableActionLabel(durableConfirmation?.type)}
+        confirmTone="primary"
+        busy={durableActionState.busy}
+        onConfirm={runDurableAction}
+        onClose={() => !durableActionState.busy && setDurableConfirmation(null)}
+      >
+        <p className="border-l-2 border-cyan-600 bg-cyan-50 px-4 py-3 text-sm leading-6 text-cyan-950">
+          These controls never force success or replay work with an unknown remote outcome.
+        </p>
+      </ConfirmationDialog>
+      <ConfirmationDialog
         open={scanConfirmation}
         title="Scan for stuck invocations?"
         description="The Gateway will evaluate a bounded workspace batch and atomically mark only invocations supported by deterministic evidence."
@@ -980,4 +1219,58 @@ function safeScanMessage(result) {
     return `Recovery scan completed: ${number(scanned)} invocations evaluated.`;
   }
   return 'Recovery scan completed.';
+}
+
+function durableStatusTone(status) {
+  if (['recovery_required', 'retry_scheduled', 'cancellation_requested'].includes(status)) {
+    return 'warning';
+  }
+  if (['failed', 'dead_lettered'].includes(status)) return 'critical';
+  return 'info';
+}
+
+function durableActionTitle(type) {
+  if (type === 'scan') return 'Scan for abandoned durable work?';
+  if (type === 'reconcile') return 'Reconcile invocations missing work?';
+  if (type === 'requeue') return 'Requeue this dead-letter record?';
+  return 'Confirm durable work control';
+}
+
+function durableActionDescription(type) {
+  if (type === 'scan') {
+    return 'The worker queue will inspect a bounded workspace batch and apply lease- and milestone-aware recovery rules.';
+  }
+  if (type === 'reconcile') {
+    return 'The Gateway will create deduplicated work only for executable workspace invocations that are missing it.';
+  }
+  if (type === 'requeue') {
+    return 'Requeue is allowed once and only when persisted milestones prove no outbound transmission occurred.';
+  }
+  return 'The Gateway will apply its current durable-work safety policy.';
+}
+
+function durableActionLabel(type) {
+  if (type === 'scan') return 'Scan abandoned work';
+  if (type === 'reconcile') return 'Reconcile missing work';
+  if (type === 'requeue') return 'Requeue if safe';
+  return 'Confirm';
+}
+
+function safeDurableActionMessage(type, result) {
+  if (type === 'scan') {
+    return `Abandoned-work scan completed: ${number(result?.scanned || 0)} evaluated, ${number(
+      result?.safelyRecovered || 0,
+    )} safely recovered, ${number(result?.recoveryRequired || 0)} require review.`;
+  }
+  if (type === 'reconcile') {
+    return `Reconciliation completed: ${number(result?.created || 0)} work records created, ${number(
+      result?.existing || 0,
+    )} already present.`;
+  }
+  if (type === 'requeue') {
+    return result?.alreadyRequeued
+      ? 'This eligible dead-letter record was already requeued.'
+      : 'The eligible pre-transmission dead-letter record was requeued.';
+  }
+  return 'Durable work control completed.';
 }

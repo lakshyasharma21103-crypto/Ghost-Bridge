@@ -373,6 +373,12 @@ function transitionUpdate(fromState, toState, options = {}) {
     update.$set.lastProgressStage = 'terminalized';
   }
   if (toState === 'succeeded') update.$set.retryState = 'completed';
+  if (toState === 'retry_scheduled') {
+    update.$set.retryState = 'scheduled';
+    if (options.outcome?.retryScheduledAt === undefined) {
+      update.$set.retryScheduledAt = entry.at;
+    }
+  }
   if (toState === 'recovery_required') {
     update.$set.retryState = 'recovery_required';
     update.$set.recoveryReasonCode = safeReasonCode(options.reasonCode, { required: true });
@@ -430,6 +436,24 @@ function emitStateChange(observer, invocation, fromState, toState, entry) {
   });
 }
 
+function executionOwnershipPredicate(options = {}) {
+  const suppliedOwner = options.executionOwner !== undefined;
+  const suppliedLease = options.executionLeaseId !== undefined;
+  if (!suppliedOwner && !suppliedLease) return {};
+  const executionOwner = safeOptionalIdentifier(options.executionOwner, 'executionOwner', {
+    required: true,
+  });
+  const executionLeaseId = safeOptionalIdentifier(options.executionLeaseId, 'executionLeaseId', {
+    required: true,
+  });
+  const now = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+  return {
+    executionOwner,
+    executionLeaseId,
+    executionLeaseExpiresAt: { $gt: now },
+  };
+}
+
 async function reportRecoveryRequired(options, invocation, fromState, reasonCode) {
   options?.observer?.emit?.('warn', 'invocation.recovery_required', {
     invocationId: String(invocation?._id || invocation?.id || ''),
@@ -467,7 +491,15 @@ async function transitionInvocation(options) {
   const toState = options?.toState;
   const update = transitionUpdate(fromState, toState, options);
   const invocation = await Invocation.findOneAndUpdate(
-    { _id: invocationId, receivingWorkspaceId, lifecycleState: fromState },
+    {
+      _id: invocationId,
+      receivingWorkspaceId,
+      lifecycleState: fromState,
+      ...(toState === 'succeeded'
+        ? { cancellationState: { $nin: ['requested', 'aborting'] } }
+        : {}),
+      ...executionOwnershipPredicate(options),
+    },
     update,
     { new: true, runValidators: true },
   );
@@ -545,7 +577,12 @@ async function markActiveInvocationRecovery(options) {
       reasonCode,
     });
     const invocation = await Invocation.findOneAndUpdate(
-      { _id: invocationId, receivingWorkspaceId, lifecycleState: fromState },
+      {
+        _id: invocationId,
+        receivingWorkspaceId,
+        lifecycleState: fromState,
+        ...executionOwnershipPredicate(options),
+      },
       update,
       { new: true, runValidators: true },
     );
@@ -557,6 +594,42 @@ async function markActiveInvocationRecovery(options) {
     }
   }
   return null;
+}
+
+async function renewInvocationExecutionLease(options) {
+  const invocationId = safeOptionalIdentifier(options?.invocationId, 'invocationId', {
+    required: true,
+  });
+  const receivingWorkspaceId = safeOptionalIdentifier(
+    options?.receivingWorkspaceId,
+    'receivingWorkspaceId',
+    { required: true },
+  );
+  const executionOwner = safeOptionalIdentifier(options?.executionOwner, 'executionOwner', {
+    required: true,
+  });
+  const executionLeaseId = safeOptionalIdentifier(options?.executionLeaseId, 'executionLeaseId', {
+    required: true,
+  });
+  const now = options?.now instanceof Date ? options.now : new Date(options?.now || Date.now());
+  const leaseDurationMs = Number(options?.leaseDurationMs || env.RUNTIME_EXECUTION_LEASE_MS);
+  if (!Number.isInteger(leaseDurationMs) || leaseDurationMs < 1_000) {
+    throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Execution lease duration is invalid.');
+  }
+  const executionLeaseExpiresAt = new Date(now.getTime() + leaseDurationMs);
+  const invocation = await Invocation.findOneAndUpdate(
+    {
+      _id: invocationId,
+      receivingWorkspaceId,
+      lifecycleState: { $in: ['running', 'waiting_for_runtime'] },
+      executionOwner,
+      executionLeaseId,
+      executionLeaseExpiresAt: { $gt: now },
+    },
+    { $set: { executionLeaseExpiresAt } },
+    { new: true, runValidators: true },
+  );
+  return invocation ? { invocation, executionLeaseExpiresAt } : null;
 }
 
 async function claimInvocationExecution(options) {
@@ -661,6 +734,7 @@ module.exports = {
   legacyStatusForState,
   markExpiredInvocationLeaseRecovery,
   markActiveInvocationRecovery,
+  renewInvocationExecutionLease,
   transitionHistoryEntry,
   transitionInvocation,
   transitionUpdate,

@@ -104,7 +104,10 @@ test('Gemini provider uses grounded research then strict formatting', async () =
   assert.equal(client.calls.length, 2);
   assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
   assert.equal(client.calls[0].config.httpOptions.retryOptions.attempts, 1);
+  assert.equal(client.calls[0].config.httpOptions.timeout, TEST_CONFIG.requestTimeoutMs);
   assert.equal(client.calls[1].config.tools, undefined);
+  assert.equal(client.calls[1].config.httpOptions.retryOptions.attempts, 1);
+  assert.equal(client.calls[1].config.httpOptions.timeout, TEST_CONFIG.requestTimeoutMs);
   assert.equal(client.calls[1].config.responseMimeType, 'application/json');
   assert.equal(client.calls[1].config.responseJsonSchema.additionalProperties, false);
   assert.equal(client.calls[0].model, TEST_CONFIG.model);
@@ -324,6 +327,7 @@ test('grounded research local timeout is stage-aware and does not begin formatti
   );
 
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].config.httpOptions.timeout, 10);
   assert.equal(logger.entries.length, 2);
   const completion = logger.entries.find((entry) => entry.message === 'Gemini operation completed');
   assert.deepEqual(
@@ -395,6 +399,8 @@ test('structured formatting local timeout is identified with a fresh controller'
 
   assert.equal(calls.length, 2);
   assert.notEqual(calls[0].config.abortSignal, calls[1].config.abortSignal);
+  assert.equal(calls[0].config.httpOptions.timeout, 50);
+  assert.equal(calls[1].config.httpOptions.timeout, 10);
   assert.equal(calls[0].config.abortSignal.aborted, false);
   assert.equal(calls[1].config.abortSignal.aborted, true);
   const operationEntries = logger.entries.filter(

@@ -6,6 +6,7 @@ const PassportConnection = require('../models/PassportConnection');
 const PassportInstallKey = require('../models/PassportInstallKey');
 const CircuitBreaker = require('../models/CircuitBreaker');
 const RuntimeCapacitySlot = require('../models/RuntimeCapacitySlot');
+const DurableEventOutbox = require('../models/DurableEventOutbox');
 const mongoose = require('mongoose');
 const { databaseStatus } = require('../config/db');
 const { env } = require('../config/env');
@@ -19,6 +20,7 @@ const {
 } = require('../constants/operations');
 const packageMetadata = require('../../package.json');
 const { serviceLifecycle } = require('./serviceLifecycle.service');
+const durableWork = require('./durableWork.service');
 
 const ALERT_WINDOW = '24h';
 const SAFE_HEALTH_STATUSES = new Set([
@@ -1138,6 +1140,19 @@ function alertRulesFromSignals(signals) {
     rateLimitedConnections: 0,
   };
   const audit = signals.audit || {};
+  const durable = signals.durable || {};
+  const durableCounts = durable.queue?.counts || {};
+  const durableWorkers = durable.workers || {};
+  const durableEvents = durable.events || {};
+  const executableWork = Number(durable.queue?.dueExecutableCount || 0);
+  const oldestPendingThresholdMs = Math.max(
+    60_000,
+    Math.min(3_600_000, Number(env.DURABLE_WORK_LEASE_MS || 60_000)),
+  );
+  const retryBacklogThreshold = Math.max(
+    3,
+    Math.min(100, Number(env.DURABLE_WORKER_BATCH_SIZE || 5)),
+  );
   const ambiguousRemoteOutcomeCount = Math.max(
     audit.ambiguousRemoteOutcomes || 0,
     audit.cancellationOutcomeUnknown || 0,
@@ -1157,6 +1172,160 @@ function alertRulesFromSignals(signals) {
       database: signals.readiness.database,
       runtimeConfiguration: signals.readiness.runtimeConfiguration,
     },
+  });
+  add(executableWork > 0 && Number(durableWorkers.readyWorkers || 0) === 0, {
+    type: 'durable_work_no_healthy_worker',
+    severity: 'critical',
+    title: 'Executable work has no healthy worker',
+    summary: 'Pending durable work cannot progress because no active worker heartbeat is healthy.',
+    metricName: 'durable_executable_work_without_worker',
+    observedValue: executableWork,
+    thresholdValue: 1,
+    safeValues: {
+      executableWork,
+      readyWorkers: Number(durableWorkers.readyWorkers || 0),
+      drainingWorkers: Number(durableWorkers.drainingWorkers || 0),
+      staleWorkers: Number(durableWorkers.staleWorkers || 0),
+    },
+  });
+  add(Number(durable.queue?.abandonedLeaseCount || 0) >= env.OPS_ALERT_LEASE_EXPIRY_COUNT, {
+    type: 'durable_work_abandoned_leases_high',
+    severity: 'critical',
+    title: 'Abandoned durable-work leases are elevated',
+    summary: 'Multiple owned work records have expired leases and require deterministic recovery.',
+    metricName: 'durable_abandoned_lease_count',
+    observedValue: Number(durable.queue?.abandonedLeaseCount || 0),
+    thresholdValue: env.OPS_ALERT_LEASE_EXPIRY_COUNT,
+    safeValues: { count: Number(durable.queue?.abandonedLeaseCount || 0) },
+  });
+  add(Number(durableEvents.remoteExecutionLeaseLoss || 0) >= env.OPS_ALERT_LEASE_EXPIRY_COUNT, {
+    type: 'durable_remote_execution_lease_loss',
+    severity: 'critical',
+    title: 'Remote execution ownership was repeatedly lost',
+    summary: 'Repeated lease loss after outbound transmission created ambiguous remote outcomes.',
+    metricName: 'durable_remote_execution_lease_loss_events',
+    observedValue: Number(durableEvents.remoteExecutionLeaseLoss || 0),
+    thresholdValue: env.OPS_ALERT_LEASE_EXPIRY_COUNT,
+    safeValues: { count: Number(durableEvents.remoteExecutionLeaseLoss || 0) },
+  });
+  add(Number(durableCounts.dead_lettered || 0) > 0, {
+    type: 'durable_work_dead_letter_backlog',
+    severity: 'critical',
+    title: 'Durable-work dead-letter backlog requires review',
+    summary: 'One or more exhausted safe retries remain in the workspace dead-letter queue.',
+    metricName: 'durable_dead_letter_count',
+    observedValue: Number(durableCounts.dead_lettered || 0),
+    thresholdValue: 1,
+    safeValues: { count: Number(durableCounts.dead_lettered || 0) },
+  });
+  add(Number(durableEvents.finalizationConsistencyFailure || 0) > 0, {
+    type: 'durable_work_finalization_consistency_failure',
+    severity: 'critical',
+    title: 'Durable-work finalization consistency failed',
+    summary: 'A remote result could not be safely finalized under current durable ownership.',
+    metricName: 'durable_finalization_consistency_failure_events',
+    observedValue: Number(durableEvents.finalizationConsistencyFailure || 0),
+    thresholdValue: 1,
+    safeValues: { count: Number(durableEvents.finalizationConsistencyFailure || 0) },
+  });
+  add(Number(durable.queue?.oldestPendingAgeMs || 0) >= oldestPendingThresholdMs, {
+    type: 'durable_work_oldest_pending_high',
+    severity: 'warning',
+    title: 'Oldest pending durable work is delayed',
+    summary:
+      'The oldest executable work record has waited longer than the bounded queue threshold.',
+    metricName: 'durable_oldest_pending_age_ms',
+    observedValue: Number(durable.queue?.oldestPendingAgeMs || 0),
+    thresholdValue: oldestPendingThresholdMs,
+    safeValues: { ageMs: Number(durable.queue?.oldestPendingAgeMs || 0) },
+  });
+  add(Number(durableWorkers.staleWorkers || 0) > 0, {
+    type: 'durable_worker_heartbeat_stale',
+    severity: 'warning',
+    title: 'A durable worker heartbeat is stale',
+    summary: 'A previously active worker has not renewed its safe process heartbeat.',
+    metricName: 'durable_stale_worker_heartbeats',
+    observedValue: Number(durableWorkers.staleWorkers || 0),
+    thresholdValue: 1,
+    safeValues: { count: Number(durableWorkers.staleWorkers || 0) },
+  });
+  add(Number(durableCounts.retry_scheduled || 0) >= retryBacklogThreshold, {
+    type: 'durable_retry_backlog_elevated',
+    severity: 'warning',
+    title: 'Durable retry backlog is elevated',
+    summary: 'Scheduled safe retries have reached the bounded worker batch threshold.',
+    metricName: 'durable_scheduled_retry_count',
+    observedValue: Number(durableCounts.retry_scheduled || 0),
+    thresholdValue: retryBacklogThreshold,
+    safeValues: { count: Number(durableCounts.retry_scheduled || 0) },
+  });
+  add(Number(durableEvents.reconciliationCreated || 0) >= env.OPS_ALERT_RECOVERY_GROWTH_COUNT, {
+    type: 'durable_reconciliation_repeatedly_created_work',
+    severity: 'warning',
+    title: 'Reconciliation repeatedly created missing work',
+    summary: 'Multiple executable invocations required compensating work-record creation.',
+    metricName: 'durable_reconciliation_created_events',
+    observedValue: Number(durableEvents.reconciliationCreated || 0),
+    thresholdValue: env.OPS_ALERT_RECOVERY_GROWTH_COUNT,
+    safeValues: { count: Number(durableEvents.reconciliationCreated || 0) },
+  });
+  add(
+    Number(protection.capacity.activeInvocations || 0) >=
+      env.RUNTIME_MAX_CONCURRENT_PER_WORKSPACE && Number(protection.capacity.rejections || 0) > 0,
+    {
+      type: 'runtime_capacity_continuously_saturated',
+      severity: 'warning',
+      title: 'Workspace runtime capacity is saturated',
+      summary:
+        'Active work remains at the workspace limit while additional invocations are rejected.',
+      metricName: 'runtime_capacity_active_invocations',
+      observedValue: Number(protection.capacity.activeInvocations || 0),
+      thresholdValue: env.RUNTIME_MAX_CONCURRENT_PER_WORKSPACE,
+      safeValues: {
+        activeInvocations: Number(protection.capacity.activeInvocations || 0),
+        rejectionCount: Number(protection.capacity.rejections || 0),
+      },
+    },
+  );
+  add(Number(durableWorkers.readyWorkers || 0) > 0, {
+    type: 'durable_worker_available',
+    severity: 'info',
+    title: 'Durable worker is active',
+    summary: 'At least one durable worker has a current healthy heartbeat.',
+    metricName: 'durable_active_workers',
+    observedValue: Number(durableWorkers.readyWorkers || 0),
+    thresholdValue: 1,
+    safeValues: { count: Number(durableWorkers.readyWorkers || 0) },
+  });
+  add(Number(durableWorkers.drainingWorkers || 0) > 0, {
+    type: 'durable_worker_draining',
+    severity: 'info',
+    title: 'Durable worker is draining',
+    summary: 'A durable worker stopped claiming new work while its active leases drain.',
+    metricName: 'durable_draining_workers',
+    observedValue: Number(durableWorkers.drainingWorkers || 0),
+    thresholdValue: 1,
+    safeValues: { count: Number(durableWorkers.drainingWorkers || 0) },
+  });
+  add(Number(durableEvents.abandonedPreTransmissionRecovered || 0) > 0, {
+    type: 'durable_abandoned_work_safely_recovered',
+    severity: 'info',
+    title: 'Abandoned durable work was safely recovered',
+    summary: 'Persisted milestones proved pre-transmission work safe to return to the queue.',
+    metricName: 'durable_abandoned_work_recovered_events',
+    observedValue: Number(durableEvents.abandonedPreTransmissionRecovered || 0),
+    thresholdValue: 1,
+    safeValues: { count: Number(durableEvents.abandonedPreTransmissionRecovered || 0) },
+  });
+  add(Number(durableEvents.scheduledRetryCompleted || 0) > 0, {
+    type: 'durable_scheduled_retry_completed',
+    severity: 'info',
+    title: 'A scheduled durable retry completed',
+    summary: 'One or more persisted safe retries reached controlled completion.',
+    metricName: 'durable_scheduled_retry_completed_events',
+    observedValue: Number(durableEvents.scheduledRetryCompleted || 0),
+    thresholdValue: 1,
+    safeValues: { count: Number(durableEvents.scheduledRetryCompleted || 0) },
   });
   add((protection.circuits.open || 0) >= 2, {
     type: 'multiple_runtime_circuits_open',
@@ -1914,6 +2083,116 @@ async function syncOperationalAlerts(receivingWorkspaceId, rules, now = new Date
   if (operations.length) await OperationalAlert.bulkWrite(operations, { ordered: false });
 }
 
+async function durableAlertSignals(receivingWorkspaceId, window, actor = {}) {
+  const partnerId = partnerIdFrom(actor);
+  if (!partnerId) {
+    return {
+      queue: {
+        counts: {},
+        dueExecutableCount: 0,
+        abandonedLeaseCount: 0,
+        oldestPendingAgeMs: 0,
+      },
+      workers: {
+        status: 'no_active_worker',
+        activeWorkers: 0,
+        readyWorkers: 0,
+        drainingWorkers: 0,
+        staleWorkers: 0,
+      },
+      events: {},
+    };
+  }
+  const [queue, workers, eventRows] = await Promise.all([
+    durableWork.durableWorkMetrics({ partnerId, receivingWorkspaceId }),
+    durableWork.aggregateWorkerHealth(),
+    DurableEventOutbox.aggregate([
+      {
+        $match: {
+          partnerId,
+          receivingWorkspaceId,
+          createdAt: { $gte: window.since },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          remoteExecutionLeaseLoss: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$eventType', 'work.recovery_required'] },
+                    {
+                      $in: [
+                        '$safeMetadata.recoveryReasonCode',
+                        ['LEASE_EXPIRED_AFTER_TRANSMISSION', 'WORKER_LOST_DURING_REMOTE_EXECUTION'],
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          finalizationConsistencyFailure: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$eventType', 'work.recovery_required'] },
+                    {
+                      $in: [
+                        '$safeMetadata.recoveryReasonCode',
+                        ['WORKER_LOST_DURING_FINALIZATION', 'RESULT_PERSISTENCE_UNCERTAIN'],
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          reconciliationCreated: {
+            $sum: { $cond: [{ $eq: ['$eventType', 'work.reconciled'] }, 1, 0] },
+          },
+          abandonedPreTransmissionRecovered: {
+            $sum: { $cond: [{ $eq: ['$eventType', 'work.abandoned_recovered'] }, 1, 0] },
+          },
+          scheduledRetryCompleted: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$eventType', 'work.completed'] },
+                    { $gt: [{ $ifNull: ['$safeMetadata.retryCount', 0] }, 0] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]),
+  ]);
+  const events = eventRows?.[0] || {};
+  return {
+    queue,
+    workers,
+    events: {
+      remoteExecutionLeaseLoss: Number(events.remoteExecutionLeaseLoss || 0),
+      finalizationConsistencyFailure: Number(events.finalizationConsistencyFailure || 0),
+      reconciliationCreated: Number(events.reconciliationCreated || 0),
+      abandonedPreTransmissionRecovered: Number(events.abandonedPreTransmissionRecovered || 0),
+      scheduledRetryCompleted: Number(events.scheduledRetryCompleted || 0),
+    },
+  };
+}
+
 async function evaluateWorkspaceAlerts(
   receivingWorkspaceId,
   connectionIds,
@@ -1922,22 +2201,24 @@ async function evaluateWorkspaceAlerts(
 ) {
   const window = parseWindow(ALERT_WINDOW, now);
   const partnerId = partnerIdFrom(actor);
-  const [connections, invocations, funnel, latency, errors, audit, protection] = await Promise.all([
-    connectionSummary(receivingWorkspaceId, window, connectionIds),
-    invocationSummary(receivingWorkspaceId, connectionIds, window),
-    installationFunnel(receivingWorkspaceId, connectionIds, window, partnerId),
-    getLatency(
-      {
-        receivingWorkspaceId,
-        receivingUserId: 'system-alert-evaluator',
-        window: ALERT_WINDOW,
-      },
-      actor,
-    ),
-    alertErrorSignals(receivingWorkspaceId, connectionIds, window),
-    alertAuditSignals(receivingWorkspaceId, connectionIds, window),
-    reliabilitySummary(receivingWorkspaceId, window, connectionIds),
-  ]);
+  const [connections, invocations, funnel, latency, errors, audit, protection, durable] =
+    await Promise.all([
+      connectionSummary(receivingWorkspaceId, window, connectionIds),
+      invocationSummary(receivingWorkspaceId, connectionIds, window),
+      installationFunnel(receivingWorkspaceId, connectionIds, window, partnerId),
+      getLatency(
+        {
+          receivingWorkspaceId,
+          receivingUserId: 'system-alert-evaluator',
+          window: ALERT_WINDOW,
+        },
+        actor,
+      ),
+      alertErrorSignals(receivingWorkspaceId, connectionIds, window),
+      alertAuditSignals(receivingWorkspaceId, connectionIds, window),
+      reliabilitySummary(receivingWorkspaceId, window, connectionIds),
+      durableAlertSignals(receivingWorkspaceId, window, actor),
+    ]);
   const database = databaseStatus();
   const runtimeConfiguration = runtimeConfigurationStatus();
   const lifecycle = serviceLifecycle.snapshot();
@@ -1957,6 +2238,7 @@ async function evaluateWorkspaceAlerts(
     errors,
     audit,
     protection,
+    durable,
   };
   await syncOperationalAlerts(receivingWorkspaceId, alertRulesFromSignals(signals), now, actor);
 }
@@ -2135,6 +2417,7 @@ module.exports = {
   safeFailure,
   alertAuditSignals,
   alertRulesFromSignals,
+  durableAlertSignals,
   reliabilitySummary,
   syncOperationalAlerts,
   getSummary,

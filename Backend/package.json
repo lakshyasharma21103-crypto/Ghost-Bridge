@@ -5,16 +5,19 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch src/server.js",
-    "build": "node --check src/server.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js",
+    "dev:worker": "node --watch src/worker.js",
+    "build": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js",
     "start": "node src/server.js",
-    "typecheck": "node --check src/server.js && node --check src/app.js",
-    "lint": "node --check src/server.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js",
+    "worker": "node src/worker.js",
+    "typecheck": "node --check src/server.js && node --check src/worker.js && node --check src/app.js",
+    "lint": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js",
     "test": "node --test",
     "seed:demo": "node scripts/seedDemo.js",
     "verify:demo": "node scripts/verifyDemo.js",
     "seed:sandbox": "node scripts/seedSandbox.js",
     "verify:sandbox": "node scripts/verifySandbox.js",
-    "verify:external-flow": "node scripts/verifyExternalFlow.js"
+    "verify:external-flow": "node scripts/verifyExternalFlow.js",
+    "verify:durable-recovery": "node scripts/verifyDurableRecovery.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

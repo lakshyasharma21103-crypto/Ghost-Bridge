@@ -5,6 +5,7 @@ const Invocation = require('../models/Invocation');
 const InvocationAttempt = require('../models/InvocationAttempt');
 const PassportConnection = require('../models/PassportConnection');
 const RuntimeCapacitySlot = require('../models/RuntimeCapacitySlot');
+const RuntimeWorkItem = require('../models/RuntimeWorkItem');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { createInvocationIdempotency } = require('../utils/idempotency');
@@ -26,6 +27,7 @@ const IDS = Object.freeze({
   passport: '64b000000000000000000003',
   partner: '64b000000000000000000004',
   child: '64b000000000000000000005',
+  work: '64b000000000000000000006',
 });
 const HASH = `hmac-sha256:${'a'.repeat(64)}`;
 
@@ -403,6 +405,72 @@ test('pre-transmission cancellation is confirmed, idempotent, and tenant scoped'
     await assert.rejects(() => requestCancellation(IDS.invocation, input(), actor()), {
       code: ErrorCodes.INVOCATION_NOT_FOUND,
     });
+  } finally {
+    restore(patches);
+  }
+});
+
+test('durable Work notification failure cannot undo cancellation or skip the local abort', async () => {
+  const patches = [];
+  const events = [];
+  const current = invocation({
+    lifecycleState: 'authorized',
+    status: 'queued',
+    cancellationState: 'not_requested',
+    recoveryState: 'not_required',
+    recoveryReasonCode: undefined,
+    stuckClassification: 'not_stuck',
+    lastProgressStage: 'authorized',
+    currentWorkItemId: IDS.work,
+  });
+  patch(Invocation, 'findOne', () => queryResult(current), patches);
+  patch(PassportConnection, 'findOne', async () => connection(), patches);
+  patch(AuditLog, 'create', async (payload) => payload, patches);
+  patch(
+    Invocation,
+    'findOneAndUpdate',
+    async (_filter, update) => {
+      Object.assign(current, update.$set);
+      return current;
+    },
+    patches,
+  );
+  patch(
+    RuntimeWorkItem,
+    'findOneAndUpdate',
+    async () => {
+      throw new AppError(
+        503,
+        ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
+        'private provider output must not escape',
+      );
+    },
+    patches,
+  );
+  let cancellationCalls = 0;
+  patch(
+    serviceLifecycle,
+    'requestCancellation',
+    () => {
+      cancellationCalls += 1;
+      return { found: true, requested: true };
+    },
+    patches,
+  );
+  try {
+    const result = await requestCancellation(
+      IDS.invocation,
+      input({ reasonCode: 'USER_REQUESTED' }),
+      actor({ observer: { emit: (...entry) => events.push(entry) } }),
+    );
+    assert.equal(result.lifecycleState, 'cancelled');
+    assert.equal(result.cancellationState, 'confirmed');
+    assert.equal(result.localAbortRequested, true);
+    assert.equal(cancellationCalls, 1);
+    assert.ok(
+      events.some((entry) => entry[1] === 'invocation.cancel.durable_notification_deferred'),
+    );
+    assert.doesNotMatch(JSON.stringify(events), /private provider output/i);
   } finally {
     restore(patches);
   }

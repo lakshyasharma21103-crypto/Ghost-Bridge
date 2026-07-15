@@ -27,7 +27,7 @@ async function invokeConnection(request, response, next) {
         response.setHeader('X-Invocation-Id', invocationId);
       },
     });
-    response.json({ success: true, data });
+    response.status(data.workAccepted === true ? 202 : 200).json({ success: true, data });
   } catch (error) {
     next(error);
   }

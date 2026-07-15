@@ -100,6 +100,38 @@ const runtimeMaxConcurrentPerWorkspace = integerInRangeFromEnv(
   1,
   1_000,
 );
+const durableWorkerPollIntervalMs = integerInRangeFromEnv(
+  'DURABLE_WORKER_POLL_INTERVAL_MS',
+  1_000,
+  100,
+  60_000,
+);
+const durableWorkerBatchSize = integerInRangeFromEnv('DURABLE_WORKER_BATCH_SIZE', 5, 1, 100);
+const durableWorkerConcurrency = integerInRangeFromEnv(
+  'DURABLE_WORKER_CONCURRENCY',
+  3,
+  1,
+  50,
+);
+const durableWorkLeaseMs = integerInRangeFromEnv(
+  'DURABLE_WORK_LEASE_MS',
+  Math.min(3_600_000, runtimeInvocationTimeoutMs + 30_000),
+  1_000,
+  3_600_000,
+);
+const durableWorkHeartbeatMs = integerInRangeFromEnv(
+  'DURABLE_WORK_HEARTBEAT_MS',
+  30_000,
+  1_000,
+  300_000,
+);
+const durableWorkMaxAttempts = integerInRangeFromEnv('DURABLE_WORK_MAX_ATTEMPTS', 2, 1, 10);
+const durableWorkDeadLetterAfterAttempts = integerInRangeFromEnv(
+  'DURABLE_WORK_DEAD_LETTER_AFTER_ATTEMPTS',
+  3,
+  1,
+  20,
+);
 
 if (runtimeRetryMaxDelayMs < runtimeRetryBaseDelayMs) {
   throw new Error(
@@ -114,6 +146,24 @@ if (runtimeExecutionLeaseMs <= runtimeInvocationTimeoutMs) {
 if (runtimeMaxConcurrentPerWorkspace < runtimeMaxConcurrentPerConnection) {
   throw new Error(
     'RUNTIME_MAX_CONCURRENT_PER_WORKSPACE must be greater than or equal to RUNTIME_MAX_CONCURRENT_PER_CONNECTION',
+  );
+}
+
+if (durableWorkLeaseMs <= runtimeInvocationTimeoutMs) {
+  throw new Error('DURABLE_WORK_LEASE_MS must be greater than RUNTIME_INVOCATION_TIMEOUT_MS');
+}
+
+if (durableWorkHeartbeatMs * 3 > durableWorkLeaseMs) {
+  throw new Error('DURABLE_WORK_HEARTBEAT_MS must be at most one third of DURABLE_WORK_LEASE_MS');
+}
+
+if (durableWorkerBatchSize < durableWorkerConcurrency) {
+  throw new Error('DURABLE_WORKER_BATCH_SIZE must be greater than or equal to DURABLE_WORKER_CONCURRENCY');
+}
+
+if (durableWorkDeadLetterAfterAttempts < durableWorkMaxAttempts) {
+  throw new Error(
+    'DURABLE_WORK_DEAD_LETTER_AFTER_ATTEMPTS must be greater than or equal to DURABLE_WORK_MAX_ATTEMPTS',
   );
 }
 
@@ -151,6 +201,26 @@ const env = {
   RUNTIME_MAX_CONCURRENT_PER_WORKSPACE: runtimeMaxConcurrentPerWorkspace,
   SHUTDOWN_DRAIN_TIMEOUT_MS: integerInRangeFromEnv(
     'SHUTDOWN_DRAIN_TIMEOUT_MS',
+    30_000,
+    1_000,
+    300_000,
+  ),
+  DURABLE_WORKER_ENABLED: booleanFromEnv('DURABLE_WORKER_ENABLED', true),
+  DURABLE_WORKER_POLL_INTERVAL_MS: durableWorkerPollIntervalMs,
+  DURABLE_WORKER_BATCH_SIZE: durableWorkerBatchSize,
+  DURABLE_WORKER_CONCURRENCY: durableWorkerConcurrency,
+  DURABLE_WORK_LEASE_MS: durableWorkLeaseMs,
+  DURABLE_WORK_HEARTBEAT_MS: durableWorkHeartbeatMs,
+  DURABLE_WORK_ABANDONED_GRACE_MS: integerInRangeFromEnv(
+    'DURABLE_WORK_ABANDONED_GRACE_MS',
+    60_000,
+    1_000,
+    3_600_000,
+  ),
+  DURABLE_WORK_MAX_ATTEMPTS: durableWorkMaxAttempts,
+  DURABLE_WORK_DEAD_LETTER_AFTER_ATTEMPTS: durableWorkDeadLetterAfterAttempts,
+  DURABLE_WORK_SHUTDOWN_DRAIN_MS: integerInRangeFromEnv(
+    'DURABLE_WORK_SHUTDOWN_DRAIN_MS',
     30_000,
     1_000,
     300_000,

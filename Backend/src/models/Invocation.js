@@ -48,6 +48,16 @@ const invocationLifecycleTimestampsSchema = new mongoose.Schema(
   { _id: false, strict: 'throw' },
 );
 
+const encryptedExecutionPayloadSchema = new mongoose.Schema(
+  {
+    algorithm: { type: String, enum: ['aes-256-gcm'], required: true },
+    iv: { type: String, required: true, maxlength: 64 },
+    tag: { type: String, required: true, maxlength: 64 },
+    ciphertext: { type: String, required: true, maxlength: 2_000_000 },
+  },
+  { _id: false, strict: 'throw' },
+);
+
 const invocationSchema = new mongoose.Schema(
   {
     connectionId: {
@@ -65,6 +75,17 @@ const invocationSchema = new mongoose.Schema(
     receivingWorkspaceId: { type: String, required: true, trim: true, index: true },
     capability: { type: String, required: true, trim: true, index: true },
     inputSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
+    executionPayload: {
+      type: encryptedExecutionPayloadSchema,
+      select: false,
+    },
+    protectedReplayAvailable: { type: Boolean, default: false },
+    executionGeneration: { type: Number, default: 1, min: 1 },
+    currentWorkItemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'RuntimeWorkItem',
+      index: true,
+    },
     output: { type: mongoose.Schema.Types.Mixed },
     status: {
       type: String,

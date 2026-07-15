@@ -630,11 +630,12 @@ test('Gemini timeout metadata crosses the REST and API boundaries through strict
     safeRemoteError({
       error: {
         code: 'GEMINI_UPSTREAM_UNAVAILABLE',
+        operation: 'grounded_research',
         timeoutReason: 'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
         configuredTimeoutMs: 115_000,
       },
     }),
-    { code: 'GEMINI_UPSTREAM_UNAVAILABLE' },
+    { code: 'GEMINI_UPSTREAM_UNAVAILABLE', operation: 'grounded_research' },
   );
 
   const restore = patch(safeFetchUtility, 'safeFetch', async () => ({
@@ -698,6 +699,17 @@ test('Gemini timeout metadata crosses the REST and API boundaries through strict
   );
   assert.equal(JSON.stringify(response.body).includes(secret), false);
   assert.equal(JSON.stringify(response.body).includes('example.test'), false);
+
+  const unavailable = toApiErrorResponse(
+    new AppError(502, 'GEMINI_UPSTREAM_UNAVAILABLE', 'The provider is unavailable.', [], {
+      operation: 'grounded_research',
+      timeoutReason: 'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+      configuredTimeoutMs: 115_000,
+    }),
+  );
+  assert.equal(unavailable.body.error.operation, 'grounded_research');
+  assert.equal(Object.hasOwn(unavailable.body.error, 'timeoutReason'), false);
+  assert.equal(Object.hasOwn(unavailable.body.error, 'configuredTimeoutMs'), false);
 });
 
 test('backend shutdown drains active invocation tracking and closes HTTP plus database cleanly', async () => {
@@ -718,6 +730,37 @@ test('backend shutdown drains active invocation tracking and closes HTTP plus da
   const result = await runtime.shutdown('test');
   assert.equal(result.drained, true);
   assert.equal(runtime.server.listening, false);
+  assert.equal(disconnected, 1);
+  assert.equal(lifecycle.snapshot().phase, 'stopped');
+});
+
+test('backend startup closes the listener and database when durable index bootstrap fails', async () => {
+  const lifecycle = createServiceLifecycle();
+  const expected = new Error('durable index bootstrap failed');
+  let disconnected = 0;
+  let ensureCalls = 0;
+
+  await assert.rejects(
+    () =>
+      start({
+        port: 0,
+        host: '127.0.0.1',
+        lifecycle,
+        connectDatabase: async () => {},
+        databaseStatus: () => 'connected',
+        ensureDurableIndexes: async () => {
+          ensureCalls += 1;
+          throw expected;
+        },
+        disconnectDatabase: async () => {
+          disconnected += 1;
+        },
+        logger: { info() {}, warn() {}, error() {}, fatal() {} },
+      }),
+    (error) => error === expected,
+  );
+
+  assert.equal(ensureCalls, 1);
   assert.equal(disconnected, 1);
   assert.equal(lifecycle.snapshot().phase, 'stopped');
 });

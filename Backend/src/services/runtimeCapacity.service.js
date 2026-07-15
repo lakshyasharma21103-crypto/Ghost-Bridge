@@ -112,4 +112,23 @@ async function acquireRuntimeCapacity(connection, invocationId, options = {}) {
   return { workspaceId, connectionId, invocationId, leaseId, leaseExpiresAt, bypassed: false };
 }
 
-module.exports = { acquireRuntimeCapacity, releaseRuntimeCapacity };
+async function renewRuntimeCapacity(capacityLease, options = {}) {
+  if (!capacityLease || capacityLease.bypassed || !persistenceAvailable(options)) return null;
+  const now = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+  const leaseDurationMs = Number(options.leaseDurationMs || env.RUNTIME_EXECUTION_LEASE_MS);
+  const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs);
+  const result = await RuntimeCapacitySlot.updateMany(
+    {
+      workspaceId: capacityLease.workspaceId,
+      invocationId: capacityLease.invocationId,
+      leaseId: capacityLease.leaseId,
+      leaseExpiresAt: { $gt: now },
+    },
+    { $set: { leaseExpiresAt } },
+  );
+  if (Number(result.matchedCount || 0) < 2) return null;
+  capacityLease.leaseExpiresAt = leaseExpiresAt;
+  return { ...capacityLease, leaseExpiresAt };
+}
+
+module.exports = { acquireRuntimeCapacity, releaseRuntimeCapacity, renewRuntimeCapacity };

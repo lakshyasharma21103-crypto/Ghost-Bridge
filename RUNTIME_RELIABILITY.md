@@ -132,16 +132,22 @@ Protection API errors may include only established IDs plus `retryable`, `retryA
 state, and an allowlisted reason. They do not return endpoint URLs, credentials, prompts, inputs,
 outputs, raw remote messages, response headers, or sources.
 
-## Known limitations after Phase 13B3
+## Phase 13B4 integration and remaining limitations
 
-Without Redis, a queue, or workers, capacity is lease-based and work remains tied to an HTTP process.
-There is no durable scheduling, automatic failover, cross-region coordination, manual circuit reset,
-or automatic replay of ambiguous work. Phase 13B3 adds authorized cancellation, bounded stuck scans,
-and operator-controlled retry/resolution, but active `AbortController` state remains local to one
-process. Circuit state updates use optimistic version checks; a highly contended scope can reject an
-update after bounded retries rather than risk a lost update.
+Phase 13B4 adds MongoDB-backed WorkItems, a dedicated worker, durable retry scheduling, WorkItem and
+runtime-ownership heartbeats, abandonment recovery, and restart-safe cancellation state. Inline API
+execution also persists and claims a WorkItem before runtime execution. Active `AbortController` state
+remains process-local, but the database is authoritative and a replacement process must recheck
+cancellation, circuit, rate-limit, connection, capacity, and credential state.
 
-Two inherited Phase 13B2 persistence scopes remain explicit limitations:
+There is still no Redis or external broker, cross-region coordination, manual circuit reset, or
+automatic replay of ambiguous work. MongoDB polling provides discovery, and post-transmission
+uncertainty enters `recovery_required`. Circuit state updates use optimistic version checks; a highly
+contended scope can reject an update after bounded retries rather than risk a lost update. Full queue,
+lease, retry, shutdown, security, and exactly-once limitations are documented in
+`DURABLE_EXECUTION.md`.
+
+Two inherited Phase 13B2 persistence scopes remain explicit limitations unless separately migrated:
 
 - Workspace `RuntimeCapacitySlot` keys use the raw `receivingWorkspaceId` and do not include
   `partnerId`. Partners that independently choose the same workspace string can therefore contend for
@@ -151,12 +157,12 @@ Two inherited Phase 13B2 persistence scopes remain explicit limitations:
   in-process cleanup releases it, but a process crash or acknowledged-write ambiguity can strand the
   persisted in-flight probe marker. Phase 13B4 should add probe ownership, expiry, and safe reclaim.
 
-Control-plane `AuditLog` writes are also best-effort rather than transactionally coupled to invocation
-state. Invocation lifecycle/control fields remain authoritative; a transactional outbox and audit
-reconciliation are recommended before claiming compliance-grade complete audit delivery.
+Control-plane `AuditLog` writes are also best-effort rather than transactionally coupled to every
+Invocation transition. Phase 13B4's small durable event outbox preserves allowlisted queue evidence,
+but a compliance-grade external delivery consumer and reconciliation objective remain future work.
 
-Recommended Phase 13B4 or production-hardening work is a durable, tenant-fair execution queue with
-worker heartbeats, cross-replica cancellation, transactional capacity accounting, a versioned Agent
-Passport cancellation/idempotency protocol, controlled circuit administration with
-authorization/audit, and multi-region health aggregation. It should preserve the same Agent Passport
-and idempotency contracts and keep billable retry policy opt-in.
+Recommended Phase 13C hardening includes a versioned Agent Passport cancellation/idempotency/status
+protocol, separately authenticated workspace-operator roles, retention and key rotation for protected
+replay material, controlled circuit administration with authorization/audit, and multi-region
+availability planning. It should preserve the same Agent Passport and idempotency contracts and keep
+billable retry policy opt-in.

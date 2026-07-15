@@ -375,6 +375,13 @@ function createTimedSignal(parentSignal, timeoutMs) {
   };
 }
 
+function sdkHttpOptions(timeoutMs) {
+  return {
+    timeout: timeoutMs,
+    retryOptions: { attempts: 1 },
+  };
+}
+
 class GeminiProvider extends AIProvider {
   constructor(config, options = {}) {
     super();
@@ -539,7 +546,7 @@ class GeminiProvider extends AIProvider {
           contents: buildResearchInput(topic),
           config: {
             abortSignal: operationSignal,
-            httpOptions: { retryOptions: { attempts: 1 } },
+            httpOptions: sdkHttpOptions(this.researchTimeoutMs),
             systemInstruction: buildResearchInstruction(),
             maxOutputTokens: this.config.maxOutputTokens,
             temperature: 0.2,
@@ -630,7 +637,7 @@ class GeminiProvider extends AIProvider {
             contents: groundedText,
             config: {
               abortSignal: operationSignal,
-              httpOptions: { retryOptions: { attempts: 1 } },
+              httpOptions: sdkHttpOptions(this.formattingTimeoutMs),
               systemInstruction: buildFormattingInstruction(),
               maxOutputTokens: this.config.maxOutputTokens,
               temperature: 0.1,

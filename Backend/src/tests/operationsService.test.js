@@ -5,6 +5,8 @@ const AuditLog = require('../models/AuditLog');
 const OperationalAlert = require('../models/OperationalAlert');
 const PassportConnection = require('../models/PassportConnection');
 const PassportInstallKey = require('../models/PassportInstallKey');
+const DurableEventOutbox = require('../models/DurableEventOutbox');
+const durableWork = require('../services/durableWork.service');
 const {
   parseWindow,
   rate,
@@ -15,6 +17,7 @@ const {
   safeFailure,
   alertAuditSignals,
   alertRulesFromSignals,
+  durableAlertSignals,
   syncOperationalAlerts,
   getLatency,
   getErrors,
@@ -137,6 +140,193 @@ test('operational alert rules are deterministic and expose only safe aggregate v
   );
   assert.ok(first.some((rule) => rule.type === 'repeated_transient_invocation_failures'));
   assert.doesNotMatch(JSON.stringify(first), /payload|bearer\s|api[_-]?key|runtimeEndpoint/i);
+});
+
+test('durable queue and worker alerts cover bounded critical, warning and information conditions', () => {
+  const signals = {
+    readiness: { status: 'ready', database: 'connected', runtimeConfiguration: 'valid' },
+    invocations: {
+      total: 0,
+      successful: 0,
+      failed: 0,
+      recoveryRequired: 0,
+      failureRatePercent: 0,
+      attempts: {},
+    },
+    connections: {
+      active: 0,
+      health: { healthy: 0, degraded: 0, unhealthy: 0, unknown: 0 },
+    },
+    errors: { credentialFailures: 0, providerErrors: 0, timeoutFailures: 0 },
+    audit: { stuckByConnection: [] },
+    latency: { p95Ms: null },
+    funnel: {
+      totals: {
+        resolutionAttempts: 0,
+        resolutionFailures: 0,
+        resolutionSuccessRatePercent: 0,
+        reusedKeyRejections: 0,
+      },
+    },
+    protection: {
+      circuits: { open: 0, halfOpen: 0 },
+      rateLimitedConnections: 0,
+      capacity: {
+        activeInvocations: env.RUNTIME_MAX_CONCURRENT_PER_WORKSPACE,
+        activeSlots: env.RUNTIME_MAX_CONCURRENT_PER_WORKSPACE,
+        rejections: 3,
+      },
+      service: { phase: 'ready', draining: false },
+    },
+    durable: {
+      queue: {
+        counts: {
+          pending: 1,
+          retry_scheduled: Math.max(3, env.DURABLE_WORKER_BATCH_SIZE),
+          recovery_required: 1,
+          dead_lettered: 1,
+        },
+        dueExecutableCount: 1 + Math.max(3, env.DURABLE_WORKER_BATCH_SIZE),
+        abandonedLeaseCount: env.OPS_ALERT_LEASE_EXPIRY_COUNT,
+        oldestPendingAgeMs: Math.max(60_000, env.DURABLE_WORK_LEASE_MS),
+      },
+      workers: { activeWorkers: 0, readyWorkers: 0, drainingWorkers: 0, staleWorkers: 1 },
+      events: {
+        remoteExecutionLeaseLoss: env.OPS_ALERT_LEASE_EXPIRY_COUNT,
+        finalizationConsistencyFailure: 1,
+        reconciliationCreated: env.OPS_ALERT_RECOVERY_GROWTH_COUNT,
+        abandonedPreTransmissionRecovered: 1,
+        scheduledRetryCompleted: 1,
+      },
+    },
+  };
+  const rules = alertRulesFromSignals(signals);
+  const byType = new Map(rules.map((rule) => [rule.type, rule]));
+  for (const type of [
+    'durable_work_no_healthy_worker',
+    'durable_work_abandoned_leases_high',
+    'durable_remote_execution_lease_loss',
+    'durable_work_dead_letter_backlog',
+    'durable_work_finalization_consistency_failure',
+  ]) {
+    assert.equal(byType.get(type)?.severity, 'critical', type);
+  }
+  for (const type of [
+    'durable_work_oldest_pending_high',
+    'durable_worker_heartbeat_stale',
+    'durable_retry_backlog_elevated',
+    'durable_reconciliation_repeatedly_created_work',
+    'runtime_capacity_continuously_saturated',
+  ]) {
+    assert.equal(byType.get(type)?.severity, 'warning', type);
+  }
+  assert.equal(byType.get('durable_abandoned_work_safely_recovered')?.severity, 'info');
+  assert.equal(byType.get('durable_scheduled_retry_completed')?.severity, 'info');
+  assert.doesNotMatch(
+    JSON.stringify(rules),
+    /private prompt|private output|secret value|leaseToken|workerId|runtimeEndpoint|https?:\/\//i,
+  );
+});
+
+test('a draining-only worker fleet is not treated as able to claim pending work', () => {
+  const rules = alertRulesFromSignals({
+    readiness: { status: 'ready', database: 'connected', runtimeConfiguration: 'valid' },
+    invocations: { total: 0, failed: 0, recoveryRequired: 0, failureRatePercent: 0, attempts: {} },
+    connections: { active: 0, health: { healthy: 0, unhealthy: 0 } },
+    errors: { credentialFailures: 0, providerErrors: 0, timeoutFailures: 0 },
+    audit: { stuckByConnection: [] },
+    latency: { p95Ms: null },
+    funnel: { totals: {} },
+    protection: {
+      circuits: { open: 0, halfOpen: 0 },
+      rateLimitedConnections: 0,
+      service: { phase: 'ready', draining: false },
+      capacity: { activeInvocations: 0, activeSlots: 0, rejections: 0 },
+    },
+    durable: {
+      queue: { counts: { pending: 1 }, dueExecutableCount: 1 },
+      workers: { activeWorkers: 1, readyWorkers: 0, drainingWorkers: 1, staleWorkers: 0 },
+      events: {},
+    },
+  });
+  const types = new Set(rules.map((rule) => rule.type));
+  assert.equal(types.has('durable_work_no_healthy_worker'), true);
+  assert.equal(types.has('durable_worker_available'), false);
+  assert.equal(types.has('durable_worker_draining'), true);
+});
+
+test('future scheduled retries do not trigger a no-worker alert before they are due', () => {
+  const rules = alertRulesFromSignals({
+    readiness: { status: 'ready', database: 'connected', runtimeConfiguration: 'valid' },
+    invocations: { total: 0, failed: 0, recoveryRequired: 0, failureRatePercent: 0, attempts: {} },
+    connections: { active: 0, health: { healthy: 0, unhealthy: 0 } },
+    errors: { credentialFailures: 0, providerErrors: 0, timeoutFailures: 0 },
+    audit: { stuckByConnection: [] },
+    latency: { p95Ms: null },
+    funnel: { totals: {} },
+    protection: {
+      circuits: { open: 0, halfOpen: 0 },
+      rateLimitedConnections: 0,
+      service: { phase: 'ready', draining: false },
+      capacity: { activeInvocations: 0, activeSlots: 0, rejections: 0 },
+    },
+    durable: {
+      queue: { counts: { retry_scheduled: 4 }, dueExecutableCount: 0 },
+      workers: { activeWorkers: 0, readyWorkers: 0, drainingWorkers: 0, staleWorkers: 0 },
+      events: {},
+    },
+  });
+
+  assert.equal(
+    rules.some((rule) => rule.type === 'durable_work_no_healthy_worker'),
+    false,
+  );
+});
+
+test('durable alert signals query only the authenticated partner and workspace', async () => {
+  const originalMetrics = durableWork.durableWorkMetrics;
+  const originalWorkers = durableWork.aggregateWorkerHealth;
+  const originalAggregate = DurableEventOutbox.aggregate;
+  const partnerId = '64b000000000000000000001';
+  let metricsInput;
+  let pipeline;
+  try {
+    durableWork.durableWorkMetrics = async (input) => {
+      metricsInput = input;
+      return {
+        counts: { pending: 1 },
+        dueExecutableCount: 1,
+        abandonedLeaseCount: 0,
+        oldestPendingAgeMs: 0,
+      };
+    };
+    durableWork.aggregateWorkerHealth = async () => ({
+      status: 'healthy',
+      activeWorkers: 1,
+      readyWorkers: 1,
+      drainingWorkers: 0,
+      staleWorkers: 0,
+    });
+    DurableEventOutbox.aggregate = async (value) => {
+      pipeline = value;
+      return [{ reconciliationCreated: 1, scheduledRetryCompleted: 1 }];
+    };
+    const window = parseWindow('24h', new Date('2030-01-01T00:00:00Z'));
+    const result = await durableAlertSignals('workspace-a', window, {
+      partner: { _id: partnerId },
+    });
+    assert.deepEqual(metricsInput, { partnerId, receivingWorkspaceId: 'workspace-a' });
+    assert.equal(String(pipeline[0].$match.partnerId), partnerId);
+    assert.equal(pipeline[0].$match.receivingWorkspaceId, 'workspace-a');
+    assert.deepEqual(pipeline[0].$match.createdAt, { $gte: window.since });
+    assert.equal(result.workers.activeWorkers, 1);
+    assert.equal(result.events.reconciliationCreated, 1);
+    assert.equal(result.events.scheduledRetryCompleted, 1);
+  } finally {
+    durableWork.durableWorkMetrics = originalMetrics;
+    durableWork.aggregateWorkerHealth = originalWorkers;
+    DurableEventOutbox.aggregate = originalAggregate;
+  }
 });
 
 test('repeated-stuck alerts are evaluated independently for each safe connection scope', () => {

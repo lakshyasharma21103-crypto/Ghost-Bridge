@@ -23,9 +23,11 @@ const {
   isDuplicateKeyError,
 } = require('../utils/idempotency');
 const { env } = require('../config/env');
+const { databaseStatus } = require('../config/db');
 const {
   initialLifecycleFields,
   claimInvocationExecution,
+  renewInvocationExecutionLease,
   transitionInvocation,
   transitionUpdate,
 } = require('./invocationLifecycle.service');
@@ -40,7 +42,11 @@ const {
   recordCircuitSuccess,
   releaseCircuitProbe,
 } = require('./circuitBreaker.service');
-const { acquireRuntimeCapacity, releaseRuntimeCapacity } = require('./runtimeCapacity.service');
+const {
+  acquireRuntimeCapacity,
+  releaseRuntimeCapacity,
+  renewRuntimeCapacity,
+} = require('./runtimeCapacity.service');
 const {
   currentHealth,
   recordConnectionFailure,
@@ -48,12 +54,394 @@ const {
 } = require('./connectionHealth.service');
 const { serviceLifecycle } = require('./serviceLifecycle.service');
 const { serializeOperationalInvocation } = require('../utils/invocationControlView');
+const { decryptPayload, encryptPayload } = require('../utils/crypto');
+const {
+  deadLetterWork,
+  enqueueWork,
+  finalizeWork,
+  getOwnedWorkControlState,
+  heartbeatWork,
+  persistWorkOutboxEvent,
+  recordMilestone,
+  scheduleRetry,
+  startWork,
+} = require('./durableWork.service');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 
 function idOf(value) {
   return String(value?._id || value?.id || value || '');
+}
+
+function combineAbortSignals(signals) {
+  const active = signals.filter((signal) => signal && typeof signal.addEventListener === 'function');
+  if (!active.length) return undefined;
+  if (active.length === 1) return active[0];
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(active);
+  const controller = new AbortController();
+  const abort = (signal) => {
+    if (!controller.signal.aborted) controller.abort(signal.reason);
+  };
+  for (const signal of active) {
+    if (signal.aborted) {
+      abort(signal);
+      break;
+    }
+    signal.addEventListener('abort', () => abort(signal), { once: true });
+  }
+  return controller.signal;
+}
+
+const DURABLE_PROGRESS_MILESTONES = Object.freeze({
+  authorized: 'validation_completed',
+  credentials_loaded: 'credentials_loaded',
+  outbound_request_started: 'outbound_transmission_started',
+  remote_response_received: 'outbound_response_received',
+  response_validated: 'response_validated',
+  finalization_started: 'finalization_started',
+  invocation_persisted: 'invocation_persisted',
+});
+
+function durablePersistenceAvailable() {
+  return databaseStatus() === 'connected';
+}
+
+function durablePersistenceRequired(actor = {}) {
+  return actor.requireDurablePersistence === true || env.NODE_ENV === 'production';
+}
+
+function durableUnavailableError() {
+  return new AppError(
+    503,
+    ErrorCodes.DURABLE_WORK_RECONCILIATION_FAILED,
+    'Durable execution persistence is temporarily unavailable.',
+    [],
+    { reasonCode: 'DURABLE_DATABASE_UNAVAILABLE' },
+  );
+}
+
+function durableLeaseError(workItemId, reasonCode = 'DURABLE_WORK_OWNERSHIP_LOST') {
+  return new AppError(
+    409,
+    ErrorCodes.DURABLE_WORK_LEASE_LOST,
+    'Durable execution ownership was lost.',
+    [],
+    { workItemId: idOf(workItemId), reasonCode },
+  );
+}
+
+async function initializeDurableWork({ invocation, connection, actor }) {
+  if (actor.durableWorkItemId) {
+    if (
+      !actor.durableWorkOwnership?.leaseOwner ||
+      !actor.durableWorkOwnership?.leaseToken
+    ) {
+      throw durableLeaseError(actor.durableWorkItemId, 'DURABLE_WORK_OWNERSHIP_REQUIRED');
+    }
+    return {
+      workItemId: actor.durableWorkItemId,
+      ownership: actor.durableWorkOwnership,
+      attemptNumber: Number(actor.durableAttemptNumber || 1),
+      executionGeneration: Number(actor.executionGeneration || invocation.executionGeneration || 1),
+      maximumAttempts: Number(actor.durableMaximumAttempts || env.DURABLE_WORK_MAX_ATTEMPTS),
+      heartbeatManaged: actor.durableHeartbeatManaged === true,
+    };
+  }
+
+  if (!durablePersistenceAvailable()) {
+    if (durablePersistenceRequired(actor)) throw durableUnavailableError();
+    return null;
+  }
+
+  const attemptNumber = Math.max(1, Number(invocation.attemptCount || 0) + 1);
+  const executionGeneration = Math.max(1, Number(invocation.executionGeneration || 1));
+  const workType = actor.recoveryParentInvocationId ? 'recovery_retry' : 'runtime_invocation';
+  const leaseOwner = `api:${crypto.randomUUID()}`;
+  // Claim in the same atomic upsert that creates synchronous work. A dedicated worker can
+  // therefore never steal a newly accepted request between enqueue/link/outbox writes and
+  // unexpectedly change the established synchronous invocation contract into a 202 response.
+  const enqueued = await enqueueWork(
+    {
+      partnerId: connection.partnerId,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      invocationId: invocation._id,
+      connectionId: connection._id,
+      attemptNumber,
+      workType,
+      executionGeneration,
+      traceId: invocation.traceId || actor.traceId,
+      maximumAttempts: env.DURABLE_WORK_MAX_ATTEMPTS,
+      safeOperation: workType,
+    },
+    {
+      initialClaim: {
+        leaseOwner,
+        leaseMs: env.DURABLE_WORK_LEASE_MS,
+      },
+    },
+  );
+  const workItemId = idOf(enqueued.workItem);
+  const linked = await Invocation.findOneAndUpdate(
+    {
+      _id: invocation._id,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      lifecycleState: { $in: ['accepted', 'validating', 'authorized'] },
+    },
+    { $set: { currentWorkItemId: enqueued.workItem._id } },
+    { new: true, runValidators: true },
+  );
+  if (!linked) {
+    throw new AppError(
+      409,
+      ErrorCodes.DURABLE_WORK_RECONCILIATION_FAILED,
+      'Invocation changed before durable work could be linked.',
+      [],
+      { invocationId: idOf(invocation), workItemId, reasonCode: 'WORK_LINK_CONFLICT' },
+    );
+  }
+  await persistWorkOutboxEvent(enqueued.workItem, 'invocation.accepted', {
+    workStatus: enqueued.workItem.status,
+    attemptNumber,
+    executionGeneration,
+  });
+  if (!enqueued.ownership) {
+    return {
+      workItemId,
+      awaitingOwner: true,
+      invocation: linked,
+      attemptNumber,
+      executionGeneration,
+      maximumAttempts: env.DURABLE_WORK_MAX_ATTEMPTS,
+    };
+  }
+  const started = await startWork(workItemId, enqueued.ownership);
+  return {
+    workItemId,
+    ownership: enqueued.ownership,
+    attemptNumber: Number(started.workItem.attemptNumber),
+    executionGeneration: Number(started.workItem.executionGeneration),
+    maximumAttempts: Number(started.workItem.maximumAttempts),
+    heartbeatManaged: false,
+  };
+}
+
+function durableCancellationError(reasonCode) {
+  return new AppError(
+    409,
+    ErrorCodes.INVOCATION_CANCELLED,
+    'Invocation cancellation was requested.',
+    [],
+    { reasonCode: reasonCode || 'DURABLE_CANCELLATION_REQUESTED' },
+  );
+}
+
+function recoveryReasonForDurableFailure({
+  externalCallStarted,
+  responseValidated,
+  finalizationConsistencyLost,
+}) {
+  if (finalizationConsistencyLost) return 'RESULT_PERSISTENCE_UNCERTAIN';
+  if (responseValidated) return 'RESULT_PERSISTENCE_UNCERTAIN';
+  if (externalCallStarted) return 'WORKER_LOST_DURING_REMOTE_EXECUTION';
+  return 'LEASE_EXPIRED_BEFORE_TRANSMISSION';
+}
+
+function attachDurableExecutionActor(actor, durableContext) {
+  if (!durableContext) {
+    return { actor, stopHeartbeat: async () => undefined };
+  }
+  const controller = new AbortController();
+  const upstreamProgress = actor.onDurableProgress;
+  const upstreamExecutionClaimed = actor.onExecutionClaimed;
+  let runtimeOwnership;
+  let heartbeatTimer;
+  let heartbeatPromise;
+  let heartbeatFailure;
+
+  async function assertWorkControl() {
+    if (heartbeatFailure) throw heartbeatFailure;
+    const state = await getOwnedWorkControlState(
+      durableContext.workItemId,
+      durableContext.ownership,
+    );
+    if (state.cancellationRequested) {
+      throw durableCancellationError(state.cancellationReasonCode);
+    }
+    return state;
+  }
+
+  async function persistMilestone(stage, at) {
+    await assertWorkControl();
+    const name = DURABLE_PROGRESS_MILESTONES[stage];
+    if (name) {
+      await recordMilestone(
+        durableContext.workItemId,
+        durableContext.ownership,
+        {
+          name,
+          at,
+          attemptNumber: durableContext.attemptNumber,
+          safeStatus: 'completed',
+        },
+      );
+    }
+    await upstreamProgress?.(stage, at);
+  }
+
+  async function heartbeat() {
+    try {
+      const result = await heartbeatWork(
+        durableContext.workItemId,
+        durableContext.ownership,
+        { leaseMs: env.DURABLE_WORK_LEASE_MS },
+      );
+      if (result.cancellationRequested) {
+        throw durableCancellationError(result.workItem.cancellationReasonCode);
+      }
+      if (runtimeOwnership) {
+        const renewed = await renewRuntimeExecutionOwnership(runtimeOwnership, {
+          leaseDurationMs: env.DURABLE_WORK_LEASE_MS,
+        });
+        if (!renewed) {
+          const terminalInvocation = await Invocation.findOne({
+            _id: runtimeOwnership.invocationId,
+            receivingWorkspaceId: runtimeOwnership.receivingWorkspaceId,
+            lifecycleState: {
+              $in: ['succeeded', 'failed', 'cancelled', 'timed_out', 'recovery_required'],
+            },
+          })
+            .select('_id lifecycleState')
+            .lean();
+          if (terminalInvocation) {
+            runtimeOwnership = undefined;
+            return;
+          }
+          throw durableLeaseError(
+            durableContext.workItemId,
+            'RUNTIME_EXECUTION_OWNERSHIP_LOST',
+          );
+        }
+        runtimeOwnership = renewed;
+      }
+    } catch (error) {
+      heartbeatFailure =
+        error instanceof AppError
+          ? error
+          : durableLeaseError(durableContext.workItemId, 'DURABLE_HEARTBEAT_FAILED');
+      if (!controller.signal.aborted) controller.abort(heartbeatFailure);
+    }
+  }
+
+  if (!durableContext.heartbeatManaged) {
+    heartbeatTimer = setInterval(() => {
+      if (!heartbeatPromise) {
+        heartbeatPromise = heartbeat().finally(() => {
+          heartbeatPromise = undefined;
+        });
+      }
+    }, env.DURABLE_WORK_HEARTBEAT_MS);
+    heartbeatTimer.unref?.();
+  }
+
+  const durableActor = {
+    ...actor,
+    signal: combineAbortSignals([actor.signal, controller.signal]),
+    durableWorkItemId: durableContext.workItemId,
+    durableWorkOwnership: durableContext.ownership,
+    durableAttemptNumber: durableContext.attemptNumber,
+    durableMaximumAttempts: durableContext.maximumAttempts,
+    executionGeneration: durableContext.executionGeneration,
+    executionOwner: durableContext.ownership.leaseOwner,
+    runtimeProtectionOptions: {
+      ...(actor.runtimeProtectionOptions || {}),
+      forcePersistence: true,
+    },
+    onDurableProgress: persistMilestone,
+    async onExecutionClaimed(ownership) {
+      runtimeOwnership = ownership;
+      await upstreamExecutionClaimed?.(ownership);
+    },
+  };
+
+  return {
+    actor: durableActor,
+    async stopHeartbeat() {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (heartbeatPromise) await heartbeatPromise;
+    },
+  };
+}
+
+async function settleDurableFailure(durableContext, runtimeError, options = {}) {
+  if (!durableContext) return;
+  if (
+    [
+      ErrorCodes.DURABLE_WORK_LEASE_LOST,
+      ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
+    ].includes(runtimeError?.code)
+  ) {
+    return;
+  }
+  try {
+    if (options.retryDecision?.allowed === true) {
+      await scheduleRetry(
+        durableContext.workItemId,
+        durableContext.ownership,
+        {
+          errorCode: runtimeError?.code || ErrorCodes.INTERNAL_SERVER_ERROR,
+          retryable: runtimeError?.retryable === true,
+          operation: 'runtime_invocation',
+        },
+        { retryDecisionEvaluator: async () => options.retryDecision },
+      );
+      return;
+    }
+    if (options.deadLetterDisposition === true) {
+      await deadLetterWork(durableContext.workItemId, durableContext.ownership, {
+        reasonCode: runtimeError?.code || 'DURABLE_WORK_EXECUTION_FAILED',
+      });
+      return;
+    }
+    if (options.recoveryRequired === true) {
+      await finalizeWork(
+        durableContext.workItemId,
+        durableContext.ownership,
+        {
+          status: 'recovery_required',
+          lastErrorCode: runtimeError?.code || ErrorCodes.INTERNAL_SERVER_ERROR,
+          retryDecisionReason: options.retryDecision?.reason || 'REMOTE_OUTCOME_UNKNOWN',
+          recoveryReasonCode: recoveryReasonForDurableFailure(options),
+        },
+      );
+      return;
+    }
+    if (runtimeError?.code === ErrorCodes.INVOCATION_CANCELLED) {
+      await finalizeWork(durableContext.workItemId, durableContext.ownership, {
+        status: 'cancelled',
+        lastErrorCode: ErrorCodes.INVOCATION_CANCELLED,
+        retryDecisionReason: 'INVOCATION_CANCELLED',
+      });
+      return;
+    }
+    if (
+      options.externalCallStarted !== true &&
+      durableContext.attemptNumber >= durableContext.maximumAttempts
+    ) {
+      await deadLetterWork(durableContext.workItemId, durableContext.ownership, {
+        reasonCode: runtimeError?.code || 'DURABLE_WORK_EXECUTION_FAILED',
+      });
+      return;
+    }
+    await finalizeWork(durableContext.workItemId, durableContext.ownership, {
+      status: 'failed',
+      lastErrorCode: runtimeError?.code || ErrorCodes.INTERNAL_SERVER_ERROR,
+      retryDecisionReason: options.retryDecision?.reason || 'RETRY_NOT_ALLOWED',
+    });
+  } catch (settlementError) {
+    runtimeError.durableSettlementErrorCode =
+      settlementError?.code || ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT;
+  }
 }
 
 function requireString(value, path) {
@@ -275,6 +663,10 @@ async function persistInvocationProgress({
   connection,
   actor,
   extra = {},
+  executionOwner,
+  executionLeaseId,
+  requirePersistence = false,
+  onProgress,
 }) {
   if (!invocation) return invocation;
   const at = new Date();
@@ -286,6 +678,13 @@ async function persistInvocationProgress({
         lifecycleState: {
           $in: ['accepted', 'validating', 'authorized', 'running', 'waiting_for_runtime'],
         },
+        ...(executionOwner && executionLeaseId
+          ? {
+              executionOwner,
+              executionLeaseId,
+              executionLeaseExpiresAt: { $gt: at },
+            }
+          : {}),
       },
       {
         $set: {
@@ -299,7 +698,18 @@ async function persistInvocationProgress({
       },
       { new: true, runValidators: true },
     );
-    if (!updated) return invocation;
+    if (!updated) {
+      if (requirePersistence) {
+        throw new AppError(
+          409,
+          ErrorCodes.DURABLE_WORK_LEASE_LOST,
+          'Durable execution ownership was lost before progress could be recorded.',
+          [],
+          { invocationId: idOf(invocation), reasonCode: 'DURABLE_WORK_OWNERSHIP_LOST' },
+        );
+      }
+      return invocation;
+    }
     observer?.emit?.('info', 'invocation.progress.updated', {
       invocationId: idOf(invocation),
       stage,
@@ -315,8 +725,10 @@ async function persistInvocationProgress({
         metadata: { reasonCode: 'PROGRESS_STAGE_CHANGED', stage },
       });
     }
+    await onProgress?.(stage, at);
     return updated;
   } catch (error) {
+    if (requirePersistence) throw error;
     observer?.emit?.('warn', 'persistence.invocation_progress.failed', {
       invocationId: idOf(invocation),
       stage,
@@ -422,7 +834,7 @@ async function queryWithPrivateInvocationFields(filter) {
   const selected =
     typeof query?.select === 'function'
       ? query.select(
-          '+idempotencyKeyHash +requestFingerprint +idempotencyScope +executionLeaseId +executionLeaseExpiresAt +executionOwner',
+          '+idempotencyKeyHash +requestFingerprint +idempotencyScope +executionLeaseId +executionLeaseExpiresAt +executionOwner +executionPayload',
         )
       : query;
   if (typeof selected?.exec === 'function') return selected.exec();
@@ -463,6 +875,8 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
       inputSummary: actor.recoveryParentInvocationId
         ? { recoveryReplay: true }
         : redactSecrets(input),
+      executionPayload: encryptPayload({ input }),
+      protectedReplayAvailable: true,
       runtimeType: connection.runtimeType,
       traceId: actor.traceId,
       requestId: actor.requestId,
@@ -515,15 +929,92 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
   return { invocation: existing, idempotency, replayed: true };
 }
 
+async function loadReservedInvocation({ connection, capabilityName, actor }) {
+  const invocation = await queryWithPrivateInvocationFields({
+    _id: actor.durableInvocationId,
+    connectionId: connection._id,
+    receivingWorkspaceId: connection.receivingWorkspaceId,
+  });
+  if (!invocation) {
+    throw new AppError(404, ErrorCodes.INVOCATION_NOT_FOUND, 'Invocation was not found.');
+  }
+  if (invocation.capability !== capabilityName) {
+    throw new AppError(
+      409,
+      ErrorCodes.IDEMPOTENCY_CONFLICT,
+      'Durable invocation capability no longer matches the accepted request.',
+    );
+  }
+  if (!['accepted', 'validating', 'authorized'].includes(invocation.lifecycleState)) {
+    throw new AppError(
+      409,
+      ErrorCodes.INVOCATION_CONCURRENT_CLAIM_REJECTED,
+      'Durable invocation is not in an executable state.',
+      [],
+      { invocationId: idOf(invocation), lifecycleState: invocation.lifecycleState },
+    );
+  }
+  const durableAttemptNumber = Number(actor.durableAttemptNumber);
+  const expectedAttemptNumber = Number(invocation.attemptCount || 0) + 1;
+  if (
+    invocation.protectedReplayAvailable !== true ||
+    idOf(invocation.currentWorkItemId) !== idOf(actor.durableWorkItemId) ||
+    Number(invocation.executionGeneration || 1) !== Number(actor.executionGeneration || 1) ||
+    durableAttemptNumber !== expectedAttemptNumber ||
+    (expectedAttemptNumber > 1 && invocation.retryState !== 'scheduled')
+  ) {
+    throw new AppError(
+      409,
+      ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
+      'Durable invocation and work execution are not aligned.',
+      [],
+      {
+        invocationId: idOf(invocation),
+        workItemId: idOf(actor.durableWorkItemId),
+        reasonCode: 'DURABLE_ATTEMPT_MISMATCH',
+      },
+    );
+  }
+  let durableInput;
+  try {
+    durableInput = decryptPayload(invocation.executionPayload)?.input;
+  } catch (error) {
+    throw new AppError(
+      500,
+      ErrorCodes.ENCRYPTION_CONFIGURATION_INVALID,
+      'Durable invocation input could not be loaded.',
+      [],
+      { cause: error, invocationId: idOf(invocation) },
+    );
+  }
+  return {
+    invocation,
+    input: durableInput,
+    idempotency: {
+      scope: invocation.idempotencyScope,
+      keyHash: invocation.idempotencyKeyHash,
+      requestFingerprint: invocation.requestFingerprint,
+      clientProvided: invocation.clientIdempotencyProvided === true,
+    },
+    replayed: false,
+    resumed: true,
+  };
+}
+
 async function startInvocationAttempt({
   invocation,
   connection,
   idempotency,
   executionLeaseId,
+  executionLeaseExpiresAt,
+  executionOwner,
   actor,
   observer,
 }) {
-  if ((invocation.attemptCount || 0) >= env.RUNTIME_RETRY_MAX_ATTEMPTS) {
+  const maximumAttempts = Number(
+    actor.durableMaximumAttempts || env.RUNTIME_RETRY_MAX_ATTEMPTS,
+  );
+  if ((invocation.attemptCount || 0) >= maximumAttempts) {
     throw new AppError(
       409,
       ErrorCodes.INVOCATION_ATTEMPT_LIMIT_REACHED,
@@ -536,6 +1027,7 @@ async function startInvocationAttempt({
       receivingWorkspaceId: connection.receivingWorkspaceId,
       lifecycleState: 'running',
       executionLeaseId,
+      ...(executionOwner ? { executionOwner } : {}),
     },
     { $inc: { attemptCount: 1 } },
     { new: true, runValidators: true },
@@ -554,6 +1046,13 @@ async function startInvocationAttempt({
     receivingWorkspaceId: connection.receivingWorkspaceId,
     connectionId: connection._id,
     attemptNumber,
+    ...(actor.durableWorkItemId ? { workItemId: actor.durableWorkItemId } : {}),
+    ...(Number.isInteger(actor.executionGeneration)
+      ? { executionGeneration: actor.executionGeneration }
+      : {}),
+    ...(executionOwner ? { executionOwner } : {}),
+    ...(executionLeaseId ? { executionLeaseId } : {}),
+    ...(executionLeaseExpiresAt ? { executionLeaseExpiresAt } : {}),
     status: 'started',
     startedAt,
     traceId: actor.traceId,
@@ -606,9 +1105,20 @@ async function finishInvocationAttempt({
   connection,
   invocation,
   observer,
+  executionOwner,
+  executionLeaseId,
 }) {
   if (!INVOCATION_ATTEMPT_STATUSES.includes(status) || status === 'started') {
     throw new TypeError('Attempt completion status is invalid.');
+  }
+  if (actor.durableWorkItemId && actor.durableWorkOwnership) {
+    const control = await getOwnedWorkControlState(
+      actor.durableWorkItemId,
+      actor.durableWorkOwnership,
+    );
+    if (control.cancellationRequested && status === 'succeeded') {
+      throw durableCancellationError(control.cancellationReasonCode);
+    }
   }
   const completedAt = new Date();
   const completion = {
@@ -628,11 +1138,41 @@ async function finishInvocationAttempt({
       : { retryDecision: 'not_evaluated' }),
   };
   const completedAttempt = await InvocationAttempt.findOneAndUpdate(
-    { _id: attempt._id, status: 'started' },
+    {
+      _id: attempt._id,
+      status: 'started',
+      ...(executionOwner && executionLeaseId
+        ? {
+            executionOwner,
+            executionLeaseId,
+            executionLeaseExpiresAt: { $gt: completedAt },
+          }
+        : {}),
+    },
     { $set: completion },
     { new: true, runValidators: true },
   );
   if (!completedAttempt) {
+    if (executionOwner && executionLeaseId) {
+      const alreadyCompleted = await InvocationAttempt.findOne({
+        _id: attempt._id,
+        status,
+        executionOwner,
+        executionLeaseId,
+      }).select('+executionOwner +executionLeaseId');
+      if (alreadyCompleted) return alreadyCompleted;
+      throw new AppError(
+        409,
+        ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
+        'Invocation attempt could not be finalized by the current durable owner.',
+        [],
+        {
+          invocationId: idOf(invocation),
+          attemptNumber: attempt.attemptNumber,
+          reasonCode: 'ATTEMPT_FINALIZATION_OWNERSHIP_MISMATCH',
+        },
+      );
+    }
     observer.emit('info', 'invocation.attempt.terminal_preserved', {
       invocationId: idOf(invocation),
       attemptNumber: attempt.attemptNumber,
@@ -668,6 +1208,67 @@ async function finishInvocationAttempt({
   return completedAttempt;
 }
 
+async function renewRuntimeExecutionOwnership(ownership, options = {}) {
+  if (
+    !ownership?.invocationId ||
+    !ownership?.receivingWorkspaceId ||
+    !ownership?.executionOwner ||
+    !ownership?.executionLeaseId ||
+    !ownership?.attemptId ||
+    !ownership?.capacityLease
+  ) {
+    return null;
+  }
+  const now = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
+  const leaseDurationMs = Number(
+    options.leaseDurationMs || env.DURABLE_WORK_LEASE_MS || env.RUNTIME_EXECUTION_LEASE_MS,
+  );
+  const renewedInvocation = await renewInvocationExecutionLease({
+    invocationId: ownership.invocationId,
+    receivingWorkspaceId: ownership.receivingWorkspaceId,
+    executionOwner: ownership.executionOwner,
+    executionLeaseId: ownership.executionLeaseId,
+    now,
+    leaseDurationMs,
+  });
+  if (!renewedInvocation) return null;
+  let attempt = await InvocationAttempt.findOneAndUpdate(
+    {
+      _id: ownership.attemptId,
+      status: 'started',
+      executionOwner: ownership.executionOwner,
+      executionLeaseId: ownership.executionLeaseId,
+      executionLeaseExpiresAt: { $gt: now },
+    },
+    { $set: { executionLeaseExpiresAt: renewedInvocation.executionLeaseExpiresAt } },
+    { new: true, runValidators: true },
+  );
+  if (!attempt) {
+    // A heartbeat can race the ownership-checked attempt terminal write immediately before the
+    // Invocation terminal write. A terminal attempt with the same private owner and lease is not
+    // evidence of ownership loss; it simply no longer needs renewal.
+    attempt = await InvocationAttempt.findOne({
+      _id: ownership.attemptId,
+      status: { $ne: 'started' },
+      executionOwner: ownership.executionOwner,
+      executionLeaseId: ownership.executionLeaseId,
+    }).select('+executionOwner +executionLeaseId');
+    if (!attempt) return null;
+  }
+  const capacityLease = await renewRuntimeCapacity(ownership.capacityLease, {
+    ...options,
+    now,
+    leaseDurationMs,
+    forcePersistence: true,
+  });
+  if (!capacityLease) return null;
+  return {
+    ...ownership,
+    capacityLease,
+    executionLeaseExpiresAt: renewedInvocation.executionLeaseExpiresAt,
+  };
+}
+
 function ambiguousRuntimeOutcome(error, execution = {}) {
   if (error?.recoveryRequired === true) return true;
   if (execution.responsePersistenceUncertain === true) return true;
@@ -676,6 +1277,9 @@ function ambiguousRuntimeOutcome(error, execution = {}) {
     ErrorCodes.SAFE_FETCH_TIMEOUT,
     ErrorCodes.SAFE_FETCH_FAILED,
     ErrorCodes.SAFE_FETCH_RESPONSE_TOO_LARGE,
+    ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION,
+    ErrorCodes.DURABLE_WORK_LEASE_LOST,
+    ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
   ].includes(error?.code);
 }
 
@@ -835,11 +1439,24 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
   let attempt;
   let attemptNumber = 0;
   let externalCallStarted = false;
+  let remoteResponseReceived = false;
   let responseValidated = false;
   let circuitEvaluation;
   let circuitProbeSettled = false;
   let capacityLease;
   let lifecycleRegistration;
+  let executionSignal;
+  let executionOwner;
+  let executionLeaseId;
+  let durableContext;
+  let stopDurableHeartbeat = async () => undefined;
+  let durableFailureSettled = false;
+  const progressPersistenceOptions = () => ({
+    executionOwner,
+    executionLeaseId,
+    requirePersistence: Boolean(actor.durableWorkItemId),
+    onProgress: actor.onDurableProgress,
+  });
   observer.emit('info', 'runtime.invocation.started', { status: 'started' });
   try {
     const normalizedCapabilityName = await observer.stage('request_validation', async () =>
@@ -850,16 +1467,23 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     auditActor = actorFor(connection, actor);
 
     const reservation = await observer.stage('invocation_persistence', () =>
-      reserveInvocation({
-        connection,
-        capabilityName: normalizedCapabilityName,
-        input,
-        actor,
-        observer,
-      }),
+      actor.durableInvocationId
+        ? loadReservedInvocation({
+            connection,
+            capabilityName: normalizedCapabilityName,
+            actor,
+          })
+        : reserveInvocation({
+            connection,
+            capabilityName: normalizedCapabilityName,
+            input,
+            actor,
+            observer,
+          }),
     );
     invocation = reservation.invocation;
     idempotency = reservation.idempotency;
+    if (reservation.resumed) input = reservation.input;
     observer = observer.child({ invocationId: idOf(invocation) });
     if (reservation.replayed) {
       await actor.onInvocationCreated?.(idOf(invocation));
@@ -873,6 +1497,24 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       };
     }
 
+    durableContext = await observer.stage('invocation_persistence', () =>
+      initializeDurableWork({ invocation, connection, actor }),
+    );
+    if (durableContext) {
+      if (durableContext.awaitingOwner) {
+        await actor.onInvocationCreated?.(idOf(invocation));
+        return {
+          ...serializeInvocation(durableContext.invocation || invocation),
+          workAccepted: true,
+          executionDelegated: true,
+          idempotencyReplayed: false,
+        };
+      }
+      const attached = attachDurableExecutionActor(actor, durableContext);
+      actor = attached.actor;
+      stopDurableHeartbeat = attached.stopHeartbeat;
+    }
+
     lifecycleRegistration = serviceLifecycle.registerInvocation(idOf(invocation), {
       workspaceId: connection.receivingWorkspaceId,
       connectionId: idOf(connection),
@@ -882,43 +1524,53 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     if (lifecycleRegistration.signal.aborted) {
       throw lifecycleRegistration.signal.reason;
     }
+    executionSignal = combineAbortSignals([lifecycleRegistration.signal, actor.signal]);
+    if (executionSignal?.aborted) throw executionSignal.reason;
 
-    observer.emit('info', 'invocation.state.changed', {
-      fromState: null,
-      toState: 'accepted',
-      reasonCode: 'INVOCATION_CREATED',
-      status: 'completed',
-    });
-    await recordStateAudit({
-      invocation,
-      connection,
-      actor: auditActor,
-      observer,
-      fromState: null,
-      toState: 'accepted',
-      reasonCode: 'INVOCATION_CREATED',
-    });
-    invocation = await transitionAndAudit({
-      invocationId: idOf(invocation),
-      receivingWorkspaceId: connection.receivingWorkspaceId,
-      fromState: 'accepted',
-      toState: 'validating',
-      reasonCode: 'REQUEST_VALIDATION_STARTED',
-      traceId: actor.traceId,
-      requestId: actor.requestId,
-      observer,
-      connection,
-      actor: auditActor,
-    });
+    if (!reservation.resumed) {
+      observer.emit('info', 'invocation.state.changed', {
+        fromState: null,
+        toState: 'accepted',
+        reasonCode: 'INVOCATION_CREATED',
+        status: 'completed',
+      });
+      await recordStateAudit({
+        invocation,
+        connection,
+        actor: auditActor,
+        observer,
+        fromState: null,
+        toState: 'accepted',
+        reasonCode: 'INVOCATION_CREATED',
+      });
+    }
+    if (invocation.lifecycleState === 'accepted') {
+      invocation = await transitionAndAudit({
+        invocationId: idOf(invocation),
+        receivingWorkspaceId: connection.receivingWorkspaceId,
+        fromState: 'accepted',
+        toState: 'validating',
+        reasonCode: 'REQUEST_VALIDATION_STARTED',
+        traceId: actor.traceId,
+        requestId: actor.requestId,
+        observer,
+        connection,
+        actor: auditActor,
+        ...progressPersistenceOptions(),
+      });
+    }
     await actor.onInvocationCreated?.(idOf(invocation));
-    invocation = await persistInvocationProgress({
-      invocation,
-      receivingWorkspaceId: connection.receivingWorkspaceId,
-      stage: 'validation_started',
-      observer,
-      connection,
-      actor: auditActor,
-    });
+    if (invocation.lifecycleState === 'validating') {
+      invocation = await persistInvocationProgress({
+        invocation,
+        receivingWorkspaceId: connection.receivingWorkspaceId,
+        stage: 'validation_started',
+        observer,
+        connection,
+        actor: auditActor,
+        ...progressPersistenceOptions(),
+      });
+    }
 
     context = await loadInvocationContext(
       connectionId,
@@ -936,18 +1588,21 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     await observer.stage('request_validation', async () =>
       validateCapabilityInput(context.capability, input),
     );
-    invocation = await transitionAndAudit({
-      invocationId: idOf(invocation),
-      receivingWorkspaceId: connection.receivingWorkspaceId,
-      fromState: 'validating',
-      toState: 'authorized',
-      reasonCode: 'INVOCATION_AUTHORIZED',
-      traceId: actor.traceId,
-      requestId: actor.requestId,
-      observer,
-      connection,
-      actor: auditActor,
-    });
+    if (invocation.lifecycleState === 'validating') {
+      invocation = await transitionAndAudit({
+        invocationId: idOf(invocation),
+        receivingWorkspaceId: connection.receivingWorkspaceId,
+        fromState: 'validating',
+        toState: 'authorized',
+        reasonCode: 'INVOCATION_AUTHORIZED',
+        traceId: actor.traceId,
+        requestId: actor.requestId,
+        observer,
+        connection,
+        actor: auditActor,
+        ...progressPersistenceOptions(),
+      });
+    }
     invocation = await persistInvocationProgress({
       invocation,
       receivingWorkspaceId: connection.receivingWorkspaceId,
@@ -955,6 +1610,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       observer,
       connection,
       actor: auditActor,
+      ...progressPersistenceOptions(),
     });
 
     if (currentHealth(context.connection) === 'disabled') {
@@ -1052,8 +1708,9 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         { observer },
       );
     }
+    await actor.onDurableProgress?.('credentials_loaded', new Date());
 
-    const executionOwner = `gateway-${process.pid}-${crypto.randomUUID()}`;
+    executionOwner = actor.executionOwner || `gateway-${process.pid}-${crypto.randomUUID()}`;
     const claim = await claimInvocationExecution({
       invocationId: idOf(invocation),
       receivingWorkspaceId: connection.receivingWorkspaceId,
@@ -1074,6 +1731,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         }),
     });
     invocation = claim.invocation;
+    executionLeaseId = claim.executionLeaseId;
     lifecycleRegistration?.setExecutionOwnership({
       workspaceId: connection.receivingWorkspaceId,
       connectionId: idOf(connection),
@@ -1095,12 +1753,36 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       connection,
       idempotency,
       executionLeaseId: claim.executionLeaseId,
+      executionLeaseExpiresAt: claim.executionLeaseExpiresAt,
+      executionOwner,
       actor,
       observer,
     });
     invocation = startedAttempt.invocation;
     attempt = startedAttempt.attempt;
     attemptNumber = startedAttempt.attemptNumber;
+    if (durableContext && attemptNumber !== durableContext.attemptNumber) {
+      throw new AppError(
+        409,
+        ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
+        'Durable work attempt no longer matches the invocation attempt.',
+        [],
+        {
+          invocationId: idOf(invocation),
+          workItemId: durableContext.workItemId,
+          reasonCode: 'DURABLE_ATTEMPT_MISMATCH',
+        },
+      );
+    }
+    await actor.onExecutionClaimed?.({
+      invocationId: idOf(invocation),
+      receivingWorkspaceId: connection.receivingWorkspaceId,
+      executionOwner,
+      executionLeaseId,
+      executionLeaseExpiresAt: claim.executionLeaseExpiresAt,
+      attemptId: idOf(attempt),
+      capacityLease,
+    });
     let result;
     invocation = await persistInvocationProgress({
       invocation,
@@ -1109,10 +1791,11 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       observer,
       connection,
       actor: auditActor,
+      ...progressPersistenceOptions(),
     });
     const beforeTransmit = async () => {
-      if (lifecycleRegistration?.signal?.aborted) {
-        throw lifecycleRegistration.signal.reason;
+      if (executionSignal?.aborted) {
+        throw executionSignal.reason;
       }
       invocation = await transitionAndAudit({
         invocationId: idOf(invocation),
@@ -1126,6 +1809,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         observer,
         connection,
         actor: auditActor,
+        ...progressPersistenceOptions(),
       });
       invocation = await persistInvocationProgress({
         invocation,
@@ -1134,6 +1818,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         observer,
         connection,
         actor: auditActor,
+        ...progressPersistenceOptions(),
       });
       externalCallStarted = true;
       lifecycleRegistration?.markExternalCallStarted();
@@ -1152,12 +1837,16 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
           requestId: actor.requestId,
           invocationId: idOf(invocation),
           idempotencyKey: actor.remoteIdempotencyKeyHash || idempotency.keyHash,
-          signal: lifecycleRegistration?.signal,
+          signal: executionSignal,
           beforeTransmit,
         },
       });
     }
     adapterResultOrThrow(result, context.connection.runtimeType);
+    // Record response receipt in memory before the first persistence write that follows it. If
+    // that write loses ownership or becomes uncertain, recovery must not describe the invocation
+    // as a deterministic local failure after the remote runtime already completed work.
+    remoteResponseReceived = true;
     invocation = await persistInvocationProgress({
       invocation,
       receivingWorkspaceId: connection.receivingWorkspaceId,
@@ -1165,6 +1854,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       observer,
       connection,
       actor: auditActor,
+      ...progressPersistenceOptions(),
     });
     invocation = await persistInvocationProgress({
       invocation,
@@ -1173,11 +1863,13 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       observer,
       connection,
       actor: auditActor,
+      ...progressPersistenceOptions(),
     });
     await observer.stage('response_validation', async () =>
       validateCapabilityOutput(context.capability, result.output),
     );
     responseValidated = true;
+    await actor.onDurableProgress?.('response_validated', new Date());
     try {
       const [circuitResult, healthResult] = await Promise.all([
         recordCircuitSuccess(context.connection, 'runtime', actor.runtimeProtectionOptions).then(
@@ -1237,14 +1929,6 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         status: 'failed',
       });
     }
-    await finishInvocationAttempt({
-      attempt,
-      status: 'succeeded',
-      actor,
-      connection,
-      invocation,
-      observer,
-    });
     invocation = await persistInvocationProgress({
       invocation,
       receivingWorkspaceId: connection.receivingWorkspaceId,
@@ -1252,6 +1936,18 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       observer,
       connection,
       actor: auditActor,
+      ...progressPersistenceOptions(),
+    });
+    if (executionSignal?.aborted) throw executionSignal.reason;
+    await finishInvocationAttempt({
+      attempt,
+      status: 'succeeded',
+      actor,
+      connection,
+      invocation,
+      observer,
+      executionOwner,
+      executionLeaseId,
     });
     invocation = await observer.stage('invocation_persistence', () =>
       transitionAndAudit({
@@ -1266,6 +1962,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         observer,
         connection,
         actor: auditActor,
+        ...(executionOwner && executionLeaseId ? { executionOwner, executionLeaseId } : {}),
         outcome: {
           output: result.output,
           durationMs: Date.now() - startedAt,
@@ -1275,6 +1972,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         },
       }),
     );
+    await actor.onDurableProgress?.('invocation_persisted', new Date());
     await observer.stage('audit_persistence', () =>
       bestEffortInvocationAudit({
         action: 'invocation.completed',
@@ -1303,6 +2001,11 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       statusCode: result.status,
       durationMs: invocation.durationMs,
     });
+    if (durableContext) {
+      await finalizeWork(durableContext.workItemId, durableContext.ownership, {
+        status: 'completed',
+      });
+    }
 
     return {
       ...serializeInvocation(invocation),
@@ -1312,7 +2015,8 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     };
   } catch (error) {
     let runtimeError = normalizedError(error);
-    const lifecycleSignal = lifecycleRegistration?.signal || lifecycleAdmission?.signal;
+    const lifecycleSignal =
+      executionSignal || lifecycleRegistration?.signal || lifecycleAdmission?.signal;
     if (
       lifecycleSignal?.aborted &&
       lifecycleSignal.reason instanceof AppError &&
@@ -1355,6 +2059,8 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
             connection,
             invocation: current,
             observer,
+            executionOwner,
+            executionLeaseId,
           });
         } catch (attemptPersistenceError) {
           runtimeError.attemptPersistenceErrorCode =
@@ -1379,10 +2085,23 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
           observer,
           'INVOCATION_CANCELLED',
         )) || circuitProbeSettled;
+      await settleDurableFailure(durableContext, runtimeError, {
+        recoveryRequired: current?.lifecycleState === 'recovery_required',
+        externalCallStarted,
+        responseValidated: remoteResponseReceived || responseValidated,
+      });
+      durableFailureSettled = true;
       throw runtimeError;
     }
     if (runtimeError.code === ErrorCodes.SHUTDOWN_INTERRUPTED_INVOCATION) {
       const shutdownAmbiguous = externalCallStarted || runtimeError.recoveryRequired === true;
+      if (shutdownAmbiguous) {
+        // The persisted transmission milestone is authoritative. A forced worker shutdown after
+        // transmission can never be reported as a safe local failure or become eligible for blind
+        // replay, even when the process-local shutdown error did not carry recovery metadata.
+        runtimeError.recoveryRequired = true;
+        runtimeError.recoveryReason = 'WORKER_LOST_DURING_REMOTE_EXECUTION';
+      }
       observer.emit('warn', 'invocation.shutdown_interrupted', {
         status: shutdownAmbiguous ? 'recovery_required' : 'failed',
         reasonCode: shutdownAmbiguous
@@ -1449,6 +2168,8 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
               connection,
               invocation: cancelled,
               observer,
+              executionOwner,
+              executionLeaseId,
               metadata: { reasonCode: 'SERVICE_SHUTDOWN' },
             });
             await bestEffortInvocationAudit({
@@ -1479,6 +2200,8 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
               connection,
               invocation: cancelled,
               observer,
+              executionOwner,
+              executionLeaseId,
             });
           }
         }
@@ -1494,6 +2217,12 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
             observer,
             'SERVICE_SHUTDOWN_BEFORE_TRANSMISSION',
           )) || circuitProbeSettled;
+        await settleDurableFailure(durableContext, runtimeError, {
+          recoveryRequired: false,
+          externalCallStarted: false,
+          responseValidated: false,
+        });
+        durableFailureSettled = true;
         throw runtimeError;
       }
     }
@@ -1552,6 +2281,8 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
             connection,
             invocation,
             observer,
+            executionOwner,
+            executionLeaseId,
             metadata: { retryAfterMs: runtimeError.retryAfterMs },
           });
         }
@@ -1627,7 +2358,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     }
     if (invocation) {
       runtimeError.invocationId ||= idOf(invocation);
-      const responsePersistenceUncertain = responseValidated;
+      const responsePersistenceUncertain = remoteResponseReceived || responseValidated;
       let ambiguous = ambiguousRuntimeOutcome(runtimeError, {
         externalCallStarted,
         responsePersistenceUncertain,
@@ -1638,6 +2369,9 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         delayMs: null,
         nextAttemptNumber: null,
       };
+      let durableFinalizationOwnershipLost = false;
+      let durableWorkLeaseLost = false;
+      let deadLetterDisposition = false;
       if (attempt && context) {
         retryDecision = retryDecisionForRuntime(
           runtimeError,
@@ -1683,10 +2417,18 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
             connection,
             invocation,
             observer,
+            executionOwner,
+            executionLeaseId,
           });
         } catch (attemptPersistenceError) {
           runtimeError.attemptPersistenceErrorCode =
             safeCode(attemptPersistenceError?.code) || ErrorCodes.INTERNAL_SERVER_ERROR;
+          durableFinalizationOwnershipLost = [
+            ErrorCodes.DURABLE_WORK_LEASE_LOST,
+            ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
+          ].includes(attemptPersistenceError?.code);
+          durableWorkLeaseLost =
+            attemptPersistenceError?.code === ErrorCodes.DURABLE_WORK_LEASE_LOST;
           ambiguous = externalCallStarted;
           retryDecision = {
             allowed: false,
@@ -1698,19 +2440,37 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       }
 
       const currentState = invocation.lifecycleState;
+      if (durableFinalizationOwnershipLost) {
+        runtimeError.recoveryRequired = true;
+        runtimeError.retryReason = 'ATTEMPT_PERSISTENCE_UNCERTAIN';
+      }
       const transitionableStates = new Set([
+        'accepted',
         'validating',
         'authorized',
         'running',
         'waiting_for_runtime',
       ]);
-      let targetState = terminalStateForError(runtimeError, ambiguous);
-      if (currentState !== 'waiting_for_runtime' && targetState === 'recovery_required') {
-        targetState = 'failed';
-      }
-      if (transitionableStates.has(currentState)) {
+      deadLetterDisposition =
+        Boolean(durableContext) &&
+        durableFinalizationOwnershipLost !== true &&
+        ambiguous !== true &&
+        retryDecision.allowed !== true &&
+        externalCallStarted !== true &&
+        Number(durableContext.attemptNumber) >= Number(durableContext.maximumAttempts);
+      let targetState =
+        retryDecision.allowed === true
+          ? 'retry_scheduled'
+          : durableFinalizationOwnershipLost || deadLetterDisposition
+            ? 'recovery_required'
+            : terminalStateForError(runtimeError, ambiguous);
+      if (transitionableStates.has(currentState) && !durableWorkLeaseLost) {
         const reasonCode =
-          targetState === 'recovery_required'
+          targetState === 'retry_scheduled'
+            ? 'INVOCATION_RETRY_SCHEDULED'
+            : deadLetterDisposition
+              ? 'SAFE_RETRY_ATTEMPTS_EXHAUSTED'
+              : targetState === 'recovery_required'
             ? recoveryReasonFor(runtimeError, { responsePersistenceUncertain })
             : targetState === 'timed_out'
               ? 'INVOCATION_TIMED_OUT'
@@ -1718,6 +2478,8 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         const retryState =
           targetState === 'recovery_required'
             ? 'recovery_required'
+            : targetState === 'retry_scheduled'
+              ? 'scheduled'
             : retryDecision.reason === 'MAX_ATTEMPTS_REACHED'
               ? 'exhausted'
               : retryDecision.allowed
@@ -1737,6 +2499,9 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
               observer,
               connection,
               actor: auditActor,
+              ...(executionOwner && executionLeaseId
+                ? { executionOwner, executionLeaseId }
+                : {}),
               outcome: {
                 error: {
                   ...invocationErrorPayload(runtimeError),
@@ -1819,6 +2584,22 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         runtimeError.stageMetricErrorCode =
           stageMetricError.code || ErrorCodes.INTERNAL_SERVER_ERROR;
       }
+      await settleDurableFailure(durableContext, runtimeError, {
+        retryDecision,
+        recoveryRequired: ambiguous || runtimeError.recoveryRequired === true,
+        externalCallStarted,
+        responseValidated: remoteResponseReceived || responseValidated,
+        finalizationConsistencyLost: durableFinalizationOwnershipLost,
+        deadLetterDisposition,
+      });
+      durableFailureSettled = true;
+    }
+    if (durableContext && !durableFailureSettled) {
+      await settleDurableFailure(durableContext, runtimeError, {
+        recoveryRequired: runtimeError.recoveryRequired === true,
+        externalCallStarted,
+        responseValidated: remoteResponseReceived || responseValidated,
+      });
     }
     observer.emit('error', 'runtime.invocation.failed', {
       ...errorFields(runtimeError),
@@ -1865,6 +2646,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         });
       }
     }
+    await stopDurableHeartbeat();
     lifecycleRegistration?.complete();
     lifecycleAdmission?.complete();
   }
@@ -2172,4 +2954,5 @@ module.exports = {
   stageMetricCollector,
   serializeInvocationAttempt,
   ambiguousRuntimeOutcome,
+  renewRuntimeExecutionOwnership,
 };

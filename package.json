@@ -13,6 +13,7 @@
   "scripts": {
     "ports:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-dev-ports.ps1",
     "dev": "concurrently -n FRONTEND,BACKEND \"npm run dev --workspace frontend\" \"npm run dev --workspace backend\"",
+    "dev:worker": "npm run dev:worker --workspace backend",
     "dev:external-agent": "npm run dev --workspace external-agent",
     "dev:all": "concurrently -n FRONTEND,BACKEND,EXTERNAL_AGENT \"npm run dev --workspace frontend\" \"npm run dev --workspace backend\" \"npm run dev --workspace external-agent\"",
     "build": "npm run build --workspace backend && npm run build --workspace frontend && npm run build --workspace external-agent",
@@ -20,6 +21,7 @@
     "lint": "npm run lint --workspace backend && npm run lint --workspace frontend && npm run lint --workspace external-agent",
     "test": "npm run test --workspace backend && npm run test --workspace frontend && npm run test --workspace external-agent",
     "test:external-agent": "npm run test --workspace external-agent",
+    "worker": "npm run worker --workspace backend",
     "seed:demo": "npm run seed:demo --workspace backend",
     "verify:demo": "npm run verify:demo --workspace backend",
     "seed:sandbox": "npm run seed:sandbox --workspace backend",
@@ -27,6 +29,7 @@
     "verify:external-agent": "npm run verify --workspace external-agent",
     "verify:gemini-agent": "npm run verify:gemini-agent --workspace external-agent",
     "verify:external-flow": "npm run verify:external-flow --workspace backend",
+    "verify:durable-recovery": "npm run verify:durable-recovery --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"

@@ -43,8 +43,8 @@ function controlContext(invocation, connection) {
     ].includes(invocation.lastProgressStage)
       ? 'transmitted'
       : 'not_transmitted';
-  let replayInputAvailable = false;
-  if (invocation.requestFingerprint && invocation.inputSummary !== undefined) {
+  let replayInputAvailable = invocation.protectedReplayAvailable === true;
+  if (!replayInputAvailable && invocation.requestFingerprint && invocation.inputSummary !== undefined) {
     try {
       const replayFingerprint = createInvocationIdempotency({
         clientKey: 'recovery-fingerprint-verification',

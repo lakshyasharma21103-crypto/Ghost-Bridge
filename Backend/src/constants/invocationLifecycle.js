@@ -2,6 +2,7 @@ const INVOCATION_STATES = Object.freeze([
   'accepted',
   'validating',
   'authorized',
+  'retry_scheduled',
   'running',
   'waiting_for_runtime',
   'succeeded',
@@ -14,11 +15,25 @@ const INVOCATION_STATES = Object.freeze([
 const TERMINAL_INVOCATION_STATES = Object.freeze(['succeeded', 'failed', 'cancelled', 'timed_out']);
 
 const ALLOWED_INVOCATION_TRANSITIONS = Object.freeze({
-  accepted: Object.freeze(['validating', 'cancelled']),
-  validating: Object.freeze(['authorized', 'failed', 'cancelled']),
-  authorized: Object.freeze(['running', 'failed', 'cancelled']),
+  accepted: Object.freeze(['validating', 'retry_scheduled', 'recovery_required', 'cancelled']),
+  validating: Object.freeze([
+    'authorized',
+    'retry_scheduled',
+    'failed',
+    'recovery_required',
+    'cancelled',
+  ]),
+  authorized: Object.freeze([
+    'running',
+    'retry_scheduled',
+    'failed',
+    'recovery_required',
+    'cancelled',
+  ]),
+  retry_scheduled: Object.freeze(['authorized', 'failed', 'recovery_required', 'cancelled']),
   running: Object.freeze([
     'waiting_for_runtime',
+    'retry_scheduled',
     'failed',
     'timed_out',
     'recovery_required',
@@ -26,6 +41,7 @@ const ALLOWED_INVOCATION_TRANSITIONS = Object.freeze({
   ]),
   waiting_for_runtime: Object.freeze([
     'succeeded',
+    'retry_scheduled',
     'failed',
     'timed_out',
     'recovery_required',
@@ -35,7 +51,7 @@ const ALLOWED_INVOCATION_TRANSITIONS = Object.freeze({
   failed: Object.freeze([]),
   cancelled: Object.freeze([]),
   timed_out: Object.freeze([]),
-  recovery_required: Object.freeze(['running', 'failed', 'cancelled']),
+  recovery_required: Object.freeze(['authorized', 'running', 'failed', 'cancelled']),
 });
 
 const INVOCATION_ATTEMPT_STATUSES = Object.freeze([
@@ -152,6 +168,7 @@ const LIFECYCLE_TIMESTAMP_FIELDS = Object.freeze({
   accepted: 'acceptedAt',
   validating: 'validatingAt',
   authorized: 'authorizedAt',
+  retry_scheduled: 'retryScheduledAt',
   running: 'runningAt',
   waiting_for_runtime: 'waitingForRuntimeAt',
   succeeded: 'succeededAt',
@@ -172,6 +189,7 @@ const LIFECYCLE_STATE_TO_LEGACY_STATUS = Object.freeze({
   accepted: 'queued',
   validating: 'queued',
   authorized: 'queued',
+  retry_scheduled: 'queued',
   running: 'running',
   waiting_for_runtime: 'running',
   succeeded: 'completed',

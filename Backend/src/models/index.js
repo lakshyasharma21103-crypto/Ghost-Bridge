@@ -10,6 +10,9 @@ const AuditLog = require('./AuditLog');
 const OperationalAlert = require('./OperationalAlert');
 const CircuitBreaker = require('./CircuitBreaker');
 const RuntimeCapacitySlot = require('./RuntimeCapacitySlot');
+const RuntimeWorkItem = require('./RuntimeWorkItem');
+const DurableEventOutbox = require('./DurableEventOutbox');
+const RuntimeWorkerHeartbeat = require('./RuntimeWorkerHeartbeat');
 
 module.exports = {
   Partner,
@@ -24,4 +27,7 @@ module.exports = {
   OperationalAlert,
   CircuitBreaker,
   RuntimeCapacitySlot,
+  RuntimeWorkItem,
+  DurableEventOutbox,
+  RuntimeWorkerHeartbeat,
 };

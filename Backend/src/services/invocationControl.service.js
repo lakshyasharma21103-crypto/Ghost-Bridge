@@ -7,8 +7,10 @@ const RuntimeCapacitySlot = require('../models/RuntimeCapacitySlot');
 const { env } = require('../config/env');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { decryptPayload } = require('../utils/crypto');
 const { createAuditLog } = require('./auditService');
 const { serviceLifecycle } = require('./serviceLifecycle.service');
+const { requestWorkCancellation } = require('./durableWork.service');
 const { transitionUpdate } = require('./invocationLifecycle.service');
 const { classifyStuckInvocation } = require('../utils/stuckInvocation');
 const { recoveryPolicyDecision } = require('../utils/recoveryPolicy');
@@ -83,7 +85,7 @@ function safeCode(value, fallback) {
 
 function privateInvocationQuery(filter, options = {}) {
   let query = Invocation.findOne(filter).select(
-    '+executionLeaseId +executionLeaseExpiresAt +executionOwner +idempotencyKeyHash +requestFingerprint +idempotencyScope +recoveryClaimId',
+    '+executionLeaseId +executionLeaseExpiresAt +executionOwner +idempotencyKeyHash +requestFingerprint +idempotencyScope +recoveryClaimId +executionPayload',
   );
   if (options.sort && typeof query?.sort === 'function') query = query.sort(options.sort);
   return query;
@@ -155,6 +157,32 @@ function cancellationResponse(invocation, connection) {
   };
 }
 
+async function propagateDurableCancellation(context, invocation, reasonCode, actor = {}) {
+  const workItemId = invocation?.currentWorkItemId;
+  if (!workItemId) return { attempted: false, persisted: false };
+  try {
+    await requestWorkCancellation({
+      partnerId: context.connection.partnerId,
+      receivingWorkspaceId: context.identity.receivingWorkspaceId,
+      connectionId: context.connection._id,
+      invocationId: invocation._id,
+      workItemId,
+      reasonCode,
+    });
+    return { attempted: true, persisted: true };
+  } catch (error) {
+    // The Invocation transition above is already authoritative. Do not convert a durably
+    // accepted cancellation into an API failure or skip the local AbortController merely
+    // because the Work projection/outbox raced or is temporarily unavailable. Claim and
+    // execution admission also re-check the Invocation before any safe replay.
+    actor.observer?.emit?.('warn', 'invocation.cancel.durable_notification_deferred', {
+      invocationId: idOf(invocation),
+      errorCode: safeCode(error?.code, 'DURABLE_WORK_NOTIFICATION_FAILED'),
+    });
+    return { attempted: true, persisted: false };
+  }
+}
+
 async function requestCancellation(invocationId, input, actor = {}) {
   const context = await authorizedContext(invocationId, input, actor.partner);
   const { invocation, connection, identity } = context;
@@ -167,6 +195,7 @@ async function requestCancellation(invocationId, input, actor = {}) {
   }
   if (TERMINAL_INVOCATION_STATES.includes(invocation.lifecycleState)) {
     if (invocation.lifecycleState === 'cancelled' && invocation.cancellationState === 'confirmed') {
+      await propagateDurableCancellation(context, invocation, reasonCode, actor);
       return { ...cancellationResponse(invocation, connection), idempotent: true };
     }
     await audit('invocation.cancel.rejected', context, actor, {
@@ -186,6 +215,7 @@ async function requestCancellation(invocationId, input, actor = {}) {
     );
   }
   if (['confirmed', 'outcome_unknown'].includes(invocation.cancellationState)) {
+    await propagateDurableCancellation(context, invocation, reasonCode, actor);
     return { ...cancellationResponse(invocation, connection), idempotent: true };
   }
   if (
@@ -398,6 +428,9 @@ async function requestCancellation(invocationId, input, actor = {}) {
       idOf(invocation),
       cancellationOwnership,
     ) || { found: false, requested: false };
+    if (updated) {
+      await propagateDurableCancellation(context, current, reasonCode, actor);
+    }
     if (registryResult.requested === true) {
       await audit('invocation.cancel.aborting', { ...context, invocation: current }, actor, {
         reasonCode,
@@ -489,6 +522,9 @@ async function requestCancellation(invocationId, input, actor = {}) {
     idOf(invocation),
     cancellationOwnership,
   ) || { found: false, requested: false };
+  if (updated) {
+    await propagateDurableCancellation(context, current, reasonCode, actor);
+  }
   if (registryResult.requested === true) {
     await audit('invocation.cancel.aborting', { ...context, invocation: current }, actor, {
       reasonCode,
@@ -1135,7 +1171,34 @@ async function manualRetry(invocationId, input, actor = {}) {
     const retrySequence = Number(
       claimed.recoveryRetrySequence || Number(context.invocation.recoveryRetrySequence || 0) + 1,
     );
-    const child = await invoke(claimed.connectionId, claimed.capability, claimed.inputSummary, {
+    let replayInput;
+    // The recovery claim update intentionally selects only its private claim token. Reuse the
+    // tenant-authorized source document for the protected payload so select:false never causes a
+    // durable invocation to fall back to its redacted display summary.
+    const protectedExecutionPayload =
+      claimed.executionPayload || context.invocation.executionPayload;
+    if (protectedExecutionPayload) {
+      try {
+        replayInput = decryptPayload(protectedExecutionPayload)?.input;
+      } catch (error) {
+        throw new AppError(
+          409,
+          ErrorCodes.INVOCATION_RECOVERY_ACTION_DENIED,
+          'The protected replay input is unavailable.',
+          [],
+          {
+            cause: error,
+            invocationId: idOf(claimed),
+            reasonCode: 'REPLAY_INPUT_NOT_AVAILABLE',
+          },
+        );
+      }
+    } else {
+      // Backward-compatible only for legacy records whose existing fingerprint checks already
+      // proved that the redacted summary is byte-for-byte replayable.
+      replayInput = context.invocation.inputSummary;
+    }
+    const child = await invoke(claimed.connectionId, claimed.capability, replayInput, {
       actorType: 'partner',
       actorId: idOf(actor.partner),
       receivingWorkspaceId: context.identity.receivingWorkspaceId,

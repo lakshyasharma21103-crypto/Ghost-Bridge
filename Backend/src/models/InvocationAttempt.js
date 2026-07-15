@@ -8,6 +8,7 @@ const {
 const SAFE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
 const SAFE_HASH_PATTERN = /^(?:sha256|hmac-sha256):[a-f0-9]{64}$/;
 const SAFE_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
+const SAFE_OWNER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/;
 const SAFE_OPERATION_PATTERN = /^[a-z][a-z0-9_.:-]{0,127}$/;
 
 const invocationAttemptSchema = new mongoose.Schema(
@@ -26,6 +27,15 @@ const invocationAttemptSchema = new mongoose.Schema(
       index: true,
     },
     attemptNumber: { type: Number, required: true, min: 1 },
+    workItemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'RuntimeWorkItem',
+      index: true,
+    },
+    executionGeneration: { type: Number, min: 1 },
+    executionOwner: { type: String, trim: true, match: SAFE_OWNER_PATTERN, select: false },
+    executionLeaseId: { type: String, trim: true, match: SAFE_OWNER_PATTERN, select: false },
+    executionLeaseExpiresAt: { type: Date, select: false, index: true },
     status: {
       type: String,
       enum: INVOCATION_ATTEMPT_STATUSES,

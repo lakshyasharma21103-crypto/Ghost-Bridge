@@ -7,12 +7,15 @@ const { databaseStatus } = require('./config/db');
 const { serviceLifecycle } = require('./services/serviceLifecycle.service');
 const { markActiveInvocationRecovery } = require('./services/invocationLifecycle.service');
 const { createAuditLog } = require('./services/auditService');
+const { ensureDurableIndexes } = require('./services/durableWork.service');
 
 async function start(options = {}) {
   const activeLogger = options.logger || logger;
   const lifecycle = options.lifecycle || serviceLifecycle;
   const connect = options.connectDatabase || connectDatabase;
   const disconnect = options.disconnectDatabase || disconnectDatabase;
+  const currentDatabaseStatus = options.databaseStatus || databaseStatus;
+  const ensureIndexes = options.ensureDurableIndexes || ensureDurableIndexes;
   const app = createApp({ lifecycle });
   const server = http.createServer(app);
   let shutdownPromise;
@@ -138,8 +141,27 @@ async function start(options = {}) {
     { port: options.port ?? env.PORT },
     'Agent Passport Runtime Gateway backend started',
   );
-  await connect();
-  if (databaseStatus() === 'connected' || options.connectDatabase) lifecycle.markReady();
+  try {
+    await connect();
+    if (currentDatabaseStatus() === 'connected') {
+      await ensureIndexes();
+      lifecycle.markReady();
+    } else if (options.connectDatabase) {
+      lifecycle.markReady();
+    }
+  } catch (error) {
+    await new Promise((resolve) => server.close(resolve));
+    try {
+      await disconnect();
+    } catch (disconnectError) {
+      activeLogger.error(
+        { error: safeLogPayload(disconnectError) },
+        'Backend database cleanup after startup failure failed',
+      );
+    }
+    lifecycle.markStopped();
+    throw error;
+  }
 
   return { app, server, shutdown, lifecycle };
 }
