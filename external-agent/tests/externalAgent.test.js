@@ -4,7 +4,13 @@ const { Writable } = require('node:stream');
 const { after, before, test } = require('node:test');
 const { createApp } = require('../src/app');
 const { GEMINI_PROCESSING_OVERHEAD_MS, readEnvironment } = require('../src/config/env');
+const {
+  DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS,
+  DEFAULT_LIVE_VERIFIER_TIMEOUT_MS,
+  providerRequestBudget,
+} = require('../src/config/timeoutBudget');
 const { MockProvider } = require('../src/providers/mock.provider');
+const { resolveVerifierTimeoutMs } = require('../scripts/verifyGeminiAgent');
 const { startupErrorLogFields } = require('../src/server');
 const { createLogger, safeLogPayload } = require('../src/utils/logger');
 const { redactSecrets } = require('../src/utils/redact');
@@ -135,7 +141,7 @@ test('Gemini environment requires a configurable model', () => {
   );
 });
 
-test('Gemini stage defaults leave request-level processing overhead', () => {
+test('Gemini attempt defaults leave room for every retry and request-level overhead', () => {
   const parsed = readEnvironment({
     NODE_ENV: 'test',
     AI_PROVIDER: 'gemini',
@@ -144,19 +150,21 @@ test('Gemini stage defaults leave request-level processing overhead', () => {
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
 
-  assert.equal(parsed.gemini.researchTimeoutMs, 180_000);
-  assert.equal(parsed.gemini.formattingTimeoutMs, 90_000);
-  assert.equal(parsed.gemini.researchMaxAttempts, 1);
+  assert.equal(parsed.gemini.researchTimeoutMs, 120_000);
+  assert.equal(parsed.gemini.formattingTimeoutMs, 60_000);
+  assert.equal(parsed.gemini.researchMaxAttempts, 2);
   assert.equal(parsed.gemini.formattingMaxAttempts, 2);
-  assert.ok(
-    parsed.requestTimeoutMs >
-      parsed.gemini.researchTimeoutMs +
-        parsed.gemini.formattingTimeoutMs +
-        GEMINI_PROCESSING_OVERHEAD_MS,
-  );
+  assert.equal(parsed.gemini.researchOperationTimeoutMs, 241_499);
+  assert.equal(parsed.gemini.formattingOperationTimeoutMs, 121_499);
+  assert.equal(parsed.gemini.retryDelayBudgetMs, 2_998);
+  assert.equal(parsed.gemini.researchMaxOutputTokens, 512);
+  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 256);
+  assert.equal(parsed.gemini.formattingMaxOutputTokens, 1_500);
+  assert.equal(parsed.requestTimeoutMs, 390_000);
+  assert.ok(parsed.requestTimeoutMs > 241_499 + 121_499 + GEMINI_PROCESSING_OVERHEAD_MS);
 });
 
-test('request timeout must exceed combined Gemini stage deadlines and overhead', () => {
+test('request timeout must exceed all Gemini attempts, maximum retry delays, and overhead', () => {
   assert.throws(
     () =>
       readEnvironment({
@@ -164,12 +172,14 @@ test('request timeout must exceed combined Gemini stage deadlines and overhead',
         AI_PROVIDER: 'gemini',
         GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
         GEMINI_MODEL: 'gemini-2.5-flash',
-        GEMINI_RESEARCH_TIMEOUT_MS: '180000',
-        GEMINI_FORMATTING_TIMEOUT_MS: '90000',
-        REQUEST_TIMEOUT_MS: '280000',
+        GEMINI_RESEARCH_TIMEOUT_MS: '120000',
+        GEMINI_FORMATTING_TIMEOUT_MS: '60000',
+        GEMINI_RESEARCH_MAX_ATTEMPTS: '2',
+        GEMINI_FORMATTING_MAX_ATTEMPTS: '2',
+        REQUEST_TIMEOUT_MS: '372998',
         EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
       }),
-    /REQUEST_TIMEOUT_MS.*combined Gemini stage deadlines plus processing overhead/,
+    /REQUEST_TIMEOUT_MS.*all configured Gemini attempts, maximum retry delays, and processing overhead/,
   );
 });
 
@@ -181,7 +191,7 @@ test('legacy Gemini timeout is used only for absent stage-specific settings', ()
     GEMINI_MODEL: 'gemini-2.5-flash',
     GEMINI_REQUEST_TIMEOUT_MS: '40000',
     GEMINI_RESEARCH_TIMEOUT_MS: '50000',
-    REQUEST_TIMEOUT_MS: '110001',
+    REQUEST_TIMEOUT_MS: '200000',
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
 
@@ -189,24 +199,19 @@ test('legacy Gemini timeout is used only for absent stage-specific settings', ()
   assert.equal(parsed.gemini.formattingTimeoutMs, 40_000);
 });
 
-test('an absent stage configuration resolves the legacy 115000 value per stage', () => {
-  const parsed = readEnvironment({
-    NODE_ENV: 'test',
-    AI_PROVIDER: 'gemini',
-    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
-    GEMINI_MODEL: 'gemini-2.5-flash',
-    GEMINI_REQUEST_TIMEOUT_MS: '115000',
-    REQUEST_TIMEOUT_MS: '300000',
-    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
-  });
-
-  assert.equal(parsed.gemini.researchTimeoutMs, 115_000);
-  assert.equal(parsed.gemini.formattingTimeoutMs, 115_000);
-  assert.ok(
-    parsed.requestTimeoutMs >
-      parsed.gemini.researchTimeoutMs +
-        parsed.gemini.formattingTimeoutMs +
-        GEMINI_PROCESSING_OVERHEAD_MS,
+test('stale legacy 115000 stage fallback is rejected when its retry budget exceeds the request', () => {
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        GEMINI_MODEL: 'gemini-2.5-flash',
+        GEMINI_REQUEST_TIMEOUT_MS: '115000',
+        REQUEST_TIMEOUT_MS: '300000',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /REQUEST_TIMEOUT_MS.*472998 milliseconds/,
   );
 });
 
@@ -217,21 +222,55 @@ test('stage-specific deadlines override a stale 115000 legacy fallback', () => {
     GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
     GEMINI_MODEL: 'gemini-2.5-flash',
     GEMINI_REQUEST_TIMEOUT_MS: '115000',
-    GEMINI_RESEARCH_TIMEOUT_MS: '180000',
-    GEMINI_FORMATTING_TIMEOUT_MS: '90000',
-    REQUEST_TIMEOUT_MS: '300000',
+    GEMINI_RESEARCH_TIMEOUT_MS: '120000',
+    GEMINI_FORMATTING_TIMEOUT_MS: '60000',
+    REQUEST_TIMEOUT_MS: '390000',
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
 
-  assert.equal(parsed.gemini.researchTimeoutMs, 180_000);
-  assert.equal(parsed.gemini.formattingTimeoutMs, 90_000);
+  assert.equal(parsed.gemini.researchTimeoutMs, 120_000);
+  assert.equal(parsed.gemini.formattingTimeoutMs, 60_000);
   assert.notEqual(parsed.gemini.researchTimeoutMs, 115_000);
   assert.notEqual(parsed.gemini.formattingTimeoutMs, 115_000);
-  assert.ok(
-    parsed.requestTimeoutMs >
-      parsed.gemini.researchTimeoutMs +
-        parsed.gemini.formattingTimeoutMs +
-        GEMINI_PROCESSING_OVERHEAD_MS,
+  assert.equal(parsed.requestTimeoutMs, 390_000);
+});
+
+test('maximum two-attempt retry budget fits beneath the default request deadline', () => {
+  const budget = providerRequestBudget({
+    researchTimeoutMs: 120_000,
+    formattingTimeoutMs: 60_000,
+    researchMaxAttempts: 2,
+    formattingMaxAttempts: 2,
+  });
+  assert.deepEqual(budget, {
+    researchOperationTimeoutMs: 241_499,
+    formattingOperationTimeoutMs: 121_499,
+    retryDelayBudgetMs: 2_998,
+    totalTimeoutMs: 372_998,
+  });
+  assert.ok(budget.totalTimeoutMs < 390_000);
+});
+
+test('live verifier timeout is above the external request and remains explicitly bounded', () => {
+  assert.equal(resolveVerifierTimeoutMs({ REQUEST_TIMEOUT_MS: '390000' }), 410_000);
+  assert.equal(DEFAULT_LIVE_VERIFIER_TIMEOUT_MS, 410_000);
+  assert.equal(DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS, 430_000);
+  assert.throws(
+    () =>
+      resolveVerifierTimeoutMs({
+        REQUEST_TIMEOUT_MS: '390000',
+        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '390000',
+      }),
+    /must exceed REQUEST_TIMEOUT_MS/,
+  );
+  assert.throws(
+    () =>
+      resolveVerifierTimeoutMs({
+        REQUEST_TIMEOUT_MS: '390000',
+        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '430000',
+        RUNTIME_INVOCATION_TIMEOUT_MS: '430000',
+      }),
+    /must be less than RUNTIME_INVOCATION_TIMEOUT_MS/,
   );
 });
 
@@ -262,7 +301,7 @@ test('formatting attempts are configurable only within the conservative bound', 
   }
 });
 
-test('grounded research retries require an explicit conservative opt-in', () => {
+test('grounded research attempts remain configurable within the one-retry bound', () => {
   const parsed = readEnvironment({
     NODE_ENV: 'test',
     AI_PROVIDER: 'gemini',
@@ -287,6 +326,34 @@ test('grounded research retries require an explicit conservative opt-in', () => 
       /GEMINI_RESEARCH_MAX_ATTEMPTS/,
     );
   }
+});
+
+test('grounded research output budgets stay below the legacy formatting budget', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_MAX_OUTPUT_TOKENS: '1800',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.researchMaxOutputTokens, 512);
+  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 256);
+  assert.equal(parsed.gemini.formattingMaxOutputTokens, 1_800);
+  assert.throws(
+    () =>
+      readEnvironment({
+        NODE_ENV: 'test',
+        AI_PROVIDER: 'gemini',
+        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+        GEMINI_MODEL: 'gemini-2.5-flash',
+        GEMINI_RESEARCH_MAX_OUTPUT_TOKENS: '256',
+        GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS: '256',
+        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+      }),
+    /GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS.*must be less than/,
+  );
 });
 
 test('Gemini model rejects resource names that could disclose project identifiers', () => {
@@ -583,6 +650,11 @@ test('valid bearer token returns Passport-compatible mock research output', asyn
       model: 'deterministic-test',
       webSearchUsed: false,
       sourceCount: 1,
+      researchAttemptCount: 1,
+      researchAttemptDurationsMs: [0],
+      fallbackResearchProfileUsed: false,
+      finalProviderStatus: 'OK',
+      groundingMetadataCount: 0,
     },
   });
   assert.equal(result.body.meta.traceId, traceId);
@@ -606,7 +678,7 @@ test('invalid and oversized trace identifiers are replaced safely', async () => 
 });
 
 test('external retryability and recursive redaction cover safe diagnostics', () => {
-  assert.equal(isRetryableError({ code: 'GEMINI_RATE_LIMITED' }), true);
+  assert.equal(isRetryableError({ code: 'GEMINI_RATE_LIMITED' }), false);
   assert.equal(isRetryableError({ code: 'RUNTIME_AUTHENTICATION_FAILED' }), false);
   assert.equal(isRetryableError({ code: 'GEMINI_WEB_SEARCH_FAILED', statusCode: 502 }), false);
   assert.equal(isRetryableError({ code: 'GEMINI_UNKNOWN_ERROR', statusCode: 502 }), false);

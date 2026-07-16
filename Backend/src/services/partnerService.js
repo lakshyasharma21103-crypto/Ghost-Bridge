@@ -5,6 +5,7 @@ const { createAuditLog } = require('./auditService');
 const { validateAgentPassportV1 } = require('./passportValidator');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertOperationalAccess } = require('./operationalState.service');
 const { generateInstallKey, hashKey, encryptPayload } = require('../utils/crypto');
 
 const INSTALL_MODES = ['delegated_runtime_access', 'auth_required', 'metadata_only'];
@@ -264,6 +265,11 @@ function validateKeyRequest(body) {
 }
 
 async function issueInstallKey(partner, passportId, body, requestId) {
+  await assertOperationalAccess({
+    organizationId: partner._id,
+    partnerId: partner._id,
+    operation: 'MUTATION',
+  });
   const passport = await requirePartnerPassport(partner, passportId);
   if (passport.status !== 'valid') {
     throw new AppError(

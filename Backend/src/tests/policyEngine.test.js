@@ -333,9 +333,9 @@ test('attribute registry exposes metadata but not resolver functions', () => {
   );
 });
 
-test('permission registry v4 exposes granular policy, secret, and compliance permissions with role mappings', () => {
+test('permission registry v5 exposes granular policy, secret, compliance, and enterprise operations permissions with role mappings', () => {
   const registry = getPermissionRegistry();
-  assert.equal(registry.version, 4);
+  assert.equal(registry.version, 5);
   for (const id of [
     'policy.create',
     'policy.update',
@@ -349,6 +349,10 @@ test('permission registry v4 exposes granular policy, secret, and compliance per
     'encryption-key.rotate',
     'approval.workflow.activate',
     'evidence.export',
+    'organization.suspend',
+    'maintenance.activate',
+    'access-review.remediate',
+    'tenant-deletion.execute',
   ]) {
     assert.equal(
       registry.permissions.some((permission) => permission.id === id),

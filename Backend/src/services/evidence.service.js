@@ -21,6 +21,7 @@ const {
 } = require('../constants/compliance');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertOperationalAccess } = require('./operationalState.service');
 const metrics = require('./complianceMetrics.service');
 const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
 
@@ -851,6 +852,11 @@ async function createEvidenceExport(input = {}, caller = {}) {
     input,
     caller,
   );
+  await assertOperationalAccess({
+    organizationId: scope.organizationId,
+    workspaceId: scope.workspaceId,
+    operation: 'MUTATION',
+  });
   const record = await EvidenceExport.create({
     evidenceExportId: `exp_${crypto.randomUUID()}`,
     organizationId: scope.organizationId,

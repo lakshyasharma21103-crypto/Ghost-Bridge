@@ -8,6 +8,7 @@ const { databaseStatus } = require('../config/db');
 const { createAuditLog } = require('./auditService');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertOperationalAccess } = require('./operationalState.service');
 const { hashKey, decryptPayload, encryptPayload } = require('../utils/crypto');
 const safeFetchUtility = require('../utils/safeFetch');
 const { recordCircuitFailure, recordCircuitSuccess } = require('./circuitBreaker.service');
@@ -248,6 +249,15 @@ async function resolveInstallKey(input, requestContext) {
         installKey: nextInstallKey,
       };
     },
+  );
+
+  await observer.stage('operational_state_check', () =>
+    assertOperationalAccess({
+      organizationId: installKey.partnerId,
+      partnerId: installKey.partnerId,
+      workspaceId: identity.receivingWorkspaceId,
+      operation: 'MUTATION',
+    }),
   );
 
   const [passport, capabilities] = await observer.stage('passport_retrieval', () =>

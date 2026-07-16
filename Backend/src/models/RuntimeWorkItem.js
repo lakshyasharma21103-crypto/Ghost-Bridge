@@ -102,6 +102,8 @@ const runtimeWorkItemSchema = new mongoose.Schema(
     cancelledAt: { type: Date },
     deadLetteredAt: { type: Date },
     requeuedAt: { type: Date },
+    blockedAt: { type: Date },
+    blockedReasonCode: { type: String, trim: true, match: SAFE_CODE_PATTERN },
     requeueCount: { type: Number, default: 0, min: 0, max: 1 },
 
     leaseOwner: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN, select: false },

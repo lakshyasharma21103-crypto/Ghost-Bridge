@@ -14,6 +14,7 @@ const { policyRouter } = require('./policyRoutes');
 const { secretRouter } = require('./secretRoutes');
 const { approvalRouter } = require('./approvalRoutes');
 const { evidenceRouter } = require('./evidenceRoutes');
+const { enterpriseOperationsRouter } = require('./enterpriseOperationsRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -44,6 +45,7 @@ router.use(`${API_PREFIX}/policies`, policyRouter);
 router.use(`${API_PREFIX}/secrets`, secretRouter);
 router.use(`${API_PREFIX}/approvals`, approvalRouter);
 router.use(`${API_PREFIX}/evidence`, evidenceRouter);
+router.use(`${API_PREFIX}/admin/operations`, enterpriseOperationsRouter);
 if (env.NODE_ENV === 'development') {
   router.use(`${API_PREFIX}/demo`, demoRouter);
   router.use(`${API_PREFIX}/developer-sandbox`, developerSandboxRouter);

@@ -6,6 +6,7 @@ const { createAuditLog } = require('./auditService');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { actorFromPartner, assertAuthorized } = require('./authorization.service');
+const { assertOperationalAccess } = require('./operationalState.service');
 
 const SAFE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
 const SAFE_WORK_STATUSES = new Set([
@@ -331,6 +332,13 @@ async function auditAdminAction(action, entityType, entityId, scope, actor, meta
 
 async function scanDurableAbandonedWork(input = {}, actor = {}) {
   const scope = await requireOperationsPermission('worker.manage', actor);
+  await assertOperationalAccess({
+    organizationId: scope.partnerId,
+    partnerId: scope.partnerId,
+    workspaceId: scope.receivingWorkspaceId,
+    connectionId: scope.connectionId,
+    operation: 'MUTATION',
+  });
   const limit = positiveInteger(input.limit, 'limit', { fallback: 25, maximum: 100 });
   await auditAdminAction(
     'durable_work.abandoned_scan_requested',
@@ -357,6 +365,13 @@ async function scanDurableAbandonedWork(input = {}, actor = {}) {
 
 async function reconcileDurableWork(input = {}, actor = {}) {
   const scope = await requireOperationsPermission('worker.manage', actor);
+  await assertOperationalAccess({
+    organizationId: scope.partnerId,
+    partnerId: scope.partnerId,
+    workspaceId: scope.receivingWorkspaceId,
+    connectionId: scope.connectionId,
+    operation: 'MUTATION',
+  });
   const limit = positiveInteger(input.limit, 'limit', { fallback: 25, maximum: 100 });
   await auditAdminAction(
     'durable_work.reconciliation_requested',
@@ -394,6 +409,13 @@ async function requeueDurableDeadLetter(workItemId, input = {}, actor = {}) {
     throw new AppError(404, ErrorCodes.DURABLE_WORK_NOT_FOUND, 'Dead-letter work was not found.');
   }
   const scope = await requireOperationsPermission('worker.manage', actor);
+  await assertOperationalAccess({
+    organizationId: scope.partnerId,
+    partnerId: scope.partnerId,
+    workspaceId: scope.receivingWorkspaceId,
+    connectionId: scope.connectionId,
+    operation: 'QUEUE_SUBMISSION',
+  });
   if (!scope.connectionId) {
     throw validationError('connectionId', 'connectionId is required for dead-letter requeue.');
   }

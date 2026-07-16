@@ -34,6 +34,21 @@ function safeErrorFields(error) {
     statusCode: error?.statusCode,
     retryable: isRetryableError(error),
     timeoutReason,
+    configuredTimeoutMs: error?.configuredTimeoutMs,
+    operationTimeoutMs: error?.operationTimeoutMs,
+    providerAttemptCount: error?.providerAttemptCount,
+    providerMaxAttempts: error?.providerMaxAttempts,
+    retryDelayMs: error?.retryDelayMs,
+    retryReason: error?.retryReason,
+    retryBudgetExhausted: error?.retryBudgetExhausted === true ? true : undefined,
+    researchAttemptCount: error?.researchAttemptCount,
+    researchAttemptDurationsMs: error?.researchAttemptDurationsMs,
+    fallbackResearchProfileUsed:
+      typeof error?.fallbackResearchProfileUsed === 'boolean'
+        ? error.fallbackResearchProfileUsed
+        : undefined,
+    finalProviderStatus: error?.finalProviderStatus,
+    groundingMetadataCount: error?.groundingMetadataCount,
     reason,
     recoveryRequired: error?.recoveryRequired === true ? true : undefined,
     recoveryReason:

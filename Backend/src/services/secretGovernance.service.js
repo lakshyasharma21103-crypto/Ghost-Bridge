@@ -35,6 +35,7 @@ const { decryptPayload, hashKey } = require('../utils/crypto');
 const { redactSecrets } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertOperationalAccess } = require('./operationalState.service');
 const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
 const {
   CREDENTIAL_TYPES,
@@ -817,6 +818,11 @@ async function activateVersion(secretId, versionId, input = {}, actor = {}) {
     'CREDENTIAL_VERSION_ACTIVATION',
     versionId,
   );
+  await assertOperationalAccess({
+    organizationId: scope.organizationId,
+    workspaceId: scope.workspaceId,
+    operation: 'CREDENTIAL_OPERATION',
+  });
   const result = await activateVersionInternal(secret, versionId, scope.actorId, input);
   await audit(SECRET_AUDIT_EVENTS.VERSION_ACTIVATED, result.secret, scope, actor, {
     secretVersionId: versionId,
@@ -1508,6 +1514,13 @@ async function governCredentialForConnection({
 }) {
   const organizationId = idOf(connection.organizationId || connection.partnerId);
   const workspaceId = connection.receivingWorkspaceId;
+  await assertOperationalAccess({
+    organizationId,
+    partnerId: connection.partnerId,
+    workspaceId,
+    connectionId: idOf(connection),
+    operation: 'CREDENTIAL_OPERATION',
+  });
   const existingBinding = connection.credentialBindingId
     ? await CredentialBinding.findOne({
         _id: connection.credentialBindingId,

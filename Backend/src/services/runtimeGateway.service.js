@@ -76,6 +76,7 @@ const {
   assertAuthorized,
   resourceFromConnection,
 } = require('./authorization.service');
+const { assertOperationalAccess } = require('./operationalState.service');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
@@ -1590,6 +1591,17 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       policySnapshotRevision: authorizationDecision.policySnapshotRevision,
       evaluatedAt: new Date(),
     };
+    await observer.stage('operational_state_check', () =>
+      assertOperationalAccess({
+        organizationId: authorizationDecision.organizationId,
+        partnerId: idOf(connection.partnerId),
+        workspaceId: authorizationDecision.workspaceId || connection.receivingWorkspaceId,
+        connectionId: idOf(connection),
+        adapterId: context.connection.runtimeType,
+        operation: 'EXECUTION',
+        existingClaim: Boolean(actor.durableWorkItemId),
+      }),
+    );
     auditActor = actorFor(connection, actor);
 
     const reservation = await observer.stage('invocation_persistence', () =>
@@ -1843,6 +1855,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       actorType: revalidationActor.type,
       requestId: actor.requestId,
       traceId: actor.traceId,
+      allowConsumed: Boolean(actor.durableWorkItemId),
     });
 
     const adapter = adapters[context.connection.runtimeType];

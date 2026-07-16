@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { SERVICE_ACCOUNT_LIFECYCLE_STATES } = require('../constants/enterpriseOperations');
 
 const roleBindingSchema = new mongoose.Schema(
   {
@@ -28,16 +29,25 @@ const serviceAccountSchema = new mongoose.Schema(
     roleBindings: { type: [roleBindingSchema], default: [] },
     status: {
       type: String,
-      enum: ['active', 'suspended', 'deleted'],
+      enum: SERVICE_ACCOUNT_LIFECYCLE_STATES,
       default: 'active',
       required: true,
       index: true,
     },
+    expiresAt: { type: Date, index: true },
+    lastUsedAt: { type: Date },
+    rotatedAt: { type: Date },
+    disabledAt: { type: Date },
+    revokedAt: { type: Date },
+    lifecycleRevision: { type: Number, default: 0, min: 0 },
+    lifecycleReason: { type: String, trim: true, maxlength: 1_000 },
+    lifecycleChangedAt: { type: Date },
   },
   { timestamps: true, strict: 'throw' },
 );
 
 serviceAccountSchema.index({ partnerId: 1, keyId: 1 }, { unique: true, sparse: true });
+serviceAccountSchema.index({ partnerId: 1, externalWorkspaceId: 1, status: 1 });
 
 module.exports =
   mongoose.models.ServiceAccount || mongoose.model('ServiceAccount', serviceAccountSchema);

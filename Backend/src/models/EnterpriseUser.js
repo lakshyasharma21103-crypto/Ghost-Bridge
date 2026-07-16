@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { MEMBERSHIP_LIFECYCLE_STATES } = require('../constants/enterpriseOperations');
 
 const roleBindingSchema = new mongoose.Schema(
   {
@@ -31,11 +32,16 @@ const enterpriseUserSchema = new mongoose.Schema(
     roleBindings: { type: [roleBindingSchema], default: [] },
     status: {
       type: String,
-      enum: ['active', 'suspended', 'deleted'],
+      enum: MEMBERSHIP_LIFECYCLE_STATES,
       default: 'active',
       required: true,
       index: true,
     },
+    lifecycleRevision: { type: Number, default: 0, min: 0 },
+    lifecycleReason: { type: String, trim: true, maxlength: 1_000 },
+    lifecycleChangedAt: { type: Date },
+    suspendedAt: { type: Date },
+    removedAt: { type: Date },
   },
   { timestamps: true, strict: 'throw' },
 );
@@ -44,6 +50,7 @@ enterpriseUserSchema.index(
   { partnerId: 1, externalUserId: 1 },
   { unique: true, name: 'unique_partner_enterprise_user' },
 );
+enterpriseUserSchema.index({ partnerId: 1, status: 1, updatedAt: -1 });
 
 module.exports =
   mongoose.models.EnterpriseUser || mongoose.model('EnterpriseUser', enterpriseUserSchema);

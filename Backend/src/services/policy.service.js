@@ -23,6 +23,7 @@ const { getAttributeRegistry } = require('../constants/policyAttributeRegistry')
 const { getPermission, hasPermission } = require('../constants/permissionRegistry');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertOperationalAccess } = require('./operationalState.service');
 const metrics = require('./policyMetrics.service');
 const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
 
@@ -884,6 +885,11 @@ async function activateDraft(stablePolicyId, version, input = {}, actor = {}) {
   throwIfInvalid(draft);
   await validateTenantReferences(draft, scope);
   await enforcePolicyApproval(scope, 'policy.activate', stablePolicyId, version, input, actor);
+  await assertOperationalAccess({
+    organizationId: scope.organizationId,
+    workspaceId: draft.workspaceId,
+    operation: 'PRIVILEGED_CONFIGURATION',
+  });
   const active = await loadActivePolicySnapshot(scope.organizationId, draft.workspaceId);
   await assertNoOwnerLockout(draft, { ...scope, workspaceId: draft.workspaceId }, active);
   let activated;
@@ -931,6 +937,11 @@ async function activateDraft(stablePolicyId, version, input = {}, actor = {}) {
 async function retirePolicy(stablePolicyId, version, input = {}, actor = {}) {
   const scope = await authorizeAction('policy.retire', input, actor, stablePolicyId);
   await enforcePolicyApproval(scope, 'policy.retire', stablePolicyId, version, input, actor);
+  await assertOperationalAccess({
+    organizationId: scope.organizationId,
+    workspaceId: scope.workspaceId,
+    operation: 'PRIVILEGED_CONFIGURATION',
+  });
   const expectedRevision = Number(input.expectedRevision);
   let retired;
   await mongoose.connection.transaction(async (session) => {

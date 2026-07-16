@@ -146,6 +146,7 @@ function inspectGeminiResponseShape(response, context = {}) {
       0,
     ),
     groundingMetadataPresent: metadata.length > 0,
+    groundingMetadataCount: metadata.length,
     groundingMetadataKeys,
     webSearchQueryCount: queries.length,
     groundingChunkCount: chunks.length,

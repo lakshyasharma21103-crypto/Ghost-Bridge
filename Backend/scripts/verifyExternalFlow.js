@@ -14,13 +14,20 @@ process.env.PORT = String(gatewayPort);
 process.env.EXTERNAL_TEST_AGENT_BASE_URL = `http://127.0.0.1:${externalAgentPort}`;
 process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN = runtimeToken;
 process.env.ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV = 'true';
-process.env.RUNTIME_INVOCATION_TIMEOUT_MS = '330000';
+process.env.RUNTIME_INVOCATION_TIMEOUT_MS = '430000';
 
 const requestedVerificationTimeoutMs = Number(process.env.EXTERNAL_FLOW_REQUEST_TIMEOUT_MS);
-const VERIFICATION_REQUEST_TIMEOUT_MS =
-  Number.isInteger(requestedVerificationTimeoutMs) && requestedVerificationTimeoutMs >= 360_000
-    ? requestedVerificationTimeoutMs
-    : 360_000;
+const VERIFICATION_REQUEST_TIMEOUT_MS = Number.isInteger(requestedVerificationTimeoutMs)
+  ? requestedVerificationTimeoutMs
+  : 410_000;
+if (
+  VERIFICATION_REQUEST_TIMEOUT_MS <= 390_000 ||
+  VERIFICATION_REQUEST_TIMEOUT_MS >= Number(process.env.RUNTIME_INVOCATION_TIMEOUT_MS)
+) {
+  throw new Error(
+    'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must exceed 390000 and be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
+  );
+}
 
 const { createApp } = require('../src/app');
 const { connectDatabase, databaseStatus, disconnectDatabase } = require('../src/config/db');
@@ -47,6 +54,27 @@ const SAFE_READINESS_STATUSES = new Set(['ready', 'not_ready']);
 const SAFE_PROVIDER_NAMES = new Set(['gemini', 'mock']);
 const SAFE_LIFECYCLE_STATUSES = new Set(['starting', 'ready', 'draining', 'stopped']);
 const SAFE_GEMINI_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
+const SAFE_FINAL_PROVIDER_STATUSES = new Set([
+  'ABORTED',
+  'ALREADY_EXISTS',
+  'CANCELLED',
+  'DATA_LOSS',
+  'DEADLINE_EXCEEDED',
+  'FAILED_PRECONDITION',
+  'INTERNAL',
+  'INVALID_ARGUMENT',
+  'LOCAL_DEADLINE_EXCEEDED',
+  'NOT_FOUND',
+  'OK',
+  'OUT_OF_RANGE',
+  'PERMISSION_DENIED',
+  'RESOURCE_EXHAUSTED',
+  'TRANSIENT_TRANSPORT_FAILURE',
+  'UNAUTHENTICATED',
+  'UNAVAILABLE',
+  'UNIMPLEMENTED',
+  'UNKNOWN',
+]);
 const SAFE_SOURCE_EXTRACTION_CODES = new Set([
   'GEMINI_GROUNDING_METADATA_MISSING',
   'GEMINI_SOURCE_PARSING_FAILED',
@@ -95,6 +123,11 @@ class ExternalFlowVerificationError extends Error {
       'groundingMetadataPresent',
       'groundingChunkCount',
       'webSearchQueryCount',
+      'researchAttemptCount',
+      'researchAttemptDurationsMs',
+      'fallbackResearchProfileUsed',
+      'finalProviderStatus',
+      'groundingMetadataCount',
       'requestId',
       'traceId',
       'durationMs',
@@ -153,6 +186,19 @@ function safeGeminiOperation(value) {
 
 function safeConfiguredTimeoutMs(value) {
   return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
+}
+
+function safeAttemptDurations(value) {
+  return Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= 2 &&
+    value.every((duration) => Number.isInteger(duration) && duration >= 0 && duration <= 600_000)
+    ? value
+    : undefined;
+}
+
+function safeFinalProviderStatus(value) {
+  return SAFE_FINAL_PROVIDER_STATUSES.has(value) ? value : undefined;
 }
 
 function sourceExtractionDiagnostics(logChunks, identifiers = {}) {
@@ -226,6 +272,16 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
         typeof rawGroundingMetadataPresent === 'boolean' ? rawGroundingMetadataPresent : undefined,
       groundingChunkCount: safeDiagnosticCount(errorField(error, 'groundingChunkCount')),
       webSearchQueryCount: safeDiagnosticCount(errorField(error, 'webSearchQueryCount')),
+      researchAttemptCount: safeDiagnosticCount(errorField(error, 'researchAttemptCount')),
+      researchAttemptDurationsMs: safeAttemptDurations(
+        errorField(error, 'researchAttemptDurationsMs'),
+      ),
+      fallbackResearchProfileUsed:
+        typeof errorField(error, 'fallbackResearchProfileUsed') === 'boolean'
+          ? errorField(error, 'fallbackResearchProfileUsed')
+          : undefined,
+      finalProviderStatus: safeFinalProviderStatus(errorField(error, 'finalProviderStatus')),
+      groundingMetadataCount: safeDiagnosticCount(errorField(error, 'groundingMetadataCount')),
       requestId: safeIdentifier(errorField(error, 'requestId')),
       traceId: safeIdentifier(errorField(error, 'traceId')),
       durationMs: Math.max(0, now - state.stageStartedAt),
@@ -255,6 +311,21 @@ function formatVerificationFailure(error) {
     }`,
     `Grounding chunk count: ${safeDiagnosticCount(error.groundingChunkCount) ?? '[unavailable]'}`,
     `Web Search query count: ${safeDiagnosticCount(error.webSearchQueryCount) ?? '[unavailable]'}`,
+    `Research attempt count: ${safeDiagnosticCount(error.researchAttemptCount) ?? '[unavailable]'}`,
+    `Research attempt durations ms: ${
+      safeAttemptDurations(error.researchAttemptDurationsMs)?.join(', ') || '[unavailable]'
+    }`,
+    `Fallback research profile used: ${
+      typeof error.fallbackResearchProfileUsed === 'boolean'
+        ? error.fallbackResearchProfileUsed
+        : '[unavailable]'
+    }`,
+    `Final provider status: ${
+      safeFinalProviderStatus(error.finalProviderStatus) || '[unavailable]'
+    }`,
+    `Genuine grounding metadata count: ${
+      safeDiagnosticCount(error.groundingMetadataCount) ?? '[unavailable]'
+    }`,
     `Safe message: ${redactString(String(error.message || 'External-flow verification failed.'))}`,
     `Request ID: ${safeIdentifier(error.requestId) || '[unavailable]'}`,
     `Trace ID: ${safeIdentifier(error.traceId) || '[unavailable]'}`,
@@ -332,7 +403,11 @@ function externalAgentConfig() {
     'GEMINI_RESEARCH_TIMEOUT_MS',
     'GEMINI_FORMATTING_TIMEOUT_MS',
     'GEMINI_RESEARCH_MAX_ATTEMPTS',
+    'GEMINI_FORMATTING_MAX_ATTEMPTS',
     'GEMINI_REQUEST_TIMEOUT_MS',
+    'GEMINI_RESEARCH_MAX_OUTPUT_TOKENS',
+    'GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS',
+    'GEMINI_FORMATTING_MAX_OUTPUT_TOKENS',
     'GEMINI_MAX_OUTPUT_TOKENS',
     'GEMINI_MAX_SOURCES',
     'GEMINI_THINKING_LEVEL',
@@ -343,9 +418,8 @@ function externalAgentConfig() {
   return readExternalEnvironment({
     ...local,
     ...overrides,
-    // This command is an explicitly billed live gate. A single bounded retry makes the
-    // verifier resilient to Gemini's documented transient 408/429/5xx responses without
-    // changing the production service's single-attempt default.
+    // This command is an explicitly billed live gate. Grounded research permits exactly one
+    // application retry for the narrow transient policy enforced by GeminiProvider.
     GEMINI_RESEARCH_MAX_ATTEMPTS:
       process.env.EXTERNAL_FLOW_GEMINI_RESEARCH_MAX_ATTEMPTS ||
       overrides.GEMINI_RESEARCH_MAX_ATTEMPTS ||
@@ -354,7 +428,7 @@ function externalAgentConfig() {
     NODE_ENV: 'development',
     EXTERNAL_AGENT_RUNTIME_TOKEN: runtimeToken,
     ALLOWED_GATEWAY_ORIGINS: '',
-    REQUEST_TIMEOUT_MS: '300000',
+    REQUEST_TIMEOUT_MS: '390000',
     AI_PROVIDER: 'gemini',
   });
 }
@@ -440,6 +514,16 @@ function success(result, label, options = {}) {
       ...identifiers,
       ...sourceDiagnostics,
       operation: safeGeminiOperation(result.body?.error?.operation),
+      researchAttemptCount: safeDiagnosticCount(result.body?.error?.researchAttemptCount),
+      researchAttemptDurationsMs: safeAttemptDurations(
+        result.body?.error?.researchAttemptDurationsMs,
+      ),
+      fallbackResearchProfileUsed:
+        typeof result.body?.error?.fallbackResearchProfileUsed === 'boolean'
+          ? result.body.error.fallbackResearchProfileUsed
+          : undefined,
+      finalProviderStatus: safeFinalProviderStatus(result.body?.error?.finalProviderStatus),
+      groundingMetadataCount: safeDiagnosticCount(result.body?.error?.groundingMetadataCount),
       ...timeoutDiagnostics,
       connectionId: options.connectionId,
     });
@@ -752,6 +836,38 @@ async function verify() {
         'Invocation runtime source count does not match returned sources.',
       );
     }
+    const researchRuntime = invocation.output.runtime;
+    assert(
+      Number.isInteger(researchRuntime.researchAttemptCount) &&
+        researchRuntime.researchAttemptCount >= 1 &&
+        researchRuntime.researchAttemptCount <= 2,
+      'Invocation research attempt count is invalid.',
+    );
+    assert(
+      safeAttemptDurations(researchRuntime.researchAttemptDurationsMs)?.length ===
+        researchRuntime.researchAttemptCount,
+      'Invocation research attempt durations are invalid.',
+    );
+    assert(
+      typeof researchRuntime.fallbackResearchProfileUsed === 'boolean' &&
+        researchRuntime.fallbackResearchProfileUsed ===
+          (researchRuntime.researchAttemptCount === 2),
+      'Invocation fallback research profile reporting is invalid.',
+    );
+    assert(
+      researchRuntime.finalProviderStatus === 'OK',
+      'Invocation final Gemini provider status is not OK.',
+    );
+    assert(
+      Number.isInteger(researchRuntime.groundingMetadataCount) &&
+        researchRuntime.groundingMetadataCount > 0,
+      'Invocation genuine grounding metadata count is absent.',
+    );
+    report('research attempt count', String(researchRuntime.researchAttemptCount));
+    report('research attempt durations ms', researchRuntime.researchAttemptDurationsMs.join(', '));
+    report('fallback research profile used', String(researchRuntime.fallbackResearchProfileUsed));
+    report('final provider status', researchRuntime.finalProviderStatus);
+    report('genuine grounding metadata count', String(researchRuntime.groundingMetadataCount));
 
     beginStage(state, 'invocation_persistence');
     const storedInvocation = await Invocation.findById(invocation.invocationId).lean();

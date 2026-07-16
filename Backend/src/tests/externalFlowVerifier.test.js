@@ -76,18 +76,19 @@ test('runtime invocation timeout accepts at least 360000 milliseconds and reject
   assert.match(`${invalid.stdout}${invalid.stderr}`, /must be a positive integer/);
 });
 
-test('external-flow verifier uses a long invocation timeout and never forces 70000 milliseconds', () => {
+test('external-flow verifier preserves the provider, request, client, and gateway timeout hierarchy', () => {
   const source = fs.readFileSync(
     path.resolve(__dirname, '../../scripts/verifyExternalFlow.js'),
     'utf8',
   );
 
-  assert.equal(VERIFICATION_REQUEST_TIMEOUT_MS >= 360_000, true);
-  assert.match(source, /RUNTIME_INVOCATION_TIMEOUT_MS\s*=\s*'330000'/);
-  assert.match(source, /REQUEST_TIMEOUT_MS:\s*'300000'/);
-  assert.ok(300_000 > 180_000 + 90_000 + 10_000);
-  assert.ok(330_000 > 300_000);
-  assert.ok(VERIFICATION_REQUEST_TIMEOUT_MS > 330_000);
+  assert.equal(VERIFICATION_REQUEST_TIMEOUT_MS, 410_000);
+  assert.match(source, /RUNTIME_INVOCATION_TIMEOUT_MS\s*=\s*'430000'/);
+  assert.match(source, /REQUEST_TIMEOUT_MS:\s*'390000'/);
+  assert.ok(120_000 < 390_000);
+  assert.ok(60_000 < 390_000);
+  assert.ok(390_000 < VERIFICATION_REQUEST_TIMEOUT_MS);
+  assert.ok(VERIFICATION_REQUEST_TIMEOUT_MS < 430_000);
   assert.doesNotMatch(source, /RUNTIME_REQUEST_TIMEOUT_MS\s*=.*70000/);
 });
 
@@ -299,6 +300,11 @@ test('Gemini stage timeouts report only safe operation and configured-deadline m
       operation: 'grounded_research',
       timeoutReason: 'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
       configuredTimeoutMs: 115_000,
+      researchAttemptCount: 2,
+      researchAttemptDurationsMs: [23_000, 114_000],
+      fallbackResearchProfileUsed: true,
+      finalProviderStatus: 'DEADLINE_EXCEEDED',
+      groundingMetadataCount: 0,
       requestId: 'req_endpoint-test',
       traceId: 'trace_endpoint-test',
       message: `private response ${secret}`,
@@ -326,10 +332,20 @@ test('Gemini stage timeouts report only safe operation and configured-deadline m
   assert.equal(failure.operation, 'grounded_research');
   assert.equal(failure.timeoutReason, 'LOCAL_PROVIDER_DEADLINE_EXCEEDED');
   assert.equal(failure.configuredTimeoutMs, 115_000);
+  assert.equal(failure.researchAttemptCount, 2);
+  assert.deepEqual(failure.researchAttemptDurationsMs, [23_000, 114_000]);
+  assert.equal(failure.fallbackResearchProfileUsed, true);
+  assert.equal(failure.finalProviderStatus, 'DEADLINE_EXCEEDED');
+  assert.equal(failure.groundingMetadataCount, 0);
   assert.match(output, /Failed stage: gateway_invocation/);
   assert.match(output, /Operation: grounded_research/);
   assert.match(output, /Timeout reason: LOCAL_PROVIDER_DEADLINE_EXCEEDED/);
   assert.match(output, /Configured timeout ms: 115000/);
+  assert.match(output, /Research attempt count: 2/);
+  assert.match(output, /Research attempt durations ms: 23000, 114000/);
+  assert.match(output, /Fallback research profile used: true/);
+  assert.match(output, /Final provider status: DEADLINE_EXCEEDED/);
+  assert.match(output, /Genuine grounding metadata count: 0/);
   assert.match(output, /Request ID: req_endpoint-test/);
   assert.match(output, /Trace ID: trace_endpoint-test/);
   assert.equal(output.includes(secret), false);

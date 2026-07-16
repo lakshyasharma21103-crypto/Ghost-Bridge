@@ -16,6 +16,7 @@ const { decryptPayload } = require('../utils/crypto');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { SECRET_AUDIT_EVENTS, SECRET_LIMITS } = require('../constants/secretGovernance');
+const { assertOperationalAccess } = require('./operationalState.service');
 
 function idOf(value) {
   return String(value?._id || value?.id || value || '');
@@ -309,6 +310,15 @@ async function resolveCredentialForRuntime(input = {}) {
       }));
     if (!connection) throw safeError(ErrorCodes.SECRET_ACCESS_DENIED, 'Credential access denied.');
     assertTenant(connection, input);
+    await assertOperationalAccess({
+      organizationId: input.organizationId || connection.organizationId || connection.partnerId,
+      partnerId: connection.partnerId,
+      workspaceId: input.workspaceId || connection.receivingWorkspaceId,
+      connectionId: idOf(connection),
+      adapterId: input.adapterId || connection.runtimeType,
+      operation: 'CREDENTIAL_OPERATION',
+      existingClaim: Boolean(input.durableWorkItemId),
+    });
     if (connection.status !== 'connected') {
       throw safeError(ErrorCodes.SECRET_ACCESS_DENIED, 'Connection is not connected.');
     }

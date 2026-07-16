@@ -76,6 +76,18 @@ function redactSecrets(value, depth = 0, keyName = '') {
         durationMs: value.durationMs,
         timeoutReason:
           value.code === 'GEMINI_REQUEST_TIMEOUT' ? value.timeoutReason || value.reason : undefined,
+        configuredTimeoutMs: value.configuredTimeoutMs,
+        operationTimeoutMs: value.operationTimeoutMs,
+        providerAttemptCount: value.providerAttemptCount,
+        providerMaxAttempts: value.providerMaxAttempts,
+        retryDelayMs: value.retryDelayMs,
+        retryReason: value.retryReason,
+        retryBudgetExhausted: value.retryBudgetExhausted,
+        researchAttemptCount: value.researchAttemptCount,
+        researchAttemptDurationsMs: value.researchAttemptDurationsMs,
+        fallbackResearchProfileUsed: value.fallbackResearchProfileUsed,
+        finalProviderStatus: value.finalProviderStatus,
+        groundingMetadataCount: value.groundingMetadataCount,
         reason:
           (value.code === 'REQUEST_CANCELLED' && value.reason === 'CLIENT_DISCONNECTED') ||
           (value.code === 'SERVICE_SHUTDOWN' && value.reason === 'SERVICE_SHUTDOWN')

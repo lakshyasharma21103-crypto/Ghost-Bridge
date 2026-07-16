@@ -148,7 +148,11 @@ function baseRoleKeys(actor, resource, context = {}) {
     .map(normalizeRoleKey)
     .filter(Boolean);
   if (explicit.length) return explicit;
-  if (actor.partnerId && actor.type === 'service_account') return ['organization_owner'];
+  // A Partner API key is the legacy organization-owner principal. Tenant
+  // service accounts must derive only their explicitly bound roles.
+  if (actor.partnerId && actor.type === 'service_account' && !actor.serviceAccountId) {
+    return ['organization_owner'];
+  }
   if (
     actor.type === 'system' &&
     (actor.trustedSystem === true || actor.durableWorkItemId || context.trustedSystem === true)
@@ -185,7 +189,15 @@ async function roleKeysFromPersistentIdentity(actor, tenant) {
     const filter = mongoose.isValidObjectId(actor.serviceAccountId)
       ? { _id: actor.serviceAccountId }
       : { partnerId: actor.partnerId, keyId: actor.serviceAccountId };
-    identity = await ServiceAccount.findOne({ ...filter, status: 'active' }).lean();
+    identity = await ServiceAccount.findOne({
+      ...filter,
+      status: 'active',
+      $or: [
+        { expiresAt: { $exists: false } },
+        { expiresAt: null },
+        { expiresAt: { $gt: new Date() } },
+      ],
+    }).lean();
   }
   if (!identity) return [];
   return (identity.roleBindings || [])

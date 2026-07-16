@@ -31,6 +31,7 @@ const {
   legacyStatusForState,
   transitionHistoryEntry,
 } = require('./invocationLifecycle.service');
+const { assertOperationalAccess } = require('./operationalState.service');
 
 const SAFE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -785,6 +786,15 @@ function enqueueDocument(input, now) {
 async function enqueueWork(input, options = {}) {
   const now = dateValue(options.now, 'now');
   let document = enqueueDocument(input, now);
+  if (mongoose.connection.readyState === 1 || options.assertOperationalAccess) {
+    await (options.assertOperationalAccess || assertOperationalAccess)({
+      organizationId: input.organizationId || input.partnerId,
+      partnerId: input.partnerId,
+      workspaceId: input.receivingWorkspaceId,
+      connectionId: input.connectionId,
+      operation: 'QUEUE_SUBMISSION',
+    });
+  }
   let initialOwnership;
   if (options.initialClaim) {
     const leaseOwner = safeIdentifier(options.initialClaim.leaseOwner, 'leaseOwner');

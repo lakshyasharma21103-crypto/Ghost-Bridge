@@ -15,6 +15,7 @@ const { transitionUpdate } = require('./invocationLifecycle.service');
 const { classifyStuckInvocation } = require('../utils/stuckInvocation');
 const { recoveryPolicyDecision } = require('../utils/recoveryPolicy');
 const { validateCredentialStateForConnection } = require('./credentialBroker.service');
+const { assertOperationalAccess } = require('./operationalState.service');
 const {
   controlContext,
   serializeOperationalInvocation,
@@ -1133,6 +1134,13 @@ async function manualRetry(invocationId, input, actor = {}) {
     traceId: actor.traceId,
     requireCredentialState: true,
   });
+  await assertOperationalAccess({
+    organizationId: context.connection.organizationId || context.connection.partnerId,
+    partnerId: context.connection.partnerId,
+    workspaceId: context.identity.receivingWorkspaceId,
+    connectionId: context.connection._id,
+    operation: 'EXECUTION',
+  });
   const decision = recoveryPolicyDecision(controlContext(context.invocation, context.connection));
   await audit('invocation.recovery.retry_requested', context, actor, {
     reasonCode: decision.reason,
@@ -1442,6 +1450,13 @@ async function manualResolve(invocationId, input, actor = {}) {
     permission: 'invocation.cancel',
     requestId: actor.requestId,
     traceId: actor.traceId,
+  });
+  await assertOperationalAccess({
+    organizationId: context.connection.organizationId || context.connection.partnerId,
+    partnerId: context.connection.partnerId,
+    workspaceId: context.identity.receivingWorkspaceId,
+    connectionId: context.connection._id,
+    operation: 'LIFECYCLE_CONTROL',
   });
   const resolution = String(input?.resolution || '')
     .trim()

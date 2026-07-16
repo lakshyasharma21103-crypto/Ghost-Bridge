@@ -2,12 +2,19 @@ const path = require('node:path');
 const dotenv = require('dotenv');
 const { z } = require('zod');
 const { resolveGeminiThinkingConfiguration } = require('./geminiThinking');
+const {
+  DEFAULT_EXTERNAL_REQUEST_TIMEOUT_MS,
+  DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
+  DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
+  GEMINI_PROCESSING_OVERHEAD_MS,
+  providerRequestBudget,
+} = require('./timeoutBudget');
 
-const DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS = 180_000;
-const DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS = 90_000;
-const DEFAULT_GEMINI_RESEARCH_MAX_ATTEMPTS = 1;
+const DEFAULT_GEMINI_RESEARCH_MAX_ATTEMPTS = 2;
 const DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS = 2;
-const GEMINI_PROCESSING_OVERHEAD_MS = 10_000;
+const DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS = 512;
+const DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 256;
+const DEFAULT_GEMINI_FORMATTING_MAX_OUTPUT_TOKENS = 1_500;
 
 const booleanValue = (defaultValue) =>
   z.preprocess((value) => {
@@ -22,6 +29,11 @@ const booleanValue = (defaultValue) =>
 const optionalTimeout = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
   z.coerce.number().int().min(1_000).max(600_000).optional(),
+);
+
+const optionalOutputTokens = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.coerce.number().int().min(128).max(8_192).optional(),
 );
 
 function resolveGeminiTimeouts(environment) {
@@ -44,7 +56,12 @@ const environmentSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     EXTERNAL_AGENT_RUNTIME_TOKEN: z.string().min(32, 'must contain at least 32 characters'),
     ALLOWED_GATEWAY_ORIGINS: z.string().default(''),
-    REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(1_800_000).default(300_000),
+    REQUEST_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(100)
+      .max(1_800_000)
+      .default(DEFAULT_EXTERNAL_REQUEST_TIMEOUT_MS),
     SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(100).max(300_000).default(30_000),
     AI_PROVIDER: z.enum(['gemini', 'mock']).default('gemini'),
     GEMINI_API_KEY: z.string().trim().optional(),
@@ -65,7 +82,10 @@ const environmentSchema = z
       .max(2)
       .default(DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS),
     GEMINI_REQUEST_TIMEOUT_MS: optionalTimeout,
-    GEMINI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(128).max(8_192).default(1_500),
+    GEMINI_RESEARCH_MAX_OUTPUT_TOKENS: optionalOutputTokens,
+    GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS: optionalOutputTokens,
+    GEMINI_FORMATTING_MAX_OUTPUT_TOKENS: optionalOutputTokens,
+    GEMINI_MAX_OUTPUT_TOKENS: optionalOutputTokens,
     GEMINI_MAX_SOURCES: z.coerce.number().int().min(1).max(20).default(8),
     GEMINI_THINKING_LEVEL: z.any().optional(),
     GEMINI_THINKING_BUDGET: z.any().optional(),
@@ -111,13 +131,29 @@ const environmentSchema = z
       }
 
       const { researchTimeoutMs, formattingTimeoutMs } = resolveGeminiTimeouts(environment);
-      const practicalProviderDeadlineMs =
-        researchTimeoutMs + formattingTimeoutMs + GEMINI_PROCESSING_OVERHEAD_MS;
-      if (environment.REQUEST_TIMEOUT_MS <= practicalProviderDeadlineMs) {
+      const budget = providerRequestBudget({
+        researchTimeoutMs,
+        formattingTimeoutMs,
+        researchMaxAttempts: environment.GEMINI_RESEARCH_MAX_ATTEMPTS,
+        formattingMaxAttempts: environment.GEMINI_FORMATTING_MAX_ATTEMPTS,
+      });
+      if (environment.REQUEST_TIMEOUT_MS <= budget.totalTimeoutMs) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['REQUEST_TIMEOUT_MS'],
-          message: `must be greater than ${practicalProviderDeadlineMs} milliseconds (the combined Gemini stage deadlines plus processing overhead)`,
+          message: `must be greater than ${budget.totalTimeoutMs} milliseconds (all configured Gemini attempts, maximum retry delays, and processing overhead)`,
+        });
+      }
+      const researchOutputTokens =
+        environment.GEMINI_RESEARCH_MAX_OUTPUT_TOKENS ?? DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS;
+      const fallbackOutputTokens =
+        environment.GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS ??
+        DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS;
+      if (fallbackOutputTokens >= researchOutputTokens) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS'],
+          message: 'must be less than GEMINI_RESEARCH_MAX_OUTPUT_TOKENS',
         });
       }
     }
@@ -159,6 +195,21 @@ function readEnvironment(source = process.env) {
     thinkingBudget: result.data.GEMINI_THINKING_BUDGET,
   });
   const timeouts = resolveGeminiTimeouts(result.data);
+  const timeoutBudget = providerRequestBudget({
+    researchTimeoutMs: timeouts.researchTimeoutMs,
+    formattingTimeoutMs: timeouts.formattingTimeoutMs,
+    researchMaxAttempts: result.data.GEMINI_RESEARCH_MAX_ATTEMPTS,
+    formattingMaxAttempts: result.data.GEMINI_FORMATTING_MAX_ATTEMPTS,
+  });
+  const researchMaxOutputTokens =
+    result.data.GEMINI_RESEARCH_MAX_OUTPUT_TOKENS ?? DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS;
+  const researchFallbackMaxOutputTokens =
+    result.data.GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS ??
+    DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS;
+  const formattingMaxOutputTokens =
+    result.data.GEMINI_FORMATTING_MAX_OUTPUT_TOKENS ??
+    result.data.GEMINI_MAX_OUTPUT_TOKENS ??
+    DEFAULT_GEMINI_FORMATTING_MAX_OUTPUT_TOKENS;
 
   return Object.freeze({
     port: result.data.PORT,
@@ -174,9 +225,16 @@ function readEnvironment(source = process.env) {
       webSearchEnabled: result.data.GEMINI_WEB_SEARCH_ENABLED,
       researchTimeoutMs: timeouts.researchTimeoutMs,
       formattingTimeoutMs: timeouts.formattingTimeoutMs,
+      researchOperationTimeoutMs: timeoutBudget.researchOperationTimeoutMs,
+      formattingOperationTimeoutMs: timeoutBudget.formattingOperationTimeoutMs,
+      retryDelayBudgetMs: timeoutBudget.retryDelayBudgetMs,
       researchMaxAttempts: result.data.GEMINI_RESEARCH_MAX_ATTEMPTS,
       formattingMaxAttempts: result.data.GEMINI_FORMATTING_MAX_ATTEMPTS,
-      maxOutputTokens: result.data.GEMINI_MAX_OUTPUT_TOKENS,
+      researchMaxOutputTokens,
+      researchFallbackMaxOutputTokens,
+      formattingMaxOutputTokens,
+      // Kept as a compatibility alias for older callers; grounded research uses its own caps.
+      maxOutputTokens: formattingMaxOutputTokens,
       maxSources: result.data.GEMINI_MAX_SOURCES,
       thinkingLevel: thinking.thinkingLevel,
       thinkingBudget: thinking.thinkingBudget,
@@ -193,9 +251,12 @@ function loadEnvironment() {
 }
 
 module.exports = {
+  DEFAULT_GEMINI_FORMATTING_MAX_OUTPUT_TOKENS,
   DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS,
   DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
   DEFAULT_GEMINI_RESEARCH_MAX_ATTEMPTS,
+  DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS,
+  DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS,
   DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
   GEMINI_PROCESSING_OVERHEAD_MS,
   loadEnvironment,

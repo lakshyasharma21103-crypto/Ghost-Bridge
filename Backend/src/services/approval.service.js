@@ -21,6 +21,7 @@ const { approvalFingerprint, canonicalDigest } = require('../utils/complianceCan
 const { redactString } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertOperationalAccess } = require('./operationalState.service');
 const metrics = require('./complianceMetrics.service');
 const notificationDeliveryAdapters = new Set();
 
@@ -1730,6 +1731,25 @@ async function consumeApprovalGrants(enforcement, options = {}) {
   if (!enforcement?.required) return enforcement;
   const consumed = [];
   for (const approved of enforcement.approvals) {
+    const operationType = String(approved.request.operationType || '').toUpperCase();
+    const operation =
+      operationType.includes('REACTIVAT') ||
+      operationType.includes('SUSPEND') ||
+      operationType.includes('ARCHIV')
+        ? 'LIFECYCLE_CONTROL'
+        : operationType.includes('MAINTENANCE')
+          ? 'MAINTENANCE_CONTROL'
+          : operationType.includes('DELETION')
+            ? 'DELETION_CONTROL'
+            : operationType.includes('INVOCATION') || operationType.includes('RECOVERY_RETRY')
+              ? 'EXECUTION'
+              : 'MUTATION';
+    await assertOperationalAccess({
+      organizationId: approved.request.organizationId,
+      workspaceId: approved.request.workspaceId,
+      operation,
+      existingClaim: options.allowConsumed === true,
+    });
     if (approved.grant.status === 'CONSUMED') {
       consumed.push(approved);
       continue;

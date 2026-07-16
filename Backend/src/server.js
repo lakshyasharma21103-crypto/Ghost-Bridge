@@ -148,10 +148,17 @@ async function start(options = {}) {
       lifecycle.markReady();
       if (!options.connectDatabase) {
         const { resumePendingEvidenceExports } = require('./services/evidence.service');
+        const { resumeAdministrativeJobs } = require('./services/enterpriseOperations.service');
         void resumePendingEvidenceExports().catch((error) =>
           activeLogger.error(
             { error: safeLogPayload(error), event: 'evidence.export_recovery_failed' },
             'Evidence export recovery failed',
+          ),
+        );
+        void resumeAdministrativeJobs().catch((error) =>
+          activeLogger.error(
+            { error: safeLogPayload(error), event: 'enterprise_operations_recovery_failed' },
+            'Enterprise administrative job recovery failed',
           ),
         );
       }

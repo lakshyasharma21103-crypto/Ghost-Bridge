@@ -1,12 +1,14 @@
 const { env } = require('../config/env');
 const { databaseStatus } = require('../config/db');
 const Invocation = require('../models/Invocation');
+const RuntimeWorkItem = require('../models/RuntimeWorkItem');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { logger } = require('../utils/logger');
 const RuntimeGateway = require('./runtimeGateway.service');
 const { sweepSecretLifecycle } = require('./secretLifecycleMaintenance.service');
 const { markActiveInvocationRecovery } = require('./invocationLifecycle.service');
+const { assertOperationalAccess } = require('./operationalState.service');
 const {
   claimNextWork,
   ensureDurableIndexes,
@@ -176,6 +178,36 @@ async function markInvocationPolicyDenied(workItem, error) {
   );
 }
 
+async function pauseClaimedWork(workItem, ownership, error) {
+  const result = await RuntimeWorkItem.findOneAndUpdate(
+    {
+      _id: workItem._id,
+      leaseOwner: ownership.leaseOwner,
+      status: 'claimed',
+    },
+    {
+      $set: {
+        status: 'blocked',
+        blockedAt: new Date(),
+        blockedReasonCode: safeCode(
+          error?.code || error?.reasonCode,
+          'OPERATIONAL_STATE_INCONSISTENT',
+        ),
+      },
+      $unset: {
+        leaseOwner: 1,
+        leaseTokenHash: 1,
+        leaseAcquiredAt: 1,
+        leaseExpiresAt: 1,
+        lastHeartbeatAt: 1,
+      },
+      $inc: { version: 1 },
+    },
+    { new: true },
+  );
+  return result;
+}
+
 async function settleOrphanedWork({ workItem, ownership, result, error, dependencies }) {
   let control;
   try {
@@ -241,6 +273,8 @@ function executionDependencies(overrides = {}) {
     recordMilestone,
     renewRuntimeExecutionOwnership: RuntimeGateway.renewRuntimeExecutionOwnership,
     startWork,
+    assertOperationalAccess,
+    pauseClaimedWork,
     ...overrides,
   };
 }
@@ -328,6 +362,37 @@ async function executeClaimedWork(claim, options = {}) {
   let result;
   let executionError;
   try {
+    try {
+      // Production workers always have a live model connection. Keeping the
+      // injected path available lets isolated worker tests exercise this guard
+      // without turning a unit test into an implicit database integration test.
+      if (RuntimeWorkItem.db.readyState === 1 || options.dependencies?.assertOperationalAccess) {
+        await dependencies.assertOperationalAccess({
+          organizationId: workItem.organizationId || workItem.partnerId,
+          partnerId: workItem.partnerId,
+          workspaceId: workItem.receivingWorkspaceId,
+          connectionId: workItem.connectionId,
+          operation: 'WORKER_CLAIM',
+        });
+      }
+    } catch (error) {
+      if (
+        [
+          ErrorCodes.ORGANIZATION_SUSPENDED,
+          ErrorCodes.ORGANIZATION_ARCHIVED,
+          ErrorCodes.ORGANIZATION_DELETION_PENDING,
+          ErrorCodes.WORKSPACE_SUSPENDED,
+          ErrorCodes.WORKSPACE_READ_ONLY,
+          ErrorCodes.WORKSPACE_ARCHIVED,
+          ErrorCodes.MAINTENANCE_MODE_ACTIVE,
+          ErrorCodes.EXECUTION_DRAINING,
+        ].includes(error?.code)
+      ) {
+        await dependencies.pauseClaimedWork(workItem, claim.ownership, error);
+        return { status: 'blocked', reasonCode: error.code };
+      }
+      throw error;
+    }
     try {
       await dependencies.startWork(workItemId, claim.ownership);
     } catch (error) {

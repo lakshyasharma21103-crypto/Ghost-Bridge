@@ -38,6 +38,18 @@ const AuditCheckpoint = require('./AuditCheckpoint');
 const RetentionPolicy = require('./RetentionPolicy');
 const LegalHold = require('./LegalHold');
 const EvidenceExport = require('./EvidenceExport');
+const LifecycleTransition = require('./LifecycleTransition');
+const MaintenanceWindow = require('./MaintenanceWindow');
+const AccessReviewCampaign = require('./AccessReviewCampaign');
+const AccessReviewItem = require('./AccessReviewItem');
+const OperationalConfiguration = require('./OperationalConfiguration');
+const OperationalIncident = require('./OperationalIncident');
+const SecurityEvent = require('./SecurityEvent');
+const TenantDataExport = require('./TenantDataExport');
+const TenantDeletionJob = require('./TenantDeletionJob');
+const TenantDeletionTombstone = require('./TenantDeletionTombstone');
+const OperationalRecovery = require('./OperationalRecovery');
+const DisasterRecoveryStatus = require('./DisasterRecoveryStatus');
 
 module.exports = {
   Partner,
@@ -80,4 +92,16 @@ module.exports = {
   RetentionPolicy,
   LegalHold,
   EvidenceExport,
+  LifecycleTransition,
+  MaintenanceWindow,
+  AccessReviewCampaign,
+  AccessReviewItem,
+  OperationalConfiguration,
+  OperationalIncident,
+  SecurityEvent,
+  TenantDataExport,
+  TenantDeletionJob,
+  TenantDeletionTombstone,
+  OperationalRecovery,
+  DisasterRecoveryStatus,
 };

@@ -96,7 +96,7 @@ const credentialEncryptionKeyVersion = validateEncryptionKeyVersion(
 );
 const allowPrivateRuntimeUrlsInDev =
   nodeEnv === 'development' && booleanFromEnv('ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV', false);
-const runtimeInvocationTimeoutMs = integerFromEnv('RUNTIME_INVOCATION_TIMEOUT_MS', 330_000);
+const runtimeInvocationTimeoutMs = integerFromEnv('RUNTIME_INVOCATION_TIMEOUT_MS', 430_000);
 const runtimeRetryMaxAttempts = integerInRangeFromEnv('RUNTIME_RETRY_MAX_ATTEMPTS', 2, 1, 5);
 const runtimeRetryBaseDelayMs = integerInRangeFromEnv(
   'RUNTIME_RETRY_BASE_DELAY_MS',

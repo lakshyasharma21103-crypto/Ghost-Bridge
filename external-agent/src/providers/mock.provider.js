@@ -22,6 +22,13 @@ class MockProvider extends AIProvider {
       summary: `External agent result for: ${topic}`,
       sourceReferences: [{ title: 'External agent test source', url: MOCK_SOURCE }],
       webSearchUsed: false,
+      researchDiagnostics: {
+        attemptCount: 1,
+        attemptDurationsMs: [0],
+        fallbackProfileUsed: false,
+        finalProviderStatus: 'OK',
+        groundingMetadataCount: 0,
+      },
     };
   }
 }

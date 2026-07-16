@@ -3,6 +3,7 @@ const DURABLE_WORK_TYPES = Object.freeze(['runtime_invocation', 'recovery_retry'
 const DURABLE_WORK_STATUSES = Object.freeze([
   'pending',
   'waiting_for_approval',
+  'blocked',
   'claimed',
   'running',
   'retry_preparing',

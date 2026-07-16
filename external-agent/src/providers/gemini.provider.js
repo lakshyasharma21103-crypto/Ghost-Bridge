@@ -1,7 +1,16 @@
+const crypto = require('node:crypto');
 const { GoogleGenAI } = require('@google/genai');
 const { z } = require('zod');
 const { resolveGeminiThinkingConfiguration, safeModelName } = require('../config/geminiThinking');
 const {
+  DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
+  DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
+  operationBudgetMs,
+  retryDelayMs,
+} = require('../config/timeoutBudget');
+const {
+  FALLBACK_RESEARCH_PROFILE,
+  PRIMARY_RESEARCH_PROFILE,
   buildFormattingInstruction,
   buildResearchInput,
   buildResearchInstruction,
@@ -15,9 +24,25 @@ const { logger: defaultLogger } = require('../utils/logger');
 const { AIProvider } = require('./ai-provider.interface');
 const { SERVICE_VERSION } = require('../constants');
 
-const DEFAULT_RESEARCH_TIMEOUT_MS = 180_000;
-const DEFAULT_FORMATTING_TIMEOUT_MS = 90_000;
+const DEFAULT_RESEARCH_MAX_ATTEMPTS = 2;
 const DEFAULT_FORMATTING_MAX_ATTEMPTS = 2;
+const DEFAULT_RESEARCH_MAX_OUTPUT_TOKENS = 512;
+const DEFAULT_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 256;
+const DEFAULT_FORMATTING_MAX_OUTPUT_TOKENS = 1_500;
+const ATTEMPT_SCHEDULING_GRACE_MS = 100;
+const TRANSIENT_TRANSPORT_CODES = new Set([
+  'EAI_AGAIN',
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENETRESET',
+  'EPIPE',
+  'ETIMEDOUT',
+  'UND_ERR_BODY_TIMEOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
 const SAFE_PROVIDER_STATUSES = new Set([
   'ABORTED',
   'ALREADY_EXISTS',
@@ -55,6 +80,15 @@ const researchResultSchema = z
       )
       .max(20),
     webSearchUsed: z.boolean(),
+    researchDiagnostics: z
+      .object({
+        attemptCount: z.number().int().min(1).max(2),
+        attemptDurationsMs: z.array(z.number().int().nonnegative()).min(1).max(2),
+        fallbackProfileUsed: z.boolean(),
+        finalProviderStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+        groundingMetadataCount: z.number().int().nonnegative(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -188,11 +222,18 @@ function attachOperationDiagnostics(error, context = {}) {
   return error;
 }
 
-function attachTimeoutDiagnostics(error, timeoutMs) {
+function attachTimeoutDiagnostics(error, timeoutMs, operationTimeoutMs) {
   if (error.code !== 'GEMINI_REQUEST_TIMEOUT') return error;
   if (SAFE_TIMEOUT_REASONS.has(error.reason)) error.timeoutReason = error.reason;
   if (Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 1_800_000) {
     error.configuredTimeoutMs = timeoutMs;
+  }
+  if (
+    Number.isInteger(operationTimeoutMs) &&
+    operationTimeoutMs > 0 &&
+    operationTimeoutMs <= 1_800_000
+  ) {
+    error.operationTimeoutMs = operationTimeoutMs;
   }
   return error;
 }
@@ -205,6 +246,7 @@ function attachSourceDiagnostics(error, sourceError) {
 
   for (const field of [
     'candidateCount',
+    'groundingMetadataCount',
     'groundingChunkCount',
     'webSearchQueryCount',
     'billedToolCallCount',
@@ -267,6 +309,8 @@ function mapGeminiError(error, context = {}) {
   } else if (status === 429) mapped = geminiError('GEMINI_RATE_LIMITED');
   else if (status === 408 || error?.name === 'AbortError') {
     mapped = geminiError('GEMINI_REQUEST_TIMEOUT');
+  } else if (transportCode(error)) {
+    mapped = geminiError('GEMINI_UPSTREAM_UNAVAILABLE');
   } else if (status && status >= 500) mapped = geminiError('GEMINI_UPSTREAM_UNAVAILABLE');
   else if (
     (context.operation === 'grounded_research' || context.stage === 'research') &&
@@ -289,16 +333,91 @@ function attachFormattingRecovery(error) {
   return normalized;
 }
 
-function isTransient(error) {
+function transportCode(error) {
+  for (const candidate of [error?.code, error?.cause?.code]) {
+    const value = typeof candidate === 'string' ? candidate.toUpperCase() : undefined;
+    if (TRANSIENT_TRANSPORT_CODES.has(value)) return value;
+  }
+  return undefined;
+}
+
+function retryDecision(error) {
+  if (error?.localProviderTimedOut === true) {
+    return Object.freeze({ retryable: true, reason: 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' });
+  }
   const status = numericStatus(error);
-  if (status === 408 || status === 429 || (status && status >= 500)) return true;
-  return [
-    'ECONNRESET',
-    'ECONNREFUSED',
-    'ETIMEDOUT',
-    'EAI_AGAIN',
-    'UND_ERR_CONNECT_TIMEOUT',
-  ].includes(error?.code);
+  const providerStatus = safeProviderStatus(error);
+  if (
+    [400, 401, 403, 404, 409, 422, 429].includes(status) ||
+    [
+      'ALREADY_EXISTS',
+      'FAILED_PRECONDITION',
+      'INVALID_ARGUMENT',
+      'NOT_FOUND',
+      'OUT_OF_RANGE',
+      'PERMISSION_DENIED',
+      'RESOURCE_EXHAUSTED',
+      'UNAUTHENTICATED',
+      'UNIMPLEMENTED',
+    ].includes(providerStatus)
+  ) {
+    return Object.freeze({ retryable: false, reason: 'NOT_RETRYABLE' });
+  }
+  if (status === 503 || providerStatus === 'UNAVAILABLE') {
+    return Object.freeze({ retryable: true, reason: 'PROVIDER_UNAVAILABLE' });
+  }
+  if (status === 504 || providerStatus === 'DEADLINE_EXCEEDED') {
+    return Object.freeze({ retryable: true, reason: 'PROVIDER_DEADLINE_EXCEEDED' });
+  }
+  if (transportCode(error)) {
+    return Object.freeze({ retryable: true, reason: 'TRANSIENT_TRANSPORT_FAILURE' });
+  }
+  return Object.freeze({ retryable: false, reason: 'NOT_RETRYABLE' });
+}
+
+function attemptProviderStatus(error) {
+  if (!error) return 'OK';
+  if (error.localProviderTimedOut === true) return 'LOCAL_DEADLINE_EXCEEDED';
+  const providerStatus = safeProviderStatus(error);
+  if (providerStatus) return providerStatus;
+  const status = numericStatus(error);
+  if (status === 503) return 'UNAVAILABLE';
+  if (status === 504) return 'DEADLINE_EXCEEDED';
+  if (status === 429) return 'RESOURCE_EXHAUSTED';
+  if (status === 401) return 'UNAUTHENTICATED';
+  if (status === 403) return 'PERMISSION_DENIED';
+  if (status === 404) return 'NOT_FOUND';
+  if (status === 409) return 'ALREADY_EXISTS';
+  if (status === 400) return 'INVALID_ARGUMENT';
+  if (status === 422) return 'INVALID_ARGUMENT';
+  if (status === 500) return 'INTERNAL';
+  if (transportCode(error)) return 'TRANSIENT_TRANSPORT_FAILURE';
+  return 'UNKNOWN';
+}
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+function researchTelemetry(attemptState) {
+  return Object.freeze({
+    attemptCount: attemptState.count,
+    attemptDurationsMs: Object.freeze(attemptState.attempts.map((attempt) => attempt.durationMs)),
+    fallbackProfileUsed: attemptState.attempts.some((attempt) => attempt.fallbackProfileUsed),
+    finalProviderStatus: attemptState.finalProviderStatus || 'UNKNOWN',
+    groundingMetadataCount: attemptState.groundingMetadataCount || 0,
+  });
+}
+
+function attachResearchTelemetry(error, telemetry) {
+  if (!error || !telemetry) return error;
+  error.researchAttemptCount = telemetry.attemptCount;
+  error.researchAttemptDurationsMs = telemetry.attemptDurationsMs;
+  error.fallbackResearchProfileUsed = telemetry.fallbackProfileUsed;
+  error.finalProviderStatus = telemetry.finalProviderStatus;
+  error.groundingMetadataCount = telemetry.groundingMetadataCount;
+  return error;
 }
 
 function isBlockedResponse(response) {
@@ -323,16 +442,15 @@ function abortableDelay(ms, signal) {
       reject(signal.reason || new DOMException('Aborted', 'AbortError'));
       return;
     }
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason || new DOMException('Aborted', 'AbortError'));
-      },
-      { once: true },
-    );
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', abort, { once: true });
   });
 }
 
@@ -391,20 +509,24 @@ class GeminiProvider extends AIProvider {
       (this.config.apiKey ? new GoogleGenAI({ apiKey: this.config.apiKey }) : null);
     this.random = options.random || Math.random;
     this.delay = options.delay || abortableDelay;
+    this.now = options.now || Date.now;
+    this.attemptId = options.attemptId || (() => `attempt_${crypto.randomUUID()}`);
     this.logger = options.logger || defaultLogger;
     this.researchTimeoutMs =
-      this.config.researchTimeoutMs ?? this.config.requestTimeoutMs ?? DEFAULT_RESEARCH_TIMEOUT_MS;
+      this.config.researchTimeoutMs ??
+      this.config.requestTimeoutMs ??
+      DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS;
     this.formattingTimeoutMs =
       this.config.formattingTimeoutMs ??
       this.config.requestTimeoutMs ??
-      DEFAULT_FORMATTING_TIMEOUT_MS;
+      DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS;
     const configuredResearchAttempts = Number(this.config.researchMaxAttempts);
     this.researchMaxAttempts =
       Number.isInteger(configuredResearchAttempts) &&
       configuredResearchAttempts >= 1 &&
       configuredResearchAttempts <= 2
         ? configuredResearchAttempts
-        : 1;
+        : DEFAULT_RESEARCH_MAX_ATTEMPTS;
     const configuredFormattingAttempts = Number(this.config.formattingMaxAttempts);
     this.formattingMaxAttempts =
       Number.isInteger(configuredFormattingAttempts) &&
@@ -412,6 +534,27 @@ class GeminiProvider extends AIProvider {
       configuredFormattingAttempts <= 2
         ? configuredFormattingAttempts
         : DEFAULT_FORMATTING_MAX_ATTEMPTS;
+    this.researchOperationTimeoutMs =
+      this.config.researchOperationTimeoutMs ??
+      operationBudgetMs(this.researchTimeoutMs, this.researchMaxAttempts);
+    this.formattingOperationTimeoutMs =
+      this.config.formattingOperationTimeoutMs ??
+      operationBudgetMs(this.formattingTimeoutMs, this.formattingMaxAttempts);
+    this.researchMaxOutputTokens = positiveInteger(
+      this.config.researchMaxOutputTokens,
+      DEFAULT_RESEARCH_MAX_OUTPUT_TOKENS,
+    );
+    this.researchFallbackMaxOutputTokens = Math.min(
+      positiveInteger(
+        this.config.researchFallbackMaxOutputTokens,
+        DEFAULT_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS,
+      ),
+      Math.max(1, this.researchMaxOutputTokens - 1),
+    );
+    this.formattingMaxOutputTokens = positiveInteger(
+      this.config.formattingMaxOutputTokens ?? this.config.maxOutputTokens,
+      DEFAULT_FORMATTING_MAX_OUTPUT_TOKENS,
+    );
   }
 
   checkConfiguration() {
@@ -423,20 +566,178 @@ class GeminiProvider extends AIProvider {
     };
   }
 
-  async generate(params, maxAttempts, signal, attemptState = { count: 0 }) {
+  async generate({
+    parameters,
+    maxAttempts,
+    signal,
+    attemptTimeoutMs,
+    operationTimeoutMs,
+    operationStartedAt,
+    operation,
+    traceId,
+    requestId,
+    invocationId,
+    attemptState,
+  }) {
     const boundedMaxAttempts = Math.max(1, Math.min(2, Number(maxAttempts) || 1));
+    const operationDeadlineAt = operationStartedAt + operationTimeoutMs;
     for (let attemptNumber = 1; attemptNumber <= boundedMaxAttempts; attemptNumber += 1) {
-      signal?.throwIfAborted();
-      attemptState.count = attemptNumber;
-      try {
-        return await this.client.models.generateContent(params);
-      } catch (error) {
-        const retryAllowed =
-          attemptNumber < boundedMaxAttempts && isTransient(error) && !signal.aborted;
-        if (!retryAllowed) throw error;
-        const exponentialBaseMs = 1_000 * 2 ** Math.max(0, attemptNumber - 1);
-        await this.delay(exponentialBaseMs + Math.floor(this.random() * 500), signal);
+      throwIfParentAborted(signal);
+      const remainingOperationMs = Math.floor(operationDeadlineAt - this.now());
+      if (remainingOperationMs <= 0) {
+        const deadline = new Error('Provider operation deadline was exhausted.');
+        deadline.name = 'TimeoutError';
+        deadline.localProviderTimedOut = true;
+        deadline.retryBudgetExhausted = true;
+        throw deadline;
       }
+
+      attemptState.count = attemptNumber;
+      const configuredAttemptTimeoutMs = Math.max(
+        1,
+        remainingOperationMs >= attemptTimeoutMs - ATTEMPT_SCHEDULING_GRACE_MS
+          ? attemptTimeoutMs
+          : remainingOperationMs,
+      );
+      attemptState.lastConfiguredTimeoutMs = configuredAttemptTimeoutMs;
+      const fallbackProfileUsed = operation === 'grounded_research' && attemptNumber === 2;
+      let providerAttemptId = this.attemptId();
+      if (
+        typeof providerAttemptId !== 'string' ||
+        !/^[A-Za-z0-9._-]{1,128}$/.test(providerAttemptId) ||
+        attemptState.attemptIds.has(providerAttemptId)
+      ) {
+        providerAttemptId = `attempt_${crypto.randomUUID()}`;
+      }
+      attemptState.attemptIds.add(providerAttemptId);
+
+      const attempt = createTimedSignal(signal, configuredAttemptTimeoutMs);
+      const attemptStartedAt = this.now();
+      let delayMs = 0;
+      let response;
+      let failure;
+
+      this.logger.info(
+        {
+          event: 'gemini.attempt.started',
+          version: SERVICE_VERSION,
+          timestamp: new Date().toISOString(),
+          traceId,
+          requestId: safeRequestId(requestId),
+          invocationId,
+          operation,
+          attemptId: providerAttemptId,
+          attemptNumber,
+          configuredTimeoutMs: configuredAttemptTimeoutMs,
+          fallbackProfileUsed,
+          status: 'started',
+        },
+        'Gemini attempt started',
+      );
+
+      try {
+        response = await this.client.models.generateContent(
+          parameters(attempt.signal, configuredAttemptTimeoutMs, {
+            attemptId: providerAttemptId,
+            attemptNumber,
+            fallbackProfileUsed,
+          }),
+        );
+      } catch (error) {
+        failure = error;
+        if (attempt.timedOut()) {
+          failure = new Error('Provider attempt timed out.');
+          failure.name = 'TimeoutError';
+          failure.localProviderTimedOut = true;
+        } else if (attempt.abortedByParent()) {
+          failure = attempt.signal.reason || parentAbortReason(signal);
+        }
+      } finally {
+        attempt.cleanup();
+      }
+
+      const durationMs = Math.max(0, Math.round(this.now() - attemptStartedAt));
+      const shape =
+        !failure && operation === 'grounded_research'
+          ? inspectGeminiResponseShape(response)
+          : undefined;
+      const groundingMetadataCount = shape?.groundingMetadataCount || 0;
+
+      if (!failure) {
+        attemptState.attempts.push({
+          attemptNumber,
+          durationMs,
+          fallbackProfileUsed,
+        });
+        attemptState.finalProviderStatus = 'OK';
+        attemptState.groundingMetadataCount = groundingMetadataCount;
+        this.logger.info(
+          {
+            event: 'gemini.attempt.completed',
+            version: SERVICE_VERSION,
+            timestamp: new Date().toISOString(),
+            traceId,
+            requestId: safeRequestId(requestId),
+            invocationId,
+            operation,
+            attemptId: providerAttemptId,
+            attemptNumber,
+            durationMs,
+            configuredTimeoutMs: configuredAttemptTimeoutMs,
+            retryReason: 'NONE',
+            retryDelayMs: 0,
+            providerStatus: 'OK',
+            groundingMetadataAvailable: groundingMetadataCount > 0,
+            groundingMetadataCount,
+            fallbackProfileUsed,
+            status: 'completed',
+          },
+          'Gemini attempt completed',
+        );
+        return response;
+      }
+
+      const decision = retryDecision(failure);
+      const retryCandidate =
+        attemptNumber < boundedMaxAttempts && decision.retryable && !signal?.aborted;
+      if (retryCandidate) delayMs = retryDelayMs(attemptNumber, this.random());
+      const remainingForRetryMs = Math.floor(operationDeadlineAt - this.now());
+      const retryBudgetExhausted = retryCandidate && remainingForRetryMs <= delayMs;
+      const retryAllowed = retryCandidate && !retryBudgetExhausted;
+      const providerStatus = attemptProviderStatus(failure);
+
+      attemptState.attempts.push({ attemptNumber, durationMs, fallbackProfileUsed });
+      attemptState.finalProviderStatus = providerStatus;
+      attemptState.retryReason = decision.reason;
+      if (retryBudgetExhausted) failure.retryBudgetExhausted = true;
+      this.logger.warn(
+        {
+          event: 'gemini.attempt.failed',
+          version: SERVICE_VERSION,
+          timestamp: new Date().toISOString(),
+          traceId,
+          requestId: safeRequestId(requestId),
+          invocationId,
+          operation,
+          attemptId: providerAttemptId,
+          attemptNumber,
+          durationMs,
+          configuredTimeoutMs: configuredAttemptTimeoutMs,
+          retryReason: decision.reason,
+          retryDelayMs: retryAllowed ? delayMs : 0,
+          retryBudgetExhausted,
+          providerStatus,
+          groundingMetadataAvailable: false,
+          groundingMetadataCount: 0,
+          fallbackProfileUsed,
+          status: 'failed',
+        },
+        'Gemini attempt completed',
+      );
+
+      if (!retryAllowed) throw failure;
+      attemptState.retryDelayMs += delayMs;
+      await this.delay(delayMs, signal);
     }
     throw new Error('Gemini generation exited without an attempt result.');
   }
@@ -446,15 +747,23 @@ class GeminiProvider extends AIProvider {
     requestId,
     invocationId,
     operation,
-    timeoutMs,
+    attemptTimeoutMs,
+    operationTimeoutMs,
     parentSignal,
     maxAttempts = 1,
     parameters,
   }) {
     throwIfParentAborted(parentSignal);
-    const timed = createTimedSignal(parentSignal, timeoutMs);
-    const startedAt = Date.now();
-    const attemptState = { count: 0 };
+    const startedAt = this.now();
+    const attemptState = {
+      count: 0,
+      retryDelayMs: 0,
+      attempts: [],
+      attemptIds: new Set(),
+      finalProviderStatus: undefined,
+      groundingMetadataCount: 0,
+      retryReason: undefined,
+    };
     let operationError;
 
     this.logger.info(
@@ -472,22 +781,41 @@ class GeminiProvider extends AIProvider {
     );
 
     try {
-      return await this.generate(parameters(timed.signal), maxAttempts, timed.signal, attemptState);
+      const response = await this.generate({
+        parameters,
+        maxAttempts,
+        signal: parentSignal,
+        attemptTimeoutMs,
+        operationTimeoutMs,
+        operationStartedAt: startedAt,
+        operation,
+        traceId,
+        requestId,
+        invocationId,
+        attemptState,
+      });
+      return { response, telemetry: researchTelemetry(attemptState) };
     } catch (error) {
       operationError = error;
-      const operationFailure =
-        !timed.timedOut() && timed.abortedByParent() ? timed.signal.reason : error;
+      const operationFailure = parentSignal?.aborted ? parentAbortReason(parentSignal) : error;
       const mapped = attachTimeoutDiagnostics(
         mapGeminiError(operationFailure, {
-          locallyAborted: timed.timedOut(),
+          locallyAborted: operationFailure?.localProviderTimedOut === true,
           operation,
           webSearchEnabled: operation === 'grounded_research' && this.config.webSearchEnabled,
           model: this.config.model,
         }),
-        timeoutMs,
+        attemptState.lastConfiguredTimeoutMs || attemptTimeoutMs,
+        operationTimeoutMs,
       );
       mapped.providerAttemptCount = attemptState.count;
       mapped.providerMaxAttempts = maxAttempts;
+      mapped.retryDelayMs = attemptState.retryDelayMs;
+      mapped.retryReason = attemptState.retryReason;
+      mapped.retryBudgetExhausted = error?.retryBudgetExhausted === true;
+      if (operation === 'grounded_research') {
+        attachResearchTelemetry(mapped, researchTelemetry(attemptState));
+      }
       throw mapped;
     } finally {
       const diagnostic = {
@@ -500,19 +828,25 @@ class GeminiProvider extends AIProvider {
         operation,
         status: operationError ? 'failed' : 'completed',
         model: safeModelName(this.config.model),
-        durationMs: Date.now() - startedAt,
-        configuredTimeoutMs: timeoutMs,
-        locallyAborted: timed.timedOut(),
+        durationMs: Math.max(0, Math.round(this.now() - startedAt)),
+        configuredTimeoutMs: attemptTimeoutMs,
+        operationTimeoutMs,
+        locallyAborted: operationError?.localProviderTimedOut === true,
         providerAttemptCount: attemptState.count,
+        providerMaxAttempts: maxAttempts,
+        retryDelayMs: attemptState.retryDelayMs,
+        retryReason: attemptState.retryReason,
+        providerStatus: attemptState.finalProviderStatus || 'UNKNOWN',
+        groundingMetadataAvailable: attemptState.groundingMetadataCount > 0,
+        groundingMetadataCount: attemptState.groundingMetadataCount,
       };
       const providerHttpStatus =
         operationError instanceof RuntimeError ? undefined : numericStatus(operationError);
       const providerStatus =
         operationError instanceof RuntimeError ? undefined : safeProviderStatus(operationError);
       if (providerHttpStatus !== undefined) diagnostic.providerHttpStatus = providerHttpStatus;
-      if (providerStatus) diagnostic.providerStatus = providerStatus;
+      if (providerStatus) diagnostic.upstreamProviderStatus = providerStatus;
 
-      timed.cleanup();
       const level = operationError ? 'warn' : 'info';
       this.logger[level](diagnostic, 'Gemini operation completed');
     }
@@ -540,29 +874,40 @@ class GeminiProvider extends AIProvider {
       ? { thinkingConfig: thinking.thinkingConfig }
       : {};
 
+    let groundedResearchTelemetry;
     try {
-      const researchResponse = await this.runOperation({
+      const researchOperation = await this.runOperation({
         traceId,
         requestId,
         invocationId,
         operation: 'grounded_research',
-        timeoutMs: this.researchTimeoutMs,
+        attemptTimeoutMs: this.researchTimeoutMs,
+        operationTimeoutMs: this.researchOperationTimeoutMs,
         parentSignal: signal,
         maxAttempts: this.researchMaxAttempts,
-        parameters: (operationSignal) => ({
-          model: this.config.model,
-          contents: buildResearchInput(topic),
-          config: {
-            abortSignal: operationSignal,
-            httpOptions: sdkHttpOptions(this.researchTimeoutMs),
-            systemInstruction: buildResearchInstruction(),
-            maxOutputTokens: this.config.maxOutputTokens,
-            temperature: 0.2,
-            ...thinkingOption,
-            ...(this.config.webSearchEnabled ? { tools: [{ googleSearch: {} }] } : {}),
-          },
-        }),
+        parameters: (operationSignal, attemptTimeoutMs, attemptContext) => {
+          const profile = attemptContext.fallbackProfileUsed
+            ? FALLBACK_RESEARCH_PROFILE
+            : PRIMARY_RESEARCH_PROFILE;
+          return {
+            model: this.config.model,
+            contents: buildResearchInput(topic, { profile }),
+            config: {
+              abortSignal: operationSignal,
+              httpOptions: sdkHttpOptions(attemptTimeoutMs),
+              systemInstruction: buildResearchInstruction({ profile }),
+              maxOutputTokens: attemptContext.fallbackProfileUsed
+                ? this.researchFallbackMaxOutputTokens
+                : this.researchMaxOutputTokens,
+              temperature: 0.1,
+              ...thinkingOption,
+              ...(this.config.webSearchEnabled ? { tools: [{ googleSearch: {} }] } : {}),
+            },
+          };
+        },
       });
+      const researchResponse = researchOperation.response;
+      groundedResearchTelemetry = researchOperation.telemetry;
 
       throwIfParentAborted(signal);
 
@@ -624,30 +969,31 @@ class GeminiProvider extends AIProvider {
               'Gemini grounding source extraction failed',
             );
           }
-          throw mapGeminiError(error);
+          throw attachResearchTelemetry(mapGeminiError(error), groundedResearchTelemetry);
         }
       }
 
       throwIfParentAborted(signal);
 
       try {
-        const formattingResponse = await this.runOperation({
+        const formattingOperation = await this.runOperation({
           traceId,
           requestId,
           invocationId,
           operation: 'structured_formatting',
-          timeoutMs: this.formattingTimeoutMs,
+          attemptTimeoutMs: this.formattingTimeoutMs,
+          operationTimeoutMs: this.formattingOperationTimeoutMs,
           parentSignal: signal,
           maxAttempts: this.formattingMaxAttempts,
-          parameters: (operationSignal) => ({
+          parameters: (operationSignal, attemptTimeoutMs) => ({
             model: this.config.model,
             // Retries reuse this in-memory grounded result and never include Google Search tools.
             contents: groundedText,
             config: {
               abortSignal: operationSignal,
-              httpOptions: sdkHttpOptions(this.formattingTimeoutMs),
+              httpOptions: sdkHttpOptions(attemptTimeoutMs),
               systemInstruction: buildFormattingInstruction(),
-              maxOutputTokens: this.config.maxOutputTokens,
+              maxOutputTokens: this.formattingMaxOutputTokens,
               temperature: 0.1,
               responseMimeType: 'application/json',
               responseJsonSchema: SUMMARY_JSON_SCHEMA,
@@ -655,6 +1001,7 @@ class GeminiProvider extends AIProvider {
             },
           }),
         });
+        const formattingResponse = formattingOperation.response;
 
         throwIfParentAborted(signal);
 
@@ -685,12 +1032,15 @@ class GeminiProvider extends AIProvider {
           summary: formatted.summary,
           sourceReferences,
           webSearchUsed: this.config.webSearchEnabled,
+          researchDiagnostics: groundedResearchTelemetry,
         });
       } catch (error) {
-        throw attachFormattingRecovery(error);
+        throw attachResearchTelemetry(attachFormattingRecovery(error), groundedResearchTelemetry);
       }
     } catch (error) {
-      if (error instanceof RuntimeError) throw error;
+      if (error instanceof RuntimeError) {
+        throw attachResearchTelemetry(error, groundedResearchTelemetry);
+      }
       if (error instanceof z.ZodError) throw geminiError('GEMINI_INVALID_STRUCTURED_OUTPUT');
       throw mapGeminiError(error);
     }

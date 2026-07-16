@@ -8,6 +8,15 @@ const providerResultSchema = z
       z.object({ title: z.string().trim().min(1), url: z.string().url() }).strict(),
     ),
     webSearchUsed: z.boolean(),
+    researchDiagnostics: z
+      .object({
+        attemptCount: z.number().int().min(1).max(2),
+        attemptDurationsMs: z.array(z.number().int().nonnegative()).min(1).max(2),
+        fallbackProfileUsed: z.boolean(),
+        finalProviderStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+        groundingMetadataCount: z.number().int().nonnegative(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -59,6 +68,11 @@ class ResearchService {
               : this.provider.model || 'deterministic-test',
           webSearchUsed: result.webSearchUsed,
           sourceCount: result.sourceReferences.length,
+          researchAttemptCount: result.researchDiagnostics.attemptCount,
+          researchAttemptDurationsMs: result.researchDiagnostics.attemptDurationsMs,
+          fallbackResearchProfileUsed: result.researchDiagnostics.fallbackProfileUsed,
+          finalProviderStatus: result.researchDiagnostics.finalProviderStatus,
+          groundingMetadataCount: result.researchDiagnostics.groundingMetadataCount,
         },
       };
     });

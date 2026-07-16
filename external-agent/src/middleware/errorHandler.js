@@ -15,9 +15,50 @@ const SAFE_LIFECYCLE_REASONS = Object.freeze({
   REQUEST_CANCELLED: 'CLIENT_DISCONNECTED',
   SERVICE_SHUTDOWN: 'SERVICE_SHUTDOWN',
 });
+const SAFE_RETRY_REASONS = new Set([
+  'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  'NOT_RETRYABLE',
+  'PROVIDER_DEADLINE_EXCEEDED',
+  'PROVIDER_UNAVAILABLE',
+  'TRANSIENT_TRANSPORT_FAILURE',
+]);
+const SAFE_FINAL_PROVIDER_STATUSES = new Set([
+  'ABORTED',
+  'ALREADY_EXISTS',
+  'CANCELLED',
+  'DATA_LOSS',
+  'DEADLINE_EXCEEDED',
+  'FAILED_PRECONDITION',
+  'INTERNAL',
+  'INVALID_ARGUMENT',
+  'LOCAL_DEADLINE_EXCEEDED',
+  'NOT_FOUND',
+  'OK',
+  'OUT_OF_RANGE',
+  'PERMISSION_DENIED',
+  'RESOURCE_EXHAUSTED',
+  'TRANSIENT_TRANSPORT_FAILURE',
+  'UNAUTHENTICATED',
+  'UNAVAILABLE',
+  'UNIMPLEMENTED',
+  'UNKNOWN',
+]);
 
 function safeConfiguredTimeoutMs(value) {
   return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
+}
+
+function safeOperationTimeoutMs(value) {
+  return Number.isInteger(value) && value >= 1_000 && value <= 1_800_000 ? value : undefined;
+}
+
+function safeAttemptDurations(value) {
+  return Array.isArray(value) &&
+    value.length >= 1 &&
+    value.length <= 2 &&
+    value.every((duration) => Number.isInteger(duration) && duration >= 0 && duration <= 600_000)
+    ? value
+    : undefined;
 }
 
 function normalizeError(error) {
@@ -76,6 +117,10 @@ function errorHandler(logger) {
             normalized.webSearchQueryCount >= 0
               ? { webSearchQueryCount: normalized.webSearchQueryCount }
               : {}),
+            ...(Number.isInteger(normalized.groundingMetadataCount) &&
+            normalized.groundingMetadataCount >= 0
+              ? { groundingMetadataCount: normalized.groundingMetadataCount }
+              : {}),
           }
         : {};
     const recoveryReason =
@@ -90,6 +135,10 @@ function errorHandler(logger) {
     const configuredTimeoutMs =
       normalized.code === 'GEMINI_REQUEST_TIMEOUT'
         ? safeConfiguredTimeoutMs(normalized.configuredTimeoutMs)
+        : undefined;
+    const operationTimeoutMs =
+      normalized.code === 'GEMINI_REQUEST_TIMEOUT'
+        ? safeOperationTimeoutMs(normalized.operationTimeoutMs)
         : undefined;
     const lifecycleReason =
       SAFE_LIFECYCLE_REASONS[normalized.code] === normalized.reason ? normalized.reason : undefined;
@@ -118,6 +167,44 @@ function errorHandler(logger) {
         ...(timeoutReason ? { reason: timeoutReason, timeoutReason } : {}),
         ...(lifecycleReason ? { reason: lifecycleReason } : {}),
         ...(configuredTimeoutMs !== undefined ? { configuredTimeoutMs } : {}),
+        ...(operationTimeoutMs !== undefined ? { operationTimeoutMs } : {}),
+        ...(Number.isInteger(normalized.providerAttemptCount) &&
+        normalized.providerAttemptCount >= 1 &&
+        normalized.providerAttemptCount <= 2
+          ? { providerAttemptCount: normalized.providerAttemptCount }
+          : {}),
+        ...(Number.isInteger(normalized.providerMaxAttempts) &&
+        normalized.providerMaxAttempts >= 1 &&
+        normalized.providerMaxAttempts <= 2
+          ? { providerMaxAttempts: normalized.providerMaxAttempts }
+          : {}),
+        ...(Number.isInteger(normalized.retryDelayMs) &&
+        normalized.retryDelayMs >= 0 &&
+        normalized.retryDelayMs <= 10_000
+          ? { retryDelayMs: normalized.retryDelayMs }
+          : {}),
+        ...(SAFE_RETRY_REASONS.has(normalized.retryReason)
+          ? { retryReason: normalized.retryReason }
+          : {}),
+        ...(normalized.retryBudgetExhausted === true ? { retryBudgetExhausted: true } : {}),
+        ...(Number.isInteger(normalized.researchAttemptCount) &&
+        normalized.researchAttemptCount >= 1 &&
+        normalized.researchAttemptCount <= 2
+          ? { researchAttemptCount: normalized.researchAttemptCount }
+          : {}),
+        ...(safeAttemptDurations(normalized.researchAttemptDurationsMs)
+          ? { researchAttemptDurationsMs: normalized.researchAttemptDurationsMs }
+          : {}),
+        ...(typeof normalized.fallbackResearchProfileUsed === 'boolean'
+          ? { fallbackResearchProfileUsed: normalized.fallbackResearchProfileUsed }
+          : {}),
+        ...(SAFE_FINAL_PROVIDER_STATUSES.has(normalized.finalProviderStatus)
+          ? { finalProviderStatus: normalized.finalProviderStatus }
+          : {}),
+        ...(Number.isInteger(normalized.groundingMetadataCount) &&
+        normalized.groundingMetadataCount >= 0
+          ? { groundingMetadataCount: normalized.groundingMetadataCount }
+          : {}),
         ...(recoveryReason ? { recoveryRequired: true, recoveryReason } : {}),
         ...(Number.isInteger(normalized.retryAfterMs) && normalized.retryAfterMs >= 0
           ? { retryAfterMs: normalized.retryAfterMs }

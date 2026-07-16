@@ -23,27 +23,48 @@ A closed response channel cannot receive a cancellation result and does not prov
 
 Copy `.env.example` to `.env` only for local use and replace the placeholder token. Never commit `.env`.
 
-| Variable                         | Required | Default       | Description                                                                                                                                              |
-| -------------------------------- | -------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                           | No       | `5002`        | HTTP listen port.                                                                                                                                        |
-| `NODE_ENV`                       | No       | `development` | `development`, `test`, or `production`.                                                                                                                  |
-| `EXTERNAL_AGENT_RUNTIME_TOKEN`   | Yes      | None          | Random bearer secret of at least 32 characters.                                                                                                          |
-| `ALLOWED_GATEWAY_ORIGINS`        | No       | Empty         | Comma-separated HTTP(S) browser origins. Requests without an Origin header remain allowed for server-to-server invocation. CORS is not authentication.   |
-| `REQUEST_TIMEOUT_MS`             | No       | `300000`      | Per-request timeout. Must exceed both Gemini stage deadlines plus 10 seconds of processing overhead.                                                     |
-| `SHUTDOWN_DRAIN_TIMEOUT_MS`      | No       | `30000`       | Bounded time for active research to finish after readiness is disabled; provider work is aborted at the deadline.                                        |
-| `AI_PROVIDER`                    | No       | `gemini`      | `gemini`, or explicit `mock` use during tests/local development. Mock is rejected in production.                                                         |
-| `GEMINI_API_KEY`                 | Gemini   | None          | Gemini credential stored only in this deployment's secret manager.                                                                                       |
-| `GEMINI_MODEL`                   | Gemini   | None          | Model available to the configured Gemini API project. No model is hardcoded.                                                                             |
-| `GEMINI_WEB_SEARCH_ENABLED`      | No       | `true`        | Enables Google Search grounding.                                                                                                                         |
-| `GEMINI_RESEARCH_TIMEOUT_MS`     | No       | `180000`      | Deadline shared by all grounded-research attempts.                                                                                                       |
-| `GEMINI_FORMATTING_TIMEOUT_MS`   | No       | `90000`       | Deadline shared by all structured-formatting attempts.                                                                                                   |
-| `GEMINI_RESEARCH_MAX_ATTEMPTS`   | No       | `1`           | Total grounded-research calls, restricted to `1` or `2`. Keep `1` unless bounded transient retry and its possible extra billed Search call are accepted. |
-| `GEMINI_FORMATTING_MAX_ATTEMPTS` | No       | `2`           | Total formatting calls, restricted to `1` or `2`. A retry reuses the in-memory grounded text and never repeats Google Search.                            |
-| `GEMINI_REQUEST_TIMEOUT_MS`      | No       | None          | Deprecated fallback used only when a stage-specific timeout is absent.                                                                                   |
-| `GEMINI_MAX_OUTPUT_TOKENS`       | No       | `1500`        | Maximum output tokens per Gemini call.                                                                                                                   |
-| `GEMINI_MAX_SOURCES`             | No       | `8`           | Maximum safe, deduplicated grounding URLs returned.                                                                                                      |
-| `GEMINI_THINKING_LEVEL`          | No       | None          | Gemini 3 thinking level. Accepted values come from the installed SDK; omit it to use the model default.                                                  |
-| `GEMINI_THINKING_BUDGET`         | No       | None          | Gemini 2.5 thinking budget as a non-negative integer; omit it to use the model default.                                                                  |
+| Variable                                     | Required | Default       | Description                                                                                                                                               |
+| -------------------------------------------- | -------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                       | No       | `5002`        | HTTP listen port.                                                                                                                                         |
+| `NODE_ENV`                                   | No       | `development` | `development`, `test`, or `production`.                                                                                                                   |
+| `EXTERNAL_AGENT_RUNTIME_TOKEN`               | Yes      | None          | Random bearer secret of at least 32 characters.                                                                                                           |
+| `ALLOWED_GATEWAY_ORIGINS`                    | No       | Empty         | Comma-separated HTTP(S) browser origins. Requests without an Origin header remain allowed for server-to-server invocation. CORS is not authentication.    |
+| `REQUEST_TIMEOUT_MS`                         | No       | `390000`      | Overall external-agent request deadline. It must exceed every configured Gemini attempt, the maximum retry delays, and 10 seconds of processing overhead. |
+| `SHUTDOWN_DRAIN_TIMEOUT_MS`                  | No       | `30000`       | Bounded time for active research to finish after readiness is disabled; provider work is aborted at the deadline.                                         |
+| `AI_PROVIDER`                                | No       | `gemini`      | `gemini`, or explicit `mock` use during tests/local development. Mock is rejected in production.                                                          |
+| `GEMINI_API_KEY`                             | Gemini   | None          | Gemini credential stored only in this deployment's secret manager.                                                                                        |
+| `GEMINI_MODEL`                               | Gemini   | None          | Model available to the configured Gemini API project. No model is hardcoded.                                                                              |
+| `GEMINI_WEB_SEARCH_ENABLED`                  | No       | `true`        | Enables Google Search grounding.                                                                                                                          |
+| `GEMINI_RESEARCH_TIMEOUT_MS`                 | No       | `120000`      | Deadline for each grounded-research attempt.                                                                                                              |
+| `GEMINI_FORMATTING_TIMEOUT_MS`               | No       | `60000`       | Deadline for each structured-formatting attempt.                                                                                                          |
+| `GEMINI_RESEARCH_MAX_ATTEMPTS`               | No       | `2`           | Total grounded-research calls, restricted to `1` or `2`. The second call is the only retry and uses the reduced fallback profile.                         |
+| `GEMINI_FORMATTING_MAX_ATTEMPTS`             | No       | `2`           | Total formatting calls, restricted to `1` or `2`. A retry reuses the in-memory grounded text and never repeats Google Search.                             |
+| `GEMINI_REQUEST_TIMEOUT_MS`                  | No       | None          | Deprecated fallback used only when a stage-specific timeout is absent.                                                                                    |
+| `GEMINI_RESEARCH_MAX_OUTPUT_TOKENS`          | No       | `512`         | Maximum output tokens for the primary grounded evidence request.                                                                                          |
+| `GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS` | No       | `256`         | Maximum output tokens for the reduced second grounded request; must be below the primary cap.                                                             |
+| `GEMINI_FORMATTING_MAX_OUTPUT_TOKENS`        | No       | `1500`        | Maximum output tokens for the separate structured-formatting stage.                                                                                       |
+| `GEMINI_MAX_OUTPUT_TOKENS`                   | No       | None          | Deprecated formatting-stage fallback. It does not raise either grounded-research cap.                                                                     |
+| `GEMINI_MAX_SOURCES`                         | No       | `8`           | Maximum safe, deduplicated grounding URLs returned.                                                                                                       |
+| `GEMINI_THINKING_LEVEL`                      | No       | None          | Gemini 3 thinking level. Accepted values come from the installed SDK; omit it to use the model default.                                                   |
+| `GEMINI_THINKING_BUDGET`                     | No       | None          | Gemini 2.5 thinking budget as a non-negative integer; omit it to use the model default.                                                                   |
+| `EXTERNAL_AGENT_VERIFY_TIMEOUT_MS`           | No       | `410000`      | Live verifier/client deadline. It must exceed `REQUEST_TIMEOUT_MS` and remain below the Backend Runtime Gateway deadline.                                 |
+
+Each Gemini attempt receives a fresh attempt ID, abort signal, and SDK HTTP timeout. SDK-internal retries are disabled. Grounded research retries exactly once only for provider `503 UNAVAILABLE`, provider `504 DEADLINE_EXCEEDED`, an allowlisted transient transport error, or a local provider-attempt deadline. Authentication, quota/resource exhaustion, validation, configuration, blocked responses, and invalid grounding metadata are not retried. Backoff is cancellation-aware and bounded to 1,000–1,499 ms.
+
+Both grounded attempts enable `tools: [{ googleSearch: {} }]`. The primary response is capped at four short evidence records and 512 output tokens. The fallback is capped at two one-line records and 256 output tokens. URLs are accepted only from candidate grounding metadata; model-written URLs are never treated as sources. Formatting starts only after grounded text and genuine metadata sources validate, and formatting retries reuse that in-memory result without Google Search.
+
+Startup validates the full worst-case budget:
+
+```text
+(research timeout × research attempts + maximum research retry delay)
++ (formatting timeout × formatting attempts + maximum formatting retry delay)
++ 10,000 ms processing overhead
+< REQUEST_TIMEOUT_MS
+< EXTERNAL_AGENT_VERIFY_TIMEOUT_MS
+< Backend RUNTIME_INVOCATION_TIMEOUT_MS
+```
+
+With defaults, the provider budget is 372,998 ms: 241,499 ms for grounded research, 121,499 ms for formatting, and 10,000 ms for processing overhead. This remains below the unchanged 390,000 ms external request deadline, which remains below the 410,000 ms verifier and 430,000 ms gateway deadlines.
 
 Generate a development secret without printing or committing a production credential through your platform's secret manager. The service never prints the configured token.
 
