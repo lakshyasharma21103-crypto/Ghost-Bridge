@@ -13,6 +13,12 @@ const RuntimeCapacitySlot = require('./RuntimeCapacitySlot');
 const RuntimeWorkItem = require('./RuntimeWorkItem');
 const DurableEventOutbox = require('./DurableEventOutbox');
 const RuntimeWorkerHeartbeat = require('./RuntimeWorkerHeartbeat');
+const Organization = require('./Organization');
+const Workspace = require('./Workspace');
+const Team = require('./Team');
+const EnterpriseUser = require('./EnterpriseUser');
+const ServiceAccount = require('./ServiceAccount');
+const Role = require('./Role');
 
 module.exports = {
   Partner,
@@ -30,4 +36,10 @@ module.exports = {
   RuntimeWorkItem,
   DurableEventOutbox,
   RuntimeWorkerHeartbeat,
+  Organization,
+  Workspace,
+  Team,
+  EnterpriseUser,
+  ServiceAccount,
+  Role,
 };

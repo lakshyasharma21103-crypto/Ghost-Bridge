@@ -48,6 +48,11 @@ const runtimeWorkItemSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      index: true,
+    },
     receivingWorkspaceId: {
       type: String,
       required: true,
@@ -147,6 +152,7 @@ runtimeWorkItemSchema.index(
 runtimeWorkItemSchema.index({ status: 1, priority: -1, availableAt: 1, createdAt: 1 });
 runtimeWorkItemSchema.index({ status: 1, leaseExpiresAt: 1 });
 runtimeWorkItemSchema.index({ partnerId: 1, receivingWorkspaceId: 1, status: 1, createdAt: -1 });
+runtimeWorkItemSchema.index({ organizationId: 1, receivingWorkspaceId: 1, status: 1, createdAt: -1 });
 runtimeWorkItemSchema.index({ partnerId: 1, receivingWorkspaceId: 1, connectionId: 1, status: 1 });
 runtimeWorkItemSchema.index({ invocationId: 1, status: 1, updatedAt: -1 });
 runtimeWorkItemSchema.index({ outboxRepairRequiredAt: 1, updatedAt: 1 });

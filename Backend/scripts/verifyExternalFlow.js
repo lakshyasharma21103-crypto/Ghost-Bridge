@@ -420,7 +420,6 @@ function success(result, label, options = {}) {
     const timeoutDiagnostics =
       code === 'GEMINI_REQUEST_TIMEOUT'
         ? {
-            operation: safeGeminiOperation(result.body?.error?.operation),
             timeoutReason: safeCode(
               result.body?.error?.timeoutReason || result.body?.error?.reason,
             ),
@@ -432,6 +431,7 @@ function success(result, label, options = {}) {
       applicationErrorCode: safeCode(code),
       ...identifiers,
       ...sourceDiagnostics,
+      operation: safeGeminiOperation(result.body?.error?.operation),
       ...timeoutDiagnostics,
       connectionId: options.connectionId,
     });

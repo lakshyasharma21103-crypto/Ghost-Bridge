@@ -364,6 +364,7 @@ async function resolveInstallKey(input, requestContext) {
     PassportConnection.create({
       passportId: passport._id,
       partnerId: passport.partnerId,
+      organizationId: passport.partnerId,
       receivingWorkspaceId: identity.receivingWorkspaceId,
       receivingUserId: identity.receivingUserId,
       installScope: consumedKey.scope,
@@ -378,6 +379,9 @@ async function resolveInstallKey(input, requestContext) {
   if (runtimeGrant) {
     credential = await Credential.create({
       connectionId: connection._id,
+      partnerId: connection.partnerId,
+      organizationId: connection.organizationId || connection.partnerId,
+      receivingWorkspaceId: connection.receivingWorkspaceId,
       type: 'delegated_runtime_access',
       encryptedPayload: encryptPayload(runtimeGrant),
       status: 'active',
@@ -572,6 +576,9 @@ async function storeConnectionCredential(connectionId, body, requestId) {
   const validated = validateCredentialInput(body, snapshot.auth);
   const credential = await Credential.create({
     connectionId: connection._id,
+    partnerId: connection.partnerId,
+    organizationId: connection.organizationId || connection.partnerId,
+    receivingWorkspaceId: connection.receivingWorkspaceId,
     type: validated.type,
     encryptedPayload: encryptPayload(validated.payload),
     status: 'active',

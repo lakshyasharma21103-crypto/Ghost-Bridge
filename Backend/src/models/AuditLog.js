@@ -2,11 +2,18 @@ const mongoose = require('mongoose');
 
 const auditLogSchema = new mongoose.Schema(
   {
-    actorType: { type: String, enum: ['partner', 'user', 'system'], required: true, index: true },
+    actorType: {
+      type: String,
+      enum: ['partner', 'user', 'system', 'service_account'],
+      required: true,
+      index: true,
+    },
     actorId: { type: String, trim: true, index: true },
     action: { type: String, required: true, trim: true, index: true },
     entityType: { type: String, required: true, trim: true, index: true },
     entityId: { type: String, trim: true, index: true },
+    organizationId: { type: String, trim: true, index: true },
+    workspaceId: { type: String, trim: true, index: true },
     metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
     requestId: { type: String, trim: true, index: true },
     traceId: { type: String, trim: true, index: true },
@@ -16,6 +23,7 @@ const auditLogSchema = new mongoose.Schema(
 );
 
 auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
+auditLogSchema.index({ organizationId: 1, workspaceId: 1, action: 1, createdAt: -1 });
 auditLogSchema.index({ 'metadata.receivingWorkspaceId': 1, action: 1, createdAt: -1 });
 
 module.exports = mongoose.models.AuditLog || mongoose.model('AuditLog', auditLogSchema);

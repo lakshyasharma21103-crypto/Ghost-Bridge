@@ -27,6 +27,11 @@ const passportConnectionSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      index: true,
+    },
     receivingWorkspaceId: { type: String, required: true, trim: true, index: true },
     receivingUserId: { type: String, required: true, trim: true },
     installScope: {
@@ -66,6 +71,7 @@ const passportConnectionSchema = new mongoose.Schema(
 );
 
 passportConnectionSchema.index({ receivingWorkspaceId: 1, passportId: 1 });
+passportConnectionSchema.index({ partnerId: 1, organizationId: 1, receivingWorkspaceId: 1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, status: 1, updatedAt: -1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, lastHealthStatus: 1, updatedAt: -1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, healthStatus: 1, updatedAt: -1 });

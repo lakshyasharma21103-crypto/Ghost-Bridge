@@ -22,6 +22,11 @@ const {
   INVOCATION_CANCEL_REASON_CODES,
   TERMINAL_INVOCATION_STATES,
 } = require('../constants/invocationLifecycle');
+const {
+  actorFromPartner,
+  assertAuthorized,
+  resourceFromInvocation,
+} = require('./authorization.service');
 
 const RESOLUTION_REASON_CODES = new Set([
   'OPERATOR_CONFIRMED_REMOTE_FAILURE',
@@ -91,7 +96,7 @@ function privateInvocationQuery(filter, options = {}) {
   return query;
 }
 
-async function authorizedContext(invocationId, input, partner) {
+async function authorizedContext(invocationId, input, partner, options = {}) {
   assertPartner(partner);
   const identity = identityFrom(input);
   if (!mongoose.isValidObjectId(invocationId)) throw notFound();
@@ -107,6 +112,17 @@ async function authorizedContext(invocationId, input, partner) {
     receivingUserId: identity.receivingUserId,
   });
   if (!connection) throw notFound();
+  await assertAuthorized(
+    actorFromPartner(partner, { workspaceId: identity.receivingWorkspaceId }),
+    options.permission || 'invocation.read',
+    resourceFromInvocation(invocation, connection),
+    {
+      requestId: options.requestId,
+      traceId: options.traceId,
+      workspaceId: identity.receivingWorkspaceId,
+      auditDecision: false,
+    },
+  );
   return { identity, invocation, connection };
 }
 
@@ -184,7 +200,11 @@ async function propagateDurableCancellation(context, invocation, reasonCode, act
 }
 
 async function requestCancellation(invocationId, input, actor = {}) {
-  const context = await authorizedContext(invocationId, input, actor.partner);
+  const context = await authorizedContext(invocationId, input, actor.partner, {
+    permission: 'invocation.cancel',
+    requestId: actor.requestId,
+    traceId: actor.traceId,
+  });
   const { invocation, connection, identity } = context;
   const reasonCode =
     input?.reasonCode === undefined ? 'USER_REQUESTED' : safeCode(input.reasonCode);
@@ -585,6 +605,23 @@ function scanAuditContext(identity, invocation, connections) {
 
 async function scanStuckInvocations(input, actor = {}) {
   const identity = identityFrom(input);
+  await assertAuthorized(
+    actorFromPartner(actor.partner, { workspaceId: identity.receivingWorkspaceId }),
+    'worker.manage',
+    {
+      type: 'Operations',
+      id: identity.receivingWorkspaceId,
+      partnerId: actor.partner?._id,
+      organizationId: actor.partner?._id,
+      workspaceId: identity.receivingWorkspaceId,
+    },
+    {
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      workspaceId: identity.receivingWorkspaceId,
+      auditDecision: false,
+    },
+  );
   const connections = await connectionIdsForOperator(identity, actor.partner);
   const connectionIds = connections.map((item) => item._id);
   if (!connectionIds.length) {
@@ -1019,6 +1056,23 @@ function pagination(input = {}) {
 
 async function listRecoveryQueue(input, actor = {}) {
   const identity = identityFrom(input);
+  await assertAuthorized(
+    actorFromPartner(actor.partner, { workspaceId: identity.receivingWorkspaceId }),
+    'invocation.read',
+    {
+      type: 'Invocation',
+      id: 'recovery-queue',
+      partnerId: actor.partner?._id,
+      organizationId: actor.partner?._id,
+      workspaceId: identity.receivingWorkspaceId,
+    },
+    {
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      workspaceId: identity.receivingWorkspaceId,
+      auditDecision: false,
+    },
+  );
   const connections = await connectionIdsForOperator(identity, actor.partner);
   const byId = new Map(connections.map((item) => [idOf(item), item]));
   const connectionIds = connections.map((item) => item._id);
@@ -1051,7 +1105,11 @@ async function listRecoveryQueue(input, actor = {}) {
 
 async function manualRetry(invocationId, input, actor = {}) {
   const version = requiredVersion(input);
-  const context = await authorizedContext(invocationId, input, actor.partner);
+  const context = await authorizedContext(invocationId, input, actor.partner, {
+    permission: 'invocation.retry',
+    requestId: actor.requestId,
+    traceId: actor.traceId,
+  });
   const decision = recoveryPolicyDecision(controlContext(context.invocation, context.connection));
   await audit('invocation.recovery.retry_requested', context, actor, {
     reasonCode: decision.reason,
@@ -1357,7 +1415,11 @@ async function manualRetry(invocationId, input, actor = {}) {
 
 async function manualResolve(invocationId, input, actor = {}) {
   const version = requiredVersion(input);
-  const context = await authorizedContext(invocationId, input, actor.partner);
+  const context = await authorizedContext(invocationId, input, actor.partner, {
+    permission: 'invocation.cancel',
+    requestId: actor.requestId,
+    traceId: actor.traceId,
+  });
   const resolution = String(input?.resolution || '')
     .trim()
     .toLowerCase();

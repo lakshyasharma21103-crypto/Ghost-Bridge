@@ -5,6 +5,7 @@ const durableWork = require('./durableWork.service');
 const { createAuditLog } = require('./auditService');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { actorFromPartner, assertAuthorized } = require('./authorization.service');
 
 const SAFE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
 const SAFE_WORK_STATUSES = new Set([
@@ -132,6 +133,23 @@ async function authorizeDurableOperationsScope(input = {}, actor = {}) {
   if (!connections.length) {
     throw new AppError(404, ErrorCodes.CONNECTION_NOT_FOUND, 'Operations scope was not found.');
   }
+  await assertAuthorized(
+    actorFromPartner(actor.partner || { _id: partnerId }, { workspaceId: receivingWorkspaceId }),
+    'operations.read',
+    {
+      type: 'Operations',
+      id: receivingWorkspaceId,
+      partnerId,
+      organizationId: partnerId,
+      workspaceId: receivingWorkspaceId,
+    },
+    {
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      workspaceId: receivingWorkspaceId,
+      auditDecision: false,
+    },
+  );
   return {
     partnerId: idOf(partnerId),
     receivingWorkspaceId,
@@ -155,6 +173,30 @@ function requireAuthorizedScope(actor = {}) {
       'Authenticated operations scope is required.',
     );
   }
+  return scope;
+}
+
+async function requireOperationsPermission(permission, actor = {}) {
+  const scope = requireAuthorizedScope(actor);
+  await assertAuthorized(
+    actorFromPartner(actor.partner || { _id: scope.partnerId }, {
+      workspaceId: scope.receivingWorkspaceId,
+    }),
+    permission,
+    {
+      type: 'Operations',
+      id: scope.connectionId || scope.receivingWorkspaceId,
+      partnerId: scope.partnerId,
+      organizationId: scope.partnerId,
+      workspaceId: scope.receivingWorkspaceId,
+    },
+    {
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      workspaceId: scope.receivingWorkspaceId,
+      auditDecision: false,
+    },
+  );
   return scope;
 }
 
@@ -235,6 +277,7 @@ function safeWorkMetrics(metrics = {}) {
 }
 
 async function getDurableWorkOverview(input = {}, actor = {}) {
+  await requireOperationsPermission('worker.read', actor);
   const query = listInput(input, actor);
   const metricIdentity = durableIdentity(input, actor);
   const [listing, metrics] = await Promise.all([
@@ -249,12 +292,13 @@ async function getDurableWorkOverview(input = {}, actor = {}) {
 }
 
 async function getDurableWorkMetrics(input = {}, actor = {}) {
+  await requireOperationsPermission('worker.read', actor);
   const metrics = await durableWork.durableWorkMetrics(durableIdentity(input, actor));
   return safeWorkMetrics(metrics);
 }
 
 async function getRuntimeWorkerHealth(_input = {}, actor = {}) {
-  requireAuthorizedScope(actor);
+  await requireOperationsPermission('worker.read', actor);
   const health = await durableWork.aggregateWorkerHealth();
   return {
     status: SAFE_WORKER_HEALTH_STATUSES.has(health.status) ? health.status : 'unavailable',
@@ -286,7 +330,7 @@ async function auditAdminAction(action, entityType, entityId, scope, actor, meta
 }
 
 async function scanDurableAbandonedWork(input = {}, actor = {}) {
-  const scope = requireAuthorizedScope(actor);
+  const scope = await requireOperationsPermission('worker.manage', actor);
   const limit = positiveInteger(input.limit, 'limit', { fallback: 25, maximum: 100 });
   await auditAdminAction(
     'durable_work.abandoned_scan_requested',
@@ -312,7 +356,7 @@ async function scanDurableAbandonedWork(input = {}, actor = {}) {
 }
 
 async function reconcileDurableWork(input = {}, actor = {}) {
-  const scope = requireAuthorizedScope(actor);
+  const scope = await requireOperationsPermission('worker.manage', actor);
   const limit = positiveInteger(input.limit, 'limit', { fallback: 25, maximum: 100 });
   await auditAdminAction(
     'durable_work.reconciliation_requested',
@@ -349,7 +393,7 @@ async function requeueDurableDeadLetter(workItemId, input = {}, actor = {}) {
   if (!mongoose.isValidObjectId(workItemId)) {
     throw new AppError(404, ErrorCodes.DURABLE_WORK_NOT_FOUND, 'Dead-letter work was not found.');
   }
-  const scope = requireAuthorizedScope(actor);
+  const scope = await requireOperationsPermission('worker.manage', actor);
   if (!scope.connectionId) {
     throw validationError('connectionId', 'connectionId is required for dead-letter requeue.');
   }

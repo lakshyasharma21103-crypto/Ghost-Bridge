@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const credentialSchema = new mongoose.Schema(
   {
     connectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'PassportConnection', required: true, index: true },
+    organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', index: true },
+    partnerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Partner', index: true },
+    receivingWorkspaceId: { type: String, trim: true, index: true },
     type: {
       type: String,
       enum: ['no_auth_dev', 'api_key', 'bearer_token', 'oauth2', 'delegated_runtime_access'],
@@ -16,5 +19,6 @@ const credentialSchema = new mongoose.Schema(
 );
 
 credentialSchema.index({ connectionId: 1, status: 1 });
+credentialSchema.index({ partnerId: 1, receivingWorkspaceId: 1, status: 1 });
 
 module.exports = mongoose.models.Credential || mongoose.model('Credential', credentialSchema);

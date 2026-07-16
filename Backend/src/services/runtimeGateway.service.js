@@ -66,6 +66,11 @@ const {
   scheduleRetry,
   startWork,
 } = require('./durableWork.service');
+const {
+  actorFromRuntimeActor,
+  assertAuthorized,
+  resourceFromConnection,
+} = require('./authorization.service');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
@@ -870,6 +875,8 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
     const invocation = await Invocation.create({
       connectionId: connection._id,
       passportId: connection.passportId,
+      partnerId: connection.partnerId,
+      organizationId: connection.organizationId || connection.partnerId,
       receivingWorkspaceId: connection.receivingWorkspaceId,
       capability: capabilityName,
       inputSummary: actor.recoveryParentInvocationId
@@ -1043,6 +1050,8 @@ async function startInvocationAttempt({
   const startedAt = new Date();
   const attempt = await InvocationAttempt.create({
     invocationId: claimed._id,
+    partnerId: connection.partnerId,
+    organizationId: connection.organizationId || connection.partnerId,
     receivingWorkspaceId: connection.receivingWorkspaceId,
     connectionId: connection._id,
     attemptNumber,
@@ -1464,6 +1473,19 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     );
     connection = await observer.stage('connection_lookup', () => loadConnection(connectionId));
     assertConnectionOwnership(connection, actor);
+    await observer.stage('authorization_check', () =>
+      assertAuthorized(
+        actorFromRuntimeActor(actor, connection),
+        'connection.invoke',
+        resourceFromConnection(connection),
+        {
+          requestId: actor.requestId,
+          traceId: actor.traceId,
+          allowLegacyOwner: true,
+          trustedSystem: actor.actorType === 'system' || actor.trustedSystem === true,
+        },
+      ),
+    );
     auditActor = actorFor(connection, actor);
 
     const reservation = await observer.stage('invocation_persistence', () =>

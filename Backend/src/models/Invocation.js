@@ -72,6 +72,16 @@ const invocationSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      index: true,
+    },
+    partnerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Partner',
+      index: true,
+    },
     receivingWorkspaceId: { type: String, required: true, trim: true, index: true },
     capability: { type: String, required: true, trim: true, index: true },
     inputSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -235,6 +245,8 @@ const invocationSchema = new mongoose.Schema(
 );
 
 invocationSchema.index({ connectionId: 1, createdAt: -1 });
+invocationSchema.index({ partnerId: 1, receivingWorkspaceId: 1, createdAt: -1 });
+invocationSchema.index({ organizationId: 1, receivingWorkspaceId: 1, createdAt: -1 });
 invocationSchema.index({ passportId: 1, createdAt: -1 });
 invocationSchema.index({ receivingWorkspaceId: 1, createdAt: -1 });
 invocationSchema.index({ receivingWorkspaceId: 1, status: 1, createdAt: -1 });

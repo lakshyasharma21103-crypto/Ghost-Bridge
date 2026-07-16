@@ -7,6 +7,7 @@ const operationalAlertSchema = new mongoose.Schema(
       ref: 'Partner',
       index: true,
     },
+    organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Organization', index: true },
     receivingWorkspaceId: { type: String, required: true, trim: true, index: true },
     type: { type: String, required: true, trim: true },
     scopeKey: { type: String, trim: true, maxlength: 128 },

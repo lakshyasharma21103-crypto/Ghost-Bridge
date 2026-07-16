@@ -9,6 +9,7 @@ const { demoRouter } = require('./demoRoutes');
 const { auditLogRouter } = require('./auditLogRoutes');
 const { developerSandboxRouter } = require('./developerSandboxRoutes');
 const { operationsRouter } = require('./operationsRoutes');
+const { enterpriseIdentityRouter } = require('./enterpriseIdentityRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -34,6 +35,7 @@ router.use(`${API_PREFIX}/connections`, connectionRouter);
 router.use(`${API_PREFIX}/invocations`, invocationRouter);
 router.use(`${API_PREFIX}/audit-logs`, auditLogRouter);
 router.use(`${API_PREFIX}/operations`, operationsRouter);
+router.use(`${API_PREFIX}/enterprise`, enterpriseIdentityRouter);
 if (env.NODE_ENV === 'development') {
   router.use(`${API_PREFIX}/demo`, demoRouter);
   router.use(`${API_PREFIX}/developer-sandbox`, developerSandboxRouter);

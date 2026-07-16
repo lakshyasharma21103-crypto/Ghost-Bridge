@@ -46,6 +46,7 @@ const SAFE_METADATA_KEYS = new Set([
 ]);
 const ENQUEUE_KEYS = new Set([
   'partnerId',
+  'organizationId',
   'receivingWorkspaceId',
   'workspaceId',
   'invocationId',
@@ -72,6 +73,7 @@ const FINALIZE_KEYS = new Set([
 const OUTBOX_KEYS = new Set([
   'eventType',
   'partnerId',
+  'organizationId',
   'receivingWorkspaceId',
   'workspaceId',
   'invocationId',
@@ -195,6 +197,10 @@ function leaseTokenHash(rawToken) {
 function tenantIdentity(input) {
   return {
     partnerId: objectId(input.partnerId, 'partnerId'),
+    organizationId:
+      input.organizationId === undefined || input.organizationId === null || input.organizationId === ''
+        ? objectId(input.partnerId, 'partnerId')
+        : objectId(input.organizationId, 'organizationId'),
     receivingWorkspaceId: requiredIdentityString(
       input.receivingWorkspaceId ?? input.workspaceId,
       'receivingWorkspaceId',
@@ -206,6 +212,9 @@ function tenantIdentity(input) {
 function tenantScope(input) {
   const scope = {
     partnerId: objectId(input.partnerId, 'partnerId'),
+    ...(input.organizationId
+      ? { organizationId: objectId(input.organizationId, 'organizationId') }
+      : {}),
     receivingWorkspaceId: requiredIdentityString(
       input.receivingWorkspaceId ?? input.workspaceId,
       'receivingWorkspaceId',

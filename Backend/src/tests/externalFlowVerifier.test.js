@@ -337,6 +337,42 @@ test('Gemini stage timeouts report only safe operation and configured-deadline m
   assert.equal(output.includes('example.test'), false);
 });
 
+test('Gemini upstream failures retain only their allowlisted operation diagnostic', () => {
+  const secret = 'private-provider-secret-0123456789';
+  const result = endpointResult(undefined, {
+    status: 502,
+    success: false,
+    error: {
+      code: 'GEMINI_UPSTREAM_UNAVAILABLE',
+      operation: 'structured_formatting',
+      requestId: 'req_endpoint-test',
+      traceId: 'trace_endpoint-test',
+      message: `private response ${secret}`,
+      providerResponse: secret,
+    },
+  });
+  let failure;
+  try {
+    success(result, 'gateway invocation', { connectionId: 'connection_123' });
+  } catch (error) {
+    failure = wrapVerificationFailure(
+      error,
+      {
+        stage: 'gateway_invocation',
+        stageStartedAt: 3_000,
+        connectionId: 'connection_123',
+      },
+      3_125,
+    );
+  }
+  const output = formatVerificationFailure(failure);
+
+  assert.equal(failure.operation, 'structured_formatting');
+  assert.match(output, /Application error code: GEMINI_UPSTREAM_UNAVAILABLE/);
+  assert.match(output, /Operation: structured_formatting/);
+  assert.equal(output.includes(secret), false);
+});
+
 test('source-extraction failures report only correlated allowlisted Gemini shape diagnostics', () => {
   const secret = 'gemini-api-key-secret-0123456789';
   const result = endpointResult(undefined, {

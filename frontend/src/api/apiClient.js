@@ -119,7 +119,9 @@ export async function apiRequest(path, options = {}) {
   const headers = new Headers(options.headers);
   headers.set('X-Request-Id', headers.get('X-Request-Id') || requestId());
   const requiresPartnerAuthentication =
-    path.startsWith('/partner') || isPhase13B3Control(path, options.method);
+    path.startsWith('/partner') ||
+    path.startsWith('/enterprise') ||
+    isPhase13B3Control(path, options.method);
   if (requiresPartnerAuthentication && !headers.has('X-Partner-Api-Key')) {
     if (!partnerApiKey) {
       throw new ApiClientError('Configure a Partner API key before making this request.', {

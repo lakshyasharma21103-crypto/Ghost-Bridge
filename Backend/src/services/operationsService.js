@@ -21,6 +21,7 @@ const {
 const packageMetadata = require('../../package.json');
 const { serviceLifecycle } = require('./serviceLifecycle.service');
 const durableWork = require('./durableWork.service');
+const { actorFromPartner, assertAuthorized } = require('./authorization.service');
 
 const ALERT_WINDOW = '24h';
 const SAFE_HEALTH_STATUSES = new Set([
@@ -2383,6 +2384,22 @@ async function listAlerts(input, actor = {}) {
 async function acknowledgeAlert(alertId, input, actor = {}) {
   const identity = requireIdentity(input);
   const partnerId = partnerIdFrom(actor);
+  await assertAuthorized(
+    actorFromPartner(actor.partner || { _id: partnerId }, { workspaceId: identity.receivingWorkspaceId }),
+    'operations.manage',
+    {
+      type: 'OperationalAlert',
+      id: alertId,
+      partnerId,
+      organizationId: partnerId,
+      workspaceId: identity.receivingWorkspaceId,
+    },
+    {
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      workspaceId: identity.receivingWorkspaceId,
+    },
+  );
   const now = new Date();
   const alert = await OperationalAlert.findOneAndUpdate(
     {

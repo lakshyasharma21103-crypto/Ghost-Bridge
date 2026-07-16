@@ -19,6 +19,16 @@ const invocationAttemptSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    organizationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Organization',
+      index: true,
+    },
+    partnerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Partner',
+      index: true,
+    },
     receivingWorkspaceId: { type: String, required: true, trim: true, index: true },
     connectionId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -77,6 +87,7 @@ const invocationAttemptSchema = new mongoose.Schema(
 );
 
 invocationAttemptSchema.index({ invocationId: 1, attemptNumber: 1 }, { unique: true });
+invocationAttemptSchema.index({ partnerId: 1, receivingWorkspaceId: 1, createdAt: -1 });
 invocationAttemptSchema.index({ receivingWorkspaceId: 1, invocationId: 1, attemptNumber: -1 });
 invocationAttemptSchema.index({ receivingWorkspaceId: 1, status: 1, createdAt: -1 });
 invocationAttemptSchema.index({ receivingWorkspaceId: 1, errorCode: 1, createdAt: -1 });

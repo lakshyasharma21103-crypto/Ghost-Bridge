@@ -20,6 +20,8 @@ function auditLogPayload(
     action,
     entityType,
     entityId,
+    organizationId: metadata.organizationId || metadata.tenantOrganizationId,
+    workspaceId: metadata.workspaceId || metadata.receivingWorkspaceId,
     metadata: redactSecrets(metadata),
     requestId: context.requestId,
     traceId: context.traceId,
