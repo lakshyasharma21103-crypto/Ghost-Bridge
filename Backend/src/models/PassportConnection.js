@@ -50,6 +50,11 @@ const passportConnectionSchema = new mongoose.Schema(
     runtimeType: { type: String, enum: ['rest', 'mcp'], required: true },
     runtimeEndpoint: { type: String, required: true, trim: true },
     credentialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Credential' },
+    credentialBindingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CredentialBinding',
+      index: true,
+    },
     lastHealthStatus: { type: String, trim: true },
     lastHealthCheckedAt: { type: Date },
     healthStatus: {
@@ -75,6 +80,7 @@ passportConnectionSchema.index({ partnerId: 1, organizationId: 1, receivingWorks
 passportConnectionSchema.index({ receivingWorkspaceId: 1, status: 1, updatedAt: -1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, lastHealthStatus: 1, updatedAt: -1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, healthStatus: 1, updatedAt: -1 });
+passportConnectionSchema.index({ organizationId: 1, credentialBindingId: 1 });
 
 module.exports =
   mongoose.models.PassportConnection ||

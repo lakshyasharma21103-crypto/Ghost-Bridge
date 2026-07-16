@@ -26,6 +26,7 @@ const logger = pino({
       '*.MONGODB_URI',
       '*.JWT_SECRET',
       '*.CREDENTIAL_ENCRYPTION_KEY',
+      '*.CREDENTIAL_ENCRYPTION_KEYS',
       '*.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN',
     ],
   },

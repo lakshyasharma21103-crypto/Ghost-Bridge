@@ -14,6 +14,7 @@ const { requestWorkCancellation } = require('./durableWork.service');
 const { transitionUpdate } = require('./invocationLifecycle.service');
 const { classifyStuckInvocation } = require('../utils/stuckInvocation');
 const { recoveryPolicyDecision } = require('../utils/recoveryPolicy');
+const { validateCredentialStateForConnection } = require('./credentialBroker.service');
 const {
   controlContext,
   serializeOperationalInvocation,
@@ -131,6 +132,19 @@ async function authorizedContext(invocationId, input, partner, options = {}) {
       trustedCapability: capability,
     },
   );
+  if (options.requireCredentialState) {
+    await validateCredentialStateForConnection({
+      organizationId: idOf(connection.organizationId || connection.partnerId),
+      workspaceId: identity.receivingWorkspaceId,
+      connectionId: idOf(connection),
+      adapterId: invocation.credentialRequirement?.adapterId || connection.runtimeType,
+      purpose: invocation.credentialRequirement?.purpose || 'runtime_invocation',
+      expectedCredentialBindingId: invocation.credentialBindingId,
+      allowMissing: false,
+      trustedConnection: connection,
+      passportAuth: snapshot.auth,
+    });
+  }
   return { identity, invocation, connection, passport, capability };
 }
 
@@ -1117,6 +1131,7 @@ async function manualRetry(invocationId, input, actor = {}) {
     permission: 'invocation.retry',
     requestId: actor.requestId,
     traceId: actor.traceId,
+    requireCredentialState: true,
   });
   const decision = recoveryPolicyDecision(controlContext(context.invocation, context.connection));
   await audit('invocation.recovery.retry_requested', context, actor, {

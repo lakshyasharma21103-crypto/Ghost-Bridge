@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "dev:worker": "node --watch src/worker.js",
-    "build": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/migratePolicyEngine.js",
+    "build": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js",
     "start": "node src/server.js",
     "worker": "node src/worker.js",
     "typecheck": "node --check src/server.js && node --check src/worker.js && node --check src/app.js",
-    "lint": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/migratePolicyEngine.js",
+    "lint": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js",
     "test": "node --test",
     "seed:demo": "node scripts/seedDemo.js",
     "verify:demo": "node scripts/verifyDemo.js",
@@ -19,7 +19,9 @@
     "verify:external-flow": "node scripts/verifyExternalFlow.js",
     "verify:durable-recovery": "node scripts/verifyDurableRecovery.js",
     "verify:policy-engine": "node scripts/verifyPolicyEngine.js",
-    "migrate:policy-engine": "node scripts/migratePolicyEngine.js"
+    "verify:secret-governance": "node scripts/verifySecretGovernance.js",
+    "migrate:policy-engine": "node scripts/migratePolicyEngine.js",
+    "migrate:secret-governance": "node scripts/migrateSecretGovernance.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

@@ -9,6 +9,7 @@ const Invocation = require('../models/Invocation');
 const EnterpriseUser = require('../models/EnterpriseUser');
 const ServiceAccount = require('../models/ServiceAccount');
 const AuditLog = require('../models/AuditLog');
+const GovernedSecret = require('../models/GovernedSecret');
 const { createAuditLog } = require('./auditService');
 const { actorFromPartner, assertAuthorized, authorize } = require('./authorization.service');
 const {
@@ -338,6 +339,12 @@ async function validateTenantReferences(policy, scope) {
             stablePolicyId: { $in: resourceIds },
           })
         ).length;
+      } else if (['secret', 'governedsecret'].includes(resourceType)) {
+        count = await GovernedSecret.countDocuments({
+          organizationId: scope.organizationId,
+          secretId: { $in: resourceIds },
+          ...(policy.workspaceId ? { workspaceId: policy.workspaceId } : {}),
+        });
       } else {
         throw new AppError(
           400,
@@ -543,6 +550,27 @@ async function validateDraft(stablePolicyId, version, input = {}, actor = {}) {
 
 async function resolveSimulationResource(input, scope) {
   const resourceType = String(input.resourceType || 'Policy');
+  if (resourceType === 'Secret') {
+    const secret = await GovernedSecret.findOne({
+      organizationId: scope.organizationId,
+      secretId: input.secretId || input.resourceId,
+      ...(scope.workspaceId
+        ? { $or: [{ workspaceId: scope.workspaceId }, { workspaceId: { $exists: false } }] }
+        : {}),
+    }).lean();
+    if (!secret)
+      throw new AppError(404, ErrorCodes.NOT_FOUND, 'Simulation resource was not found.');
+    return {
+      secret,
+      resource: {
+        type: 'Secret',
+        id: secret.secretId,
+        organizationId: scope.organizationId,
+        workspaceId: secret.workspaceId,
+        partnerId: scope.partnerId,
+      },
+    };
+  }
   if (resourceType === 'Connection' || input.connectionId) {
     const connection = await PassportConnection.findOne({
       _id: input.connectionId || input.resourceId,
@@ -663,6 +691,7 @@ async function simulateDraft(stablePolicyId, version, input = {}, actor = {}) {
     trustedConnection: resolved.connection,
     trustedPassport: resolved.passport,
     trustedCapability: resolved.capability,
+    trustedSecret: resolved.secret,
     simulation: true,
     auditDecision: false,
   };

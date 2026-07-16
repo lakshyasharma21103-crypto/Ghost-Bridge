@@ -6,7 +6,11 @@ const PARTNER_KEY_PATTERN = /agentpass_partner_[A-Za-z0-9_-]{16,}/g;
 const BEARER_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const COOKIE_PAIR_PATTERN = /([A-Za-z0-9_.-]+)=([^;,\s]+)/g;
 const QUERY_SECRET_PATTERN =
-  /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|runtime[_-]?token|partner[_-]?api[_-]?key|install[_-]?key|token|secret|password|credential)=)([^&\s]+)/gi;
+  /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|runtime[_-]?token|partner[_-]?api[_-]?key|install[_-]?key|token|secret|password|credential|signature|sig|x-amz-signature|x-goog-signature|sas)=)([^&\s]+)/gi;
+const PRIVATE_KEY_PATTERN =
+  /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/g;
+const PROVIDER_KEY_PATTERN =
+  /\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{12,}|AKIA[A-Z0-9]{16})\b/g;
 const SENSITIVE_NORMALIZED_KEYS = new Set([
   'authorization',
   'cookie',
@@ -45,6 +49,8 @@ function redactString(value) {
     .replace(/mongodb(\+srv)?:\/\/[^\s]+/gi, '[redacted-mongodb-uri]')
     .replace(INSTALL_KEY_PATTERN, '[redacted-install-key]')
     .replace(PARTNER_KEY_PATTERN, '[redacted-partner-api-key]')
+    .replace(PRIVATE_KEY_PATTERN, '[redacted-private-key]')
+    .replace(PROVIDER_KEY_PATTERN, '[redacted-provider-credential]')
     .replace(BEARER_PATTERN, 'Bearer [redacted]')
     .replace(QUERY_SECRET_PATTERN, '$1[redacted]');
   const trimmed = redacted.trim();

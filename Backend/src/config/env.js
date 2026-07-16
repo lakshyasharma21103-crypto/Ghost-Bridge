@@ -52,7 +52,48 @@ function validateEncryptionKey(raw, nodeEnv) {
   );
 }
 
+function validateEncryptionKeyVersion(raw) {
+  const value = String(raw || 'v1').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value)) {
+    throw new Error('CREDENTIAL_ENCRYPTION_KEY_VERSION must be a safe key version identifier.');
+  }
+  return value;
+}
+
+function encryptionKeyRing(raw, currentVersion, currentKey, nodeEnv) {
+  if (!raw) return Object.freeze({ [currentVersion]: currentKey });
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('CREDENTIAL_ENCRYPTION_KEYS must be a JSON object of versioned keys.');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('CREDENTIAL_ENCRYPTION_KEYS must be a JSON object of versioned keys.');
+  }
+  const entries = Object.entries(parsed);
+  if (!entries.length || entries.length > 32) {
+    throw new Error('CREDENTIAL_ENCRYPTION_KEYS must contain between 1 and 32 key versions.');
+  }
+  const ring = {};
+  for (const [version, key] of entries) {
+    const safeVersion = validateEncryptionKeyVersion(version);
+    ring[safeVersion] = validateEncryptionKey(String(key || ''), nodeEnv);
+  }
+  if (!Object.hasOwn(ring, currentVersion)) {
+    throw new Error('CREDENTIAL_ENCRYPTION_KEYS must include CREDENTIAL_ENCRYPTION_KEY_VERSION.');
+  }
+  return Object.freeze(ring);
+}
+
 const nodeEnv = process.env.NODE_ENV || 'development';
+const credentialEncryptionKey = validateEncryptionKey(
+  process.env.CREDENTIAL_ENCRYPTION_KEY,
+  nodeEnv,
+);
+const credentialEncryptionKeyVersion = validateEncryptionKeyVersion(
+  process.env.CREDENTIAL_ENCRYPTION_KEY_VERSION,
+);
 const allowPrivateRuntimeUrlsInDev =
   nodeEnv === 'development' && booleanFromEnv('ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV', false);
 const runtimeInvocationTimeoutMs = integerFromEnv('RUNTIME_INVOCATION_TIMEOUT_MS', 330_000);
@@ -107,12 +148,7 @@ const durableWorkerPollIntervalMs = integerInRangeFromEnv(
   60_000,
 );
 const durableWorkerBatchSize = integerInRangeFromEnv('DURABLE_WORKER_BATCH_SIZE', 5, 1, 100);
-const durableWorkerConcurrency = integerInRangeFromEnv(
-  'DURABLE_WORKER_CONCURRENCY',
-  3,
-  1,
-  50,
-);
+const durableWorkerConcurrency = integerInRangeFromEnv('DURABLE_WORKER_CONCURRENCY', 3, 1, 50);
 const durableWorkLeaseMs = integerInRangeFromEnv(
   'DURABLE_WORK_LEASE_MS',
   Math.min(3_600_000, runtimeInvocationTimeoutMs + 30_000),
@@ -158,7 +194,9 @@ if (durableWorkHeartbeatMs * 3 > durableWorkLeaseMs) {
 }
 
 if (durableWorkerBatchSize < durableWorkerConcurrency) {
-  throw new Error('DURABLE_WORKER_BATCH_SIZE must be greater than or equal to DURABLE_WORKER_CONCURRENCY');
+  throw new Error(
+    'DURABLE_WORKER_BATCH_SIZE must be greater than or equal to DURABLE_WORKER_CONCURRENCY',
+  );
 }
 
 if (durableWorkDeadLetterAfterAttempts < durableWorkMaxAttempts) {
@@ -174,7 +212,14 @@ const env = {
   MONGODB_URI: process.env.MONGODB_URI || '',
   MONGODB_DB_NAME: process.env.MONGODB_DB_NAME || 'agent_passport_runtime_gateway',
   MONGODB_AUTH_SOURCE: process.env.MONGODB_AUTH_SOURCE || 'admin',
-  CREDENTIAL_ENCRYPTION_KEY: validateEncryptionKey(process.env.CREDENTIAL_ENCRYPTION_KEY, nodeEnv),
+  CREDENTIAL_ENCRYPTION_KEY: credentialEncryptionKey,
+  CREDENTIAL_ENCRYPTION_KEY_VERSION: credentialEncryptionKeyVersion,
+  CREDENTIAL_ENCRYPTION_KEYS: encryptionKeyRing(
+    process.env.CREDENTIAL_ENCRYPTION_KEYS,
+    credentialEncryptionKeyVersion,
+    credentialEncryptionKey,
+    nodeEnv,
+  ),
   DEV_PARTNER_API_KEY: process.env.DEV_PARTNER_API_KEY || '',
   DEV_PARTNER_NAME: process.env.DEV_PARTNER_NAME || 'Development Partner',
   DEV_PARTNER_SLUG: process.env.DEV_PARTNER_SLUG || 'dev-partner',

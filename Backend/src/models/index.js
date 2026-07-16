@@ -21,6 +21,12 @@ const ServiceAccount = require('./ServiceAccount');
 const Role = require('./Role');
 const Policy = require('./Policy');
 const PolicyRevision = require('./PolicyRevision');
+const GovernedSecret = require('./GovernedSecret');
+const SecretVersion = require('./SecretVersion');
+const CredentialBinding = require('./CredentialBinding');
+const CredentialLease = require('./CredentialLease');
+const CredentialRotationAttempt = require('./CredentialRotationAttempt');
+const EncryptionRewrapJob = require('./EncryptionRewrapJob');
 
 module.exports = {
   Partner,
@@ -46,4 +52,10 @@ module.exports = {
   Role,
   Policy,
   PolicyRevision,
+  GovernedSecret,
+  SecretVersion,
+  CredentialBinding,
+  CredentialLease,
+  CredentialRotationAttempt,
+  EncryptionRewrapJob,
 };

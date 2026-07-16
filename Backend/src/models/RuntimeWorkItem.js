@@ -71,6 +71,15 @@ const runtimeWorkItemSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    credentialBindingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CredentialBinding',
+      index: true,
+    },
+    credentialRequirement: {
+      adapterId: { type: String, trim: true, maxlength: 64 },
+      purpose: { type: String, trim: true, maxlength: 100 },
+    },
     attemptNumber: { type: Number, required: true, min: 1 },
     workType: { type: String, enum: DURABLE_WORK_TYPES, required: true },
     dedupeKey: { type: String, required: true, match: SAFE_HASH_PATTERN, select: false },
@@ -135,10 +144,7 @@ const runtimeWorkItemSchema = new mongoose.Schema(
   { timestamps: true, strict: 'throw' },
 );
 
-runtimeWorkItemSchema.index(
-  { dedupeKey: 1 },
-  { unique: true, name: 'unique_durable_work_dedupe' },
-);
+runtimeWorkItemSchema.index({ dedupeKey: 1 }, { unique: true, name: 'unique_durable_work_dedupe' });
 runtimeWorkItemSchema.index(
   {
     partnerId: 1,
@@ -152,9 +158,15 @@ runtimeWorkItemSchema.index(
 runtimeWorkItemSchema.index({ status: 1, priority: -1, availableAt: 1, createdAt: 1 });
 runtimeWorkItemSchema.index({ status: 1, leaseExpiresAt: 1 });
 runtimeWorkItemSchema.index({ partnerId: 1, receivingWorkspaceId: 1, status: 1, createdAt: -1 });
-runtimeWorkItemSchema.index({ organizationId: 1, receivingWorkspaceId: 1, status: 1, createdAt: -1 });
+runtimeWorkItemSchema.index({
+  organizationId: 1,
+  receivingWorkspaceId: 1,
+  status: 1,
+  createdAt: -1,
+});
 runtimeWorkItemSchema.index({ partnerId: 1, receivingWorkspaceId: 1, connectionId: 1, status: 1 });
 runtimeWorkItemSchema.index({ invocationId: 1, status: 1, updatedAt: -1 });
+runtimeWorkItemSchema.index({ credentialBindingId: 1, status: 1, availableAt: 1 });
 runtimeWorkItemSchema.index({ outboxRepairRequiredAt: 1, updatedAt: 1 });
 
 module.exports =

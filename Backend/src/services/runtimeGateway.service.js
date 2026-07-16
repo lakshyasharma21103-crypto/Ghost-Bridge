@@ -8,10 +8,8 @@ const Invocation = require('../models/Invocation');
 const InvocationAttempt = require('../models/InvocationAttempt');
 const { adapters } = require('./adapters');
 const { createAuditLog } = require('./auditService');
-const {
-  checkConnectionHealth: checkConnectionHealthService,
-  credentialHeadersForConnection,
-} = require('./connectionService');
+const { checkConnectionHealth: checkConnectionHealthService } = require('./connectionService');
+const { resolveCredentialForRuntime } = require('./credentialBroker.service');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { redactSecrets } = require('../utils/redact');
@@ -870,6 +868,15 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
         : redactSecrets(input),
       executionPayload: encryptPayload({ input }),
       protectedReplayAvailable: true,
+      ...(connection.credentialBindingId
+        ? {
+            credentialBindingId: connection.credentialBindingId,
+            credentialRequirement: {
+              adapterId: connection.runtimeType,
+              purpose: 'runtime_invocation',
+            },
+          }
+        : {}),
       runtimeType: connection.runtimeType,
       traceId: actor.traceId,
       requestId: actor.requestId,
@@ -929,6 +936,11 @@ async function loadReservedInvocation({ connection, capabilityName, actor }) {
   const invocation = await queryWithPrivateInvocationFields({
     _id: actor.durableInvocationId,
     connectionId: connection._id,
+    credentialBindingId: invocation.credentialBindingId || connection.credentialBindingId,
+    credentialRequirement: invocation.credentialRequirement || {
+      adapterId: connection.runtimeType,
+      purpose: 'runtime_invocation',
+    },
     receivingWorkspaceId: connection.receivingWorkspaceId,
   });
   if (!invocation) {
@@ -1451,6 +1463,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
   let executionSignal;
   let executionOwner;
   let executionLeaseId;
+  let brokeredCredential;
   let durableContext;
   let stopDurableHeartbeat = async () => undefined;
   let durableFailureSettled = false;
@@ -1763,16 +1776,6 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       );
     }
 
-    let credentialHeaders = {};
-    if (context.connection.runtimeType === 'rest') {
-      credentialHeaders = await credentialHeadersForConnection(
-        context.connection,
-        context.passport.auth,
-        { observer },
-      );
-    }
-    await actor.onDurableProgress?.('credentials_loaded', new Date());
-
     executionOwner = actor.executionOwner || `gateway-${process.pid}-${crypto.randomUUID()}`;
     const claim = await claimInvocationExecution({
       invocationId: idOf(invocation),
@@ -1856,6 +1859,34 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       actor: auditActor,
       ...progressPersistenceOptions(),
     });
+    let credentialHeaders = {};
+    if (context.connection.runtimeType === 'rest') {
+      brokeredCredential = await observer.stage('credential_load', () =>
+        observer.stage('credential_decryption', () =>
+          resolveCredentialForRuntime({
+            organizationId: idOf(connection.organizationId || connection.partnerId),
+            workspaceId: idOf(connection.receivingWorkspaceId),
+            connectionId: idOf(connection),
+            invocationId: idOf(invocation),
+            adapterId: context.connection.runtimeType,
+            capabilityId: idOf(context.capability),
+            purpose: 'runtime_invocation',
+            environment: context.workspace?.environment || env.NODE_ENV,
+            actorType: auditActor.actorType,
+            actorId: auditActor.actorId,
+            requestId: actor.requestId,
+            traceId: actor.traceId,
+            expectedCredentialBindingId:
+              actor.expectedCredentialBindingId || invocation.credentialBindingId,
+            trustedConnection: context.connection,
+            passportAuth: context.passport.auth,
+            observer,
+          }),
+        ),
+      );
+      credentialHeaders = brokeredCredential.credentialHeaders;
+    }
+    await actor.onDurableProgress?.('credentials_loaded', new Date());
     const beforeTransmit = async () => {
       if (executionSignal?.aborted) {
         throw executionSignal.reason;
@@ -2671,6 +2702,16 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     });
     throw runtimeError;
   } finally {
+    if (brokeredCredential) {
+      try {
+        await brokeredCredential.release();
+      } catch (releaseError) {
+        observer.emit('warn', 'credential.lease_release_failed', {
+          ...errorFields(releaseError),
+          status: 'failed',
+        });
+      }
+    }
     if (circuitEvaluation?.probe && !circuitProbeSettled && context?.connection) {
       circuitProbeSettled = await releaseNonFailureProbe(
         context,

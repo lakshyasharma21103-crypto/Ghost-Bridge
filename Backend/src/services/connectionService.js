@@ -4,6 +4,7 @@ const PassportInstallKey = require('../models/PassportInstallKey');
 const PassportConnection = require('../models/PassportConnection');
 const Credential = require('../models/Credential');
 const { env } = require('../config/env');
+const { databaseStatus } = require('../config/db');
 const { createAuditLog } = require('./auditService');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
@@ -22,6 +23,8 @@ const {
   assertAuthorized,
   resourceFromConnection,
 } = require('./authorization.service');
+const { governCredentialForConnection } = require('./secretGovernance.service');
+const { resolveCredentialForRuntime } = require('./credentialBroker.service');
 
 const INSTALL_KEY_PATTERN = /^agentpass_install_[A-Za-z0-9_-]{32,}$/;
 const CREDENTIAL_TYPES = ['api_key', 'bearer_token'];
@@ -400,6 +403,15 @@ async function resolveInstallKey(input, requestContext) {
       expiresAt: consumedKey.runtimeGrantExpiresAt,
     });
     connection.credentialId = credential._id;
+    if (databaseStatus() === 'connected') {
+      const governed = await governCredentialForConnection({
+        connection,
+        credential,
+        payload: runtimeGrant,
+        actorId: `user:${identity.receivingUserId}`,
+      });
+      connection.credentialBindingId = governed.binding._id;
+    }
     await connection.save();
   }
 
@@ -616,7 +628,18 @@ async function storeConnectionCredential(connectionId, body, requestId) {
     expiresAt: validated.expiresAt,
   });
 
+  let governed;
+  if (databaseStatus() === 'connected') {
+    governed = await governCredentialForConnection({
+      connection,
+      credential,
+      payload: validated.payload,
+      actorId: `user:${identity.receivingUserId}`,
+    });
+  }
+
   connection.credentialId = credential._id;
+  if (governed) connection.credentialBindingId = governed.binding._id;
   connection.status = 'connected';
   connection.resolvedPassportSnapshot = {
     ...snapshot,
@@ -799,9 +822,21 @@ async function checkConnectionHealth(connectionId, body, requestId) {
     },
   );
   const target = healthTarget(connection);
-  const headers = await credentialHeadersForConnection(connection, undefined, {
+  const brokered = await resolveCredentialForRuntime({
+    organizationId: idOf(connection.organizationId || connection.partnerId),
+    workspaceId: connection.receivingWorkspaceId,
+    connectionId: idOf(connection),
+    adapterId: connection.runtimeType,
+    purpose: 'connection_health_check',
+    environment: env.NODE_ENV,
+    actorType: 'user',
+    actorId: identity.receivingUserId,
+    requestId,
     allowMissing: true,
+    trustedConnection: connection,
+    passportAuth: snapshot.auth,
   });
+  const headers = brokered.credentialHeaders;
   const checkedAt = new Date();
 
   try {
@@ -925,6 +960,8 @@ async function checkConnectionHealth(connectionId, body, requestId) {
       );
     }
     throw error;
+  } finally {
+    await brokered.release();
   }
 }
 

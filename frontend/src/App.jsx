@@ -16,6 +16,7 @@ import { TestInvocation } from './pages/TestInvocation.jsx';
 import { DeveloperSandbox } from './pages/DeveloperSandbox.jsx';
 import { Operations } from './pages/Operations.jsx';
 import { Policies } from './pages/Policies.jsx';
+import { Secrets } from './pages/Secrets.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/partner" element={<PartnerDashboard />} />
         <Route path="/operations" element={<Operations />} />
         <Route path="/policies" element={<Policies />} />
+        <Route path="/secrets" element={<Secrets />} />
         <Route path="/passports/new" element={<CreatePassport />} />
         <Route path="/passports" element={<PassportsList />} />
         <Route path="/passports/:passportId" element={<PassportDetail />} />

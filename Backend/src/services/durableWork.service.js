@@ -51,6 +51,8 @@ const ENQUEUE_KEYS = new Set([
   'workspaceId',
   'invocationId',
   'connectionId',
+  'credentialBindingId',
+  'credentialRequirement',
   'attemptNumber',
   'workType',
   'executionGeneration',
@@ -198,7 +200,9 @@ function tenantIdentity(input) {
   return {
     partnerId: objectId(input.partnerId, 'partnerId'),
     organizationId:
-      input.organizationId === undefined || input.organizationId === null || input.organizationId === ''
+      input.organizationId === undefined ||
+      input.organizationId === null ||
+      input.organizationId === ''
         ? objectId(input.partnerId, 'partnerId')
         : objectId(input.organizationId, 'organizationId'),
     receivingWorkspaceId: requiredIdentityString(
@@ -220,7 +224,11 @@ function tenantScope(input) {
       'receivingWorkspaceId',
     ),
   };
-  if (input.connectionId !== undefined && input.connectionId !== null && input.connectionId !== '') {
+  if (
+    input.connectionId !== undefined &&
+    input.connectionId !== null &&
+    input.connectionId !== ''
+  ) {
     scope.connectionId = objectId(input.connectionId, 'connectionId');
   }
   return scope;
@@ -309,7 +317,8 @@ function safeOutboxMetadata(input = {}) {
     result.safeStage = input.safeStage;
   }
   for (const key of ['attemptNumber', 'executionGeneration']) {
-    if (input[key] !== undefined) result[key] = integer(input[key], `safeMetadata.${key}`, { minimum: 1 });
+    if (input[key] !== undefined)
+      result[key] = integer(input[key], `safeMetadata.${key}`, { minimum: 1 });
   }
   if (input.retryCount !== undefined) {
     result.retryCount = integer(input.retryCount, 'safeMetadata.retryCount', { minimum: 0 });
@@ -467,8 +476,7 @@ function inferredOutboxRepairRecords(work) {
       : Math.max(1, Number(work.attemptNumber || 1) - Number(work.retryCount || 0));
   const initialClaimMilestone = (work.milestones || []).find(
     (milestone) =>
-      milestone.name === 'work_claimed' &&
-      Number(milestone.attemptNumber) === initialAttemptNumber,
+      milestone.name === 'work_claimed' && Number(milestone.attemptNumber) === initialAttemptNumber,
   );
   const initialMetadata = {
     workStatus: initialClaimMilestone ? 'claimed' : 'pending',
@@ -525,7 +533,8 @@ function inferredOutboxRepairRecords(work) {
       break;
     case 'failed':
       add('work.failed', {
-        reasonCode: work.lastErrorCode || work.retryDecisionReason || 'DURABLE_WORK_EXECUTION_FAILED',
+        reasonCode:
+          work.lastErrorCode || work.retryDecisionReason || 'DURABLE_WORK_EXECUTION_FAILED',
       });
       break;
     case 'recovery_required':
@@ -561,14 +570,7 @@ function outboxInputFromRepairRecord(work, record) {
 async function repairDurableOutbox(input = {}, options = {}) {
   assertAllowedKeys(
     input,
-    new Set([
-      'now',
-      'limit',
-      'partnerId',
-      'receivingWorkspaceId',
-      'workspaceId',
-      'connectionId',
-    ]),
+    new Set(['now', 'limit', 'partnerId', 'receivingWorkspaceId', 'workspaceId', 'connectionId']),
     'outboxRepair',
   );
   const now = dateValue(input.now ?? options.now, 'now');
@@ -671,6 +673,8 @@ function serializeWorkItem(value) {
     workItemId: idOf(item),
     invocationId: idOf(item.invocationId),
     connectionId: idOf(item.connectionId),
+    credentialBindingId: idOf(item.credentialBindingId) || undefined,
+    credentialRequirement: item.credentialRequirement,
     receivingWorkspaceId: item.receivingWorkspaceId,
     workType: item.workType,
     status: item.status,
@@ -732,6 +736,23 @@ function enqueueDocument(input, now) {
   const document = {
     ...identity,
     invocationId: objectId(input.invocationId, 'invocationId'),
+    ...(input.credentialBindingId
+      ? { credentialBindingId: objectId(input.credentialBindingId, 'credentialBindingId') }
+      : {}),
+    ...(input.credentialRequirement
+      ? {
+          credentialRequirement: {
+            adapterId: safeIdentifier(
+              input.credentialRequirement.adapterId,
+              'credentialRequirement.adapterId',
+            ),
+            purpose: safeIdentifier(
+              input.credentialRequirement.purpose,
+              'credentialRequirement.purpose',
+            ),
+          },
+        }
+      : {}),
     attemptNumber: integer(input.attemptNumber ?? 1, 'attemptNumber', { minimum: 1 }),
     workType,
     executionGeneration,
@@ -760,14 +781,10 @@ async function enqueueWork(input, options = {}) {
   let initialOwnership;
   if (options.initialClaim) {
     const leaseOwner = safeIdentifier(options.initialClaim.leaseOwner, 'leaseOwner');
-    const leaseMs = integer(
-      options.initialClaim.leaseMs ?? env.DURABLE_WORK_LEASE_MS,
-      'leaseMs',
-      {
-        minimum: env.DURABLE_WORK_HEARTBEAT_MS * 3,
-        maximum: 3_600_000,
-      },
-    );
+    const leaseMs = integer(options.initialClaim.leaseMs ?? env.DURABLE_WORK_LEASE_MS, 'leaseMs', {
+      minimum: env.DURABLE_WORK_HEARTBEAT_MS * 3,
+      maximum: 3_600_000,
+    });
     const leaseToken = rawLeaseToken();
     initialOwnership = { leaseOwner, leaseToken };
     document = {
@@ -977,10 +994,7 @@ async function prepareInvocationForSafeReplay(work, input = {}, options = {}) {
   if (Number(invocation.executionGeneration || 1) !== Number(work.executionGeneration || 1)) {
     return replayPreparationDenied('INVOCATION_EXECUTION_GENERATION_MISMATCH', invocation);
   }
-  if (
-    invocation.currentWorkItemId &&
-    idOf(invocation.currentWorkItemId) !== idOf(work)
-  ) {
+  if (invocation.currentWorkItemId && idOf(invocation.currentWorkItemId) !== idOf(work)) {
     return replayPreparationDenied('INVOCATION_WORK_LINK_MISMATCH', invocation);
   }
   if (
@@ -1232,10 +1246,14 @@ async function rejectInvalidClaim(work, ownership, decision, now, options) {
     { new: true, runValidators: true, ...sessionOption(options) },
   );
   if (updated) {
-    await outboxForWork(updated, terminalEvent(status), {
-      reasonCode:
-        status === 'completed' ? 'RESULT_PERSISTENCE_RECONCILED' : decision.reasonCode,
-    }, options);
+    await outboxForWork(
+      updated,
+      terminalEvent(status),
+      {
+        reasonCode: status === 'completed' ? 'RESULT_PERSISTENCE_RECONCILED' : decision.reasonCode,
+      },
+      options,
+    );
   }
 }
 
@@ -1279,10 +1297,14 @@ async function claimNextWork(input, options = {}) {
     maximum: 3_600_000,
   });
   const verifyInvocation = options.verifyInvocation !== false;
-  const maximumCandidates = integer(options.maximumCandidates ?? env.DURABLE_WORKER_BATCH_SIZE, 'maximumCandidates', {
-    minimum: 1,
-    maximum: 100,
-  });
+  const maximumCandidates = integer(
+    options.maximumCandidates ?? env.DURABLE_WORKER_BATCH_SIZE,
+    'maximumCandidates',
+    {
+      minimum: 1,
+      maximum: 100,
+    },
+  );
 
   for (let candidate = 0; candidate < maximumCandidates; candidate += 1) {
     const leaseToken = rawLeaseToken();
@@ -1439,9 +1461,7 @@ async function heartbeatWork(workItemId, ownership, options = {}) {
 
 async function getOwnedWorkControlState(workItemId, ownership, options = {}) {
   const now = dateValue(options.now, 'now');
-  const item = await RuntimeWorkItem.findOne(
-    ownershipFilter(workItemId, ownership, now),
-  )
+  const item = await RuntimeWorkItem.findOne(ownershipFilter(workItemId, ownership, now))
     .select('status cancellationRequestedAt cancellationReasonCode leaseExpiresAt')
     .lean();
   if (!item) throw leaseLost(workItemId);
@@ -1455,11 +1475,7 @@ async function getOwnedWorkControlState(workItemId, ownership, options = {}) {
 }
 
 async function recordMilestone(workItemId, ownership, input, options = {}) {
-  assertAllowedKeys(
-    input,
-    new Set(['name', 'safeStatus', 'attemptNumber', 'at']),
-    'milestone',
-  );
+  assertAllowedKeys(input, new Set(['name', 'safeStatus', 'attemptNumber', 'at']), 'milestone');
   const now = dateValue(input.at ?? options.now, 'milestone.at');
   if (!DURABLE_WORK_MILESTONES.includes(input.name)) {
     throw validationError('milestone.name', 'Milestone name is not approved.');
@@ -1608,14 +1624,20 @@ async function scheduleRetry(workItemId, ownership, retryInput, options = {}) {
     .lean();
   if (!current) throw leaseLost(workItemId);
   const evaluator = options.retryDecisionEvaluator || retryPolicyDecision;
-  const decision = await evaluator({ ...retryInput, attemptNumber: current.attemptNumber }, current);
+  const decision = await evaluator(
+    { ...retryInput, attemptNumber: current.attemptNumber },
+    current,
+  );
   if (decision?.allowed !== true) {
     throw new AppError(
       409,
       ErrorCodes.DURABLE_WORK_RETRY_DENIED,
       'Durable retry was not approved by retry policy.',
       [],
-      { workItemId: idOf(workItemId), reasonCode: safeCode(decision?.reason, 'reasonCode') || 'RETRY_DENIED' },
+      {
+        workItemId: idOf(workItemId),
+        reasonCode: safeCode(decision?.reason, 'reasonCode') || 'RETRY_DENIED',
+      },
     );
   }
   if (current.attemptNumber >= current.maximumAttempts) {
@@ -1653,11 +1675,9 @@ async function scheduleRetry(workItemId, ownership, retryInput, options = {}) {
       [],
       {
         workItemId: idOf(workItemId),
-        reasonCode: safeCode(
-          inspected?.reasonCode || 'DURABLE_ATTEMPT_MISMATCH',
-          'reasonCode',
-          { required: true },
-        ),
+        reasonCode: safeCode(inspected?.reasonCode || 'DURABLE_ATTEMPT_MISMATCH', 'reasonCode', {
+          required: true,
+        }),
       },
     );
   }
@@ -1822,12 +1842,7 @@ async function requestWorkCancellation(input, options = {}) {
       safe: serializeWorkItem(item),
     };
   }
-  await outboxForWork(
-    item,
-    eventType,
-    { cancellationReasonCode: reasonCode },
-    options,
-  );
+  await outboxForWork(item, eventType, { cancellationReasonCode: reasonCode }, options);
   return { alreadyRequested: false, workItem: item, safe: serializeWorkItem(item) };
 }
 
@@ -1979,9 +1994,7 @@ async function terminalizeInvocationForDeadLetter(work, now, options = {}) {
   const invocation = await chainLean(query);
   if (!invocation) return false;
   if (
-    ['requested', 'aborting', 'confirmed', 'outcome_unknown'].includes(
-      invocation.cancellationState,
-    )
+    ['requested', 'aborting', 'confirmed', 'outcome_unknown'].includes(invocation.cancellationState)
   ) {
     return false;
   }
@@ -2153,8 +2166,9 @@ async function reconcileTerminalWorkInvocation(invocation, work, now, options = 
       currentWorkItemId: work._id,
       ...stagedLifecycleTimestamps,
       lastProgressAt: now,
-      lastProgressStage:
-        ['cancelled', 'failed'].includes(toState) ? 'terminalized' : 'finalization_started',
+      lastProgressStage: ['cancelled', 'failed'].includes(toState)
+        ? 'terminalized'
+        : 'finalization_started',
       ...(toState === 'cancelled'
         ? {
             terminalAt: now,
@@ -2175,14 +2189,14 @@ async function reconcileTerminalWorkInvocation(invocation, work, now, options = 
               retryDecisionReason: reasonCode,
             }
           : {
-            recoveryState: 'required',
-            recoveryEligible: true,
-            recoveryDecision: 'operator_review_required',
-            recoveryDecisionReason: 'REQUIRES_OPERATOR_REVIEW',
-            recoveryReasonCode: reasonCode,
-            retryState: 'recovery_required',
-            retryDecisionReason: reasonCode,
-          }),
+              recoveryState: 'required',
+              recoveryEligible: true,
+              recoveryDecision: 'operator_review_required',
+              recoveryDecisionReason: 'REQUIRES_OPERATOR_REVIEW',
+              recoveryReasonCode: reasonCode,
+              retryState: 'recovery_required',
+              retryDecisionReason: reasonCode,
+            }),
     },
     $push: {
       stateHistory: { $each: entries, $slice: -MAX_INVOCATION_STATE_HISTORY },
@@ -2340,30 +2354,35 @@ async function scanAbandonedWork(input = {}, options = {}) {
       (classification.classification !== 'pre_transmission' ||
         ['succeeded', 'cancelled'].includes(terminalState))
     ) {
-        const status =
-          terminalState === 'succeeded'
-            ? 'completed'
-            : terminalState === 'cancelled'
-              ? 'cancelled'
-              : 'failed';
-        const terminal = await RuntimeWorkItem.findOneAndUpdate(
-          abandonedCasFilter(work, cutoff),
-          {
-            $set: { status, ...finalizeTimestamp(status, now) },
-            $unset: leaseUnset(),
-            $inc: { version: 1 },
-          },
-          { new: true, runValidators: true, ...sessionOption(options) },
-        );
-        if (!terminal) {
-          result.conflicts += 1;
-          continue;
-        }
-        result.terminalReconciled += 1;
-        await outboxForWork(terminal, terminalEvent(status), {
-          reasonCode: 'RESULT_PERSISTENCE_RECONCILED',
-        }, options);
+      const status =
+        terminalState === 'succeeded'
+          ? 'completed'
+          : terminalState === 'cancelled'
+            ? 'cancelled'
+            : 'failed';
+      const terminal = await RuntimeWorkItem.findOneAndUpdate(
+        abandonedCasFilter(work, cutoff),
+        {
+          $set: { status, ...finalizeTimestamp(status, now) },
+          $unset: leaseUnset(),
+          $inc: { version: 1 },
+        },
+        { new: true, runValidators: true, ...sessionOption(options) },
+      );
+      if (!terminal) {
+        result.conflicts += 1;
         continue;
+      }
+      result.terminalReconciled += 1;
+      await outboxForWork(
+        terminal,
+        terminalEvent(status),
+        {
+          reasonCode: 'RESULT_PERSISTENCE_RECONCILED',
+        },
+        options,
+      );
+      continue;
     }
 
     const decision = await (options.abandonedRetryDecision || abandonedRetryDecision)(
@@ -2376,7 +2395,8 @@ async function scanAbandonedWork(input = {}, options = {}) {
           ? dateValue(work.availableAt, 'availableAt', now)
           : new Date(now.getTime() + Math.max(1, Number(decision.delayMs || 1)));
       const reasonCode = safeCode(decision.reason, 'reasonCode', { required: true });
-      const prepareReplay = options.prepareInvocationForSafeReplay || prepareInvocationForSafeReplay;
+      const prepareReplay =
+        options.prepareInvocationForSafeReplay || prepareInvocationForSafeReplay;
       const inspected = await prepareReplay(
         work,
         {
@@ -2510,9 +2530,14 @@ async function scanAbandonedWork(input = {}, options = {}) {
         continue;
       }
       result.cancelled += 1;
-      await outboxForWork(cancelled, 'work.cancelled', {
-        cancellationReasonCode: cancelled.cancellationReasonCode,
-      }, options);
+      await outboxForWork(
+        cancelled,
+        'work.cancelled',
+        {
+          cancellationReasonCode: cancelled.cancellationReasonCode,
+        },
+        options,
+      );
       continue;
     }
 
@@ -2585,9 +2610,14 @@ async function scanAbandonedWork(input = {}, options = {}) {
           continue;
         }
         result.deadLettered += 1;
-        await outboxForWork(deadLettered, 'work.dead_lettered', {
-          reasonCode: 'SAFE_RETRY_ATTEMPTS_EXHAUSTED',
-        }, options);
+        await outboxForWork(
+          deadLettered,
+          'work.dead_lettered',
+          {
+            reasonCode: 'SAFE_RETRY_ATTEMPTS_EXHAUSTED',
+          },
+          options,
+        );
       }
       continue;
     }
@@ -2614,12 +2644,7 @@ async function scanAbandonedWork(input = {}, options = {}) {
     }
     result.recoveryRequired += 1;
     await markInvocationRecoveryForWork(recovery, recoveryReasonCode, now, options);
-    await outboxForWork(
-      recovery,
-      'work.recovery_required',
-      { recoveryReasonCode },
-      options,
-    );
+    await outboxForWork(recovery, 'work.recovery_required', { recoveryReasonCode }, options);
   }
   return result;
 }
@@ -2627,9 +2652,7 @@ async function scanAbandonedWork(input = {}, options = {}) {
 async function deadLetterWork(workItemId, ownership, input = {}, options = {}) {
   assertAllowedKeys(input, new Set(['reasonCode']), 'deadLetter');
   const now = dateValue(options.now, 'now');
-  const current = await RuntimeWorkItem.findOne(
-    ownershipFilter(workItemId, ownership, now),
-  )
+  const current = await RuntimeWorkItem.findOne(ownershipFilter(workItemId, ownership, now))
     .select('+leaseOwner +leaseTokenHash')
     .lean();
   if (!current) throw leaseLost(workItemId);
@@ -2722,11 +2745,9 @@ async function requeueDeadLetter(input, options = {}) {
       [],
       {
         workItemId: idOf(current),
-        reasonCode: safeCode(
-          inspected?.reasonCode || 'DURABLE_ATTEMPT_MISMATCH',
-          'reasonCode',
-          { required: true },
-        ),
+        reasonCode: safeCode(inspected?.reasonCode || 'DURABLE_ATTEMPT_MISMATCH', 'reasonCode', {
+          required: true,
+        }),
       },
     );
   }
@@ -2746,10 +2767,7 @@ async function requeueDeadLetter(input, options = {}) {
         attemptNumber: inspected.nextAttemptNumber,
         requeuedAt: now,
         retryCount: 0,
-        maximumAttempts: Math.max(
-          Number(current.maximumAttempts),
-          inspected.nextAttemptNumber,
-        ),
+        maximumAttempts: Math.max(Number(current.maximumAttempts), inspected.nextAttemptNumber),
         retryDecisionReason: 'OPERATOR_REQUEUE_PRETRANSMISSION',
         recoveryReasonCode: 'WORKER_TERMINATED_BEFORE_TRANSMISSION',
         ...replayPreparationLeaseSet(preparationOwnership, now),
@@ -2914,14 +2932,7 @@ async function releaseReconciledWork(workItem, ownership, releaseStatus, now, op
 async function reconcileAcceptedInvocations(input = {}, options = {}) {
   assertAllowedKeys(
     input,
-    new Set([
-      'now',
-      'limit',
-      'partnerId',
-      'receivingWorkspaceId',
-      'workspaceId',
-      'connectionId',
-    ]),
+    new Set(['now', 'limit', 'partnerId', 'receivingWorkspaceId', 'workspaceId', 'connectionId']),
     'reconciliation',
   );
   const now = dateValue(input.now ?? options.now, 'now');
@@ -2932,9 +2943,7 @@ async function reconcileAcceptedInvocations(input = {}, options = {}) {
   const cutoff = new Date(now.getTime() - env.DURABLE_WORK_ABANDONED_GRACE_MS);
   const tenant = optionalTenantScope(input);
   const query = Invocation.find({
-    ...(tenant.receivingWorkspaceId
-      ? { receivingWorkspaceId: tenant.receivingWorkspaceId }
-      : {}),
+    ...(tenant.receivingWorkspaceId ? { receivingWorkspaceId: tenant.receivingWorkspaceId } : {}),
     ...(tenant.connectionId ? { connectionId: tenant.connectionId } : {}),
     lifecycleState: { $in: ['accepted', 'validating', 'authorized'] },
     cancellationState: { $nin: ['requested', 'aborting', 'confirmed'] },
@@ -3065,6 +3074,8 @@ async function reconcileAcceptedInvocations(input = {}, options = {}) {
         receivingWorkspaceId: invocation.receivingWorkspaceId,
         connectionId: invocation.connectionId,
         invocationId: invocation._id,
+        credentialBindingId: invocation.credentialBindingId,
+        credentialRequirement: invocation.credentialRequirement,
         attemptNumber,
         executionGeneration,
         workType: invocation.recoveryParentInvocationId ? 'recovery_retry' : 'runtime_invocation',

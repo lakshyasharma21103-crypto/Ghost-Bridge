@@ -14,6 +14,7 @@ const RETRYABLE_CODES = new Set([
   'RATE_LIMIT_PROTECTED',
   'RUNTIME_CAPACITY_EXCEEDED',
   'SERVICE_DRAINING',
+  'CREDENTIAL_PROVIDER_UNAVAILABLE',
 ]);
 
 const NON_RETRYABLE_CODES = new Set([
@@ -36,6 +37,18 @@ const NON_RETRYABLE_CODES = new Set([
   'CREDENTIAL_REQUIRED',
   'CREDENTIAL_EXPIRED',
   'CREDENTIAL_VALIDATION_FAILED',
+  'SECRET_ACCESS_DENIED',
+  'SECRET_DISABLED',
+  'SECRET_REVOKED',
+  'SECRET_EXPIRED',
+  'SECRET_VERSION_NOT_ACTIVE',
+  'SECRET_BINDING_INVALID',
+  'SECRET_BINDING_REVOKED',
+  'SECRET_DECRYPTION_FAILED',
+  'SECRET_INTEGRITY_FAILED',
+  'ENCRYPTION_KEY_UNAVAILABLE',
+  'CREDENTIAL_LEASE_EXPIRED',
+  'CREDENTIAL_LEASE_REVOKED',
   'ENCRYPTION_CONFIGURATION_INVALID',
   'INSTALL_KEY_INVALID',
   'INSTALL_KEY_USED',
@@ -73,6 +86,7 @@ function isRetryableError(error) {
   const code = String(error?.code || error?.cause?.code || '').toUpperCase();
   if (error?.remoteRetryable === false) return false;
   if (NON_RETRYABLE_CODES.has(code)) return false;
+  if (error?.retryable === true) return true;
   if (RETRYABLE_CODES.has(code)) return true;
   const status = statusOf(error);
   if (status === 429 || [502, 503, 504].includes(status)) return true;

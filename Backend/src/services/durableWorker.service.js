@@ -5,6 +5,7 @@ const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { logger } = require('../utils/logger');
 const RuntimeGateway = require('./runtimeGateway.service');
+const { sweepSecretLifecycle } = require('./secretLifecycleMaintenance.service');
 const { markActiveInvocationRecovery } = require('./invocationLifecycle.service');
 const {
   claimNextWork,
@@ -137,7 +138,9 @@ function defaultLoadInvocation(workItem) {
     receivingWorkspaceId: workItem.receivingWorkspaceId,
     connectionId: workItem.connectionId,
   })
-    .select('capability lifecycleState cancellationState traceId requestId authorizationEvidence')
+    .select(
+      'capability lifecycleState cancellationState traceId requestId authorizationEvidence credentialBindingId credentialRequirement',
+    )
     .lean();
 }
 
@@ -382,6 +385,7 @@ async function executeClaimedWork(claim, options = {}) {
         policyRoleKeys: invocation.authorizationEvidence?.roleKeys,
         policySkipPersistentRoles:
           invocation.authorizationEvidence?.actorType === 'service_account',
+        expectedCredentialBindingId: workItem.credentialBindingId || invocation.credentialBindingId,
         signal: controller.signal,
         async onExecutionClaimed(ownership) {
           runtimeOwnership = ownership;
@@ -437,10 +441,14 @@ function workerDependencies(overrides = {}) {
     reconcileAcceptedInvocations,
     repairDurableOutbox,
     scanAbandonedWork,
+    sweepSecretLifecycle,
     upsertWorkerHeartbeat,
   };
   if (hasInjectedDependencies && !Object.hasOwn(overrides, 'repairDurableOutbox')) {
     defaults.repairDurableOutbox = async () => ({ repaired: 0 });
+  }
+  if (hasInjectedDependencies && !Object.hasOwn(overrides, 'sweepSecretLifecycle')) {
+    defaults.sweepSecretLifecycle = async () => ({ expiredSecrets: 0, expiredVersions: 0 });
   }
   return { ...defaults, ...overrides };
 }
@@ -618,6 +626,7 @@ function createDurableWorker(options = {}) {
       });
       await dependencies.repairDurableOutbox({ limit: settings.batchSize });
       await dependencies.reconcileAcceptedInvocations({ limit: settings.batchSize });
+      await dependencies.sweepSecretLifecycle({ limit: settings.batchSize });
       lastMaintenanceAt = now;
     }
     const capacity = Math.max(0, settings.concurrency - active.size);

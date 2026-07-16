@@ -11,6 +11,7 @@ const { developerSandboxRouter } = require('./developerSandboxRoutes');
 const { operationsRouter } = require('./operationsRoutes');
 const { enterpriseIdentityRouter } = require('./enterpriseIdentityRoutes');
 const { policyRouter } = require('./policyRoutes');
+const { secretRouter } = require('./secretRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -38,6 +39,7 @@ router.use(`${API_PREFIX}/audit-logs`, auditLogRouter);
 router.use(`${API_PREFIX}/operations`, operationsRouter);
 router.use(`${API_PREFIX}/enterprise`, enterpriseIdentityRouter);
 router.use(`${API_PREFIX}/policies`, policyRouter);
+router.use(`${API_PREFIX}/secrets`, secretRouter);
 if (env.NODE_ENV === 'development') {
   router.use(`${API_PREFIX}/demo`, demoRouter);
   router.use(`${API_PREFIX}/developer-sandbox`, developerSandboxRouter);

@@ -1,6 +1,7 @@
 # Agent Passport Runtime Gateway
 
 Phase 13C2 conditional governance is documented in [POLICY_ENGINE.md](./POLICY_ENGINE.md).
+Phase 13C3 secret inventory, encryption-key versioning, bindings, leases, rotation, expiry, revocation, brokered runtime access, and legacy migration are documented in [SECRET_GOVERNANCE.md](./SECRET_GOVERNANCE.md).
 
 One key to discover, connect, and invoke any compatible AI agent.
 

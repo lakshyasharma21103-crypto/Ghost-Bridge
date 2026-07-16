@@ -318,7 +318,7 @@ test('trusted attributes use server-derived identity and explicit unknown govern
 
 test('attribute registry exposes metadata but not resolver functions', () => {
   const registry = getAttributeRegistry();
-  assert.equal(registry.version, 1);
+  assert.equal(registry.version, 2);
   assert.equal(
     registry.attributes.some((attribute) => attribute.id === 'capability.sideEffect'),
     true,
@@ -327,11 +327,15 @@ test('attribute registry exposes metadata but not resolver functions', () => {
     registry.attributes.every((attribute) => attribute.resolver === 'trusted_backend'),
     true,
   );
+  assert.equal(
+    registry.attributes.some((attribute) => attribute.id === 'secret.status'),
+    true,
+  );
 });
 
-test('permission registry v2 exposes granular policy permissions and role mappings', () => {
+test('permission registry v3 exposes granular policy and secret permissions with role mappings', () => {
   const registry = getPermissionRegistry();
-  assert.equal(registry.version, 2);
+  assert.equal(registry.version, 3);
   for (const id of [
     'policy.create',
     'policy.update',
@@ -340,6 +344,9 @@ test('permission registry v2 exposes granular policy permissions and role mappin
     'policy.activate',
     'policy.retire',
     'policy.audit.read',
+    'secret.metadata.read',
+    'secret.rotate',
+    'encryption-key.rotate',
   ]) {
     assert.equal(
       registry.permissions.some((permission) => permission.id === id),

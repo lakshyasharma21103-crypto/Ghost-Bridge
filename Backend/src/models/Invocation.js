@@ -107,6 +107,15 @@ const invocationSchema = new mongoose.Schema(
     },
     protectedReplayAvailable: { type: Boolean, default: false },
     authorizationEvidence: { type: authorizationEvidenceSchema },
+    credentialBindingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CredentialBinding',
+      index: true,
+    },
+    credentialRequirement: {
+      adapterId: { type: String, trim: true, maxlength: 64 },
+      purpose: { type: String, trim: true, maxlength: 100 },
+    },
     executionGeneration: { type: Number, default: 1, min: 1 },
     currentWorkItemId: {
       type: mongoose.Schema.Types.ObjectId,

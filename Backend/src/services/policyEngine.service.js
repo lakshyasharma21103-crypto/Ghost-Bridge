@@ -633,6 +633,8 @@ function trustedAttributes({ actor, resource, context, roleKeys, tenant }) {
   const connection = context.trustedConnection || {};
   const passport = context.trustedPassport || {};
   const workspace = context.trustedWorkspace || {};
+  const secret = context.trustedSecret || {};
+  const binding = context.trustedCredentialBinding || {};
   return {
     actor: {
       id: actor.id,
@@ -658,6 +660,13 @@ function trustedAttributes({ actor, resource, context, roleKeys, tenant }) {
     },
     connection: { id: idOf(connection), status: connection.status },
     passport: { id: idOf(passport), version: passport.agent?.version || passport.version },
+    secret: {
+      provider: secret.provider,
+      credentialType: secret.credentialType,
+      status: secret.status,
+      healthStatus: secret.healthStatus,
+    },
+    binding: { purpose: binding.purpose, status: binding.status },
   };
 }
 
