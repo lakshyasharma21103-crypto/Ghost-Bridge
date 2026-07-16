@@ -62,6 +62,7 @@ const ENQUEUE_KEYS = new Set([
   'maximumAttempts',
   'safeOperation',
   'status',
+  'approvalRequestId',
   'retryCount',
   'retryDecisionReason',
   'recoveryReasonCode',
@@ -717,8 +718,11 @@ function enqueueDocument(input, now) {
     throw validationError('safeOperation', 'safeOperation is not approved.');
   }
   const status = input.status || 'pending';
-  if (!CLAIMABLE_DURABLE_WORK_STATUSES.includes(status)) {
-    throw validationError('status', 'New work must be pending or retry_scheduled.');
+  if (![...CLAIMABLE_DURABLE_WORK_STATUSES, 'waiting_for_approval'].includes(status)) {
+    throw validationError(
+      'status',
+      'New work must be pending, retry_scheduled, or waiting_for_approval.',
+    );
   }
   const executionGeneration = integer(input.executionGeneration ?? 1, 'executionGeneration', {
     minimum: 1,
@@ -759,6 +763,9 @@ function enqueueDocument(input, now) {
     dedupeKey: deterministicDedupeKey({ ...input, ...identity, workType, executionGeneration }),
     ...(input.traceId
       ? { traceId: safeIdentifier(input.traceId, 'traceId', { required: false }) }
+      : {}),
+    ...(input.approvalRequestId
+      ? { approvalRequestId: safeIdentifier(input.approvalRequestId, 'approvalRequestId') }
       : {}),
     status,
     priority: integer(input.priority ?? 0, 'priority', { minimum: -100, maximum: 100 }),

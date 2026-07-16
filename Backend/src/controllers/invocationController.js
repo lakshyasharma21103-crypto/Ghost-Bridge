@@ -23,6 +23,8 @@ async function invokeConnection(request, response, next) {
       traceId: request.traceId,
       observer: request.observer,
       idempotencyKey: request.get('Idempotency-Key'),
+      approvalRequestId: request.body?.approvalRequestId,
+      approvalRequestIds: request.body?.approvalRequestIds,
       onInvocationCreated(invocationId) {
         response.setHeader('X-Invocation-Id', invocationId);
       },

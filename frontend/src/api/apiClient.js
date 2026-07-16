@@ -123,6 +123,8 @@ export async function apiRequest(path, options = {}) {
     path.startsWith('/enterprise') ||
     path.startsWith('/policies') ||
     path.startsWith('/secrets') ||
+    path.startsWith('/approvals') ||
+    path.startsWith('/evidence') ||
     isPhase13B3Control(path, options.method);
   if (requiresPartnerAuthentication && !headers.has('X-Partner-Api-Key')) {
     if (!partnerApiKey) {

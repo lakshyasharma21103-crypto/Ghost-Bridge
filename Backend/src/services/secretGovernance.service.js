@@ -35,6 +35,7 @@ const { decryptPayload, hashKey } = require('../utils/crypto');
 const { redactSecrets } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
 const {
   CREDENTIAL_TYPES,
   SECRET_AUDIT_EVENTS,
@@ -111,7 +112,7 @@ async function authorizeAction(permission, input, actor, secret, type) {
   if (secret?.workspaceId && scope.workspaceId && secret.workspaceId !== scope.workspaceId) {
     throw new AppError(404, ErrorCodes.SECRET_NOT_FOUND, 'Secret was not found.');
   }
-  await assertAuthorized(
+  scope.authorizationDecision = await assertAuthorized(
     scope.authorizationActor,
     permission,
     resourceFromSecret(scope, secret, type),
@@ -123,6 +124,42 @@ async function authorizeAction(permission, input, actor, secret, type) {
     },
   );
   return scope;
+}
+
+async function enforceSecretApproval(
+  scope,
+  permission,
+  secret,
+  input,
+  actor,
+  operationType,
+  versionId,
+) {
+  const enforcement = await enforceApproval({
+    organizationId: scope.organizationId,
+    workspaceId: secret.workspaceId || scope.workspaceId,
+    requesterActorId: scope.authorizationActor.id,
+    requesterActorType: scope.authorizationActor.type,
+    permission,
+    resourceType: versionId ? 'SecretVersion' : 'Secret',
+    resourceId: versionId || secret.secretId,
+    operationType,
+    environment: process.env.NODE_ENV,
+    policySnapshotRevision: scope.authorizationDecision?.policySnapshotRevision,
+    safeRequestAttributes: input.safeRequestAttributes || {
+      secretId: secret.secretId,
+      versionId,
+      revision: Number(input.revision ?? secret.revision),
+    },
+    approvalRequestId: input.approvalRequestId,
+    approvalRequestIds: input.approvalRequestIds,
+  });
+  return consumeApprovalGrants(enforcement, {
+    actorId: scope.authorizationActor.id,
+    actorType: scope.authorizationActor.type,
+    requestId: actor.requestId,
+    traceId: actor.traceId,
+  });
 }
 
 function tenantFilter(scope, secretId) {
@@ -771,6 +808,15 @@ async function activateVersion(secretId, versionId, input = {}, actor = {}) {
   const scope = actorScope(actor, input);
   const secret = await ownedSecret(secretId, scope);
   await authorizeAction('secret.rotate', input, actor, secret);
+  await enforceSecretApproval(
+    scope,
+    'secret.rotate',
+    secret,
+    input,
+    actor,
+    'CREDENTIAL_VERSION_ACTIVATION',
+    versionId,
+  );
   const result = await activateVersionInternal(secret, versionId, scope.actorId, input);
   await audit(SECRET_AUDIT_EVENTS.VERSION_ACTIVATED, result.secret, scope, actor, {
     secretVersionId: versionId,
@@ -806,6 +852,15 @@ async function revokeVersion(secretId, versionId, input = {}, actor = {}) {
   const scope = actorScope(actor, input);
   const secret = await ownedSecret(secretId, scope);
   await authorizeAction('secret.revoke', input, actor, secret);
+  await enforceSecretApproval(
+    scope,
+    'secret.revoke',
+    secret,
+    input,
+    actor,
+    'CREDENTIAL_VERSION_REVOCATION',
+    versionId,
+  );
   const now = new Date();
   const version = await SecretVersion.findOneAndUpdate(
     {
@@ -878,6 +933,7 @@ async function setSecretStatus(secretId, status, permission, event, input = {}, 
   const scope = actorScope(actor, input);
   const secret = await ownedSecret(secretId, scope);
   await authorizeAction(permission, input, actor, secret);
+  await enforceSecretApproval(scope, permission, secret, input, actor, `SECRET_${status}`);
   const now = new Date();
   const set = {
     status,
@@ -916,6 +972,15 @@ async function destroyVersion(secretId, versionId, input = {}, actor = {}) {
   const scope = actorScope(actor, input);
   const secret = await ownedSecret(secretId, scope);
   await authorizeAction('secret.destroy', input, actor, secret);
+  await enforceSecretApproval(
+    scope,
+    'secret.destroy',
+    secret,
+    input,
+    actor,
+    'CREDENTIAL_VERSION_DESTRUCTION',
+    versionId,
+  );
   if (secret.activeVersionId === versionId) {
     throw new AppError(409, ErrorCodes.CONFLICT, 'Revoke the active version before destruction.');
   }

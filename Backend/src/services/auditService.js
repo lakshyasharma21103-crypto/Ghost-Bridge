@@ -1,4 +1,5 @@
 const AuditLog = require('../models/AuditLog');
+const mongoose = require('mongoose');
 const PassportConnection = require('../models/PassportConnection');
 const { redactSecrets } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
@@ -47,7 +48,17 @@ async function createAuditLog(
     metadata,
     identifiers,
   );
-  return AuditLog.create(payload);
+  const log = await AuditLog.create(payload);
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const { normalizeAndPersistAuditLog } = require('./evidence.service');
+      await normalizeAndPersistAuditLog(log);
+    } catch {
+      // Preserve the existing audit reliability contract. Evidence normalization is resumable
+      // from the immutable legacy AuditLog source and must not fail the governed operation.
+    }
+  }
+  return log;
 }
 
 function requireIdentity(input) {

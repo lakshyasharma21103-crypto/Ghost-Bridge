@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldCheck,
   ShieldEllipsis,
+  Scale,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -27,6 +28,7 @@ const primaryItems = [
   { label: 'Operations', path: '/operations', icon: Gauge },
   { label: 'Policies', path: '/policies', icon: ShieldEllipsis },
   { label: 'Secrets', path: '/secrets', icon: LockKeyhole },
+  { label: 'Compliance', path: '/compliance', icon: Scale },
   { label: 'Passports', path: '/passports', icon: ShieldCheck },
   { label: 'Install Keys', path: '/install-keys/resolve', icon: KeyRound, match: '/install-keys' },
   { label: 'Connections', path: '/connections', icon: Link2 },

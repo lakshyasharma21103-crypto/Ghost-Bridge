@@ -146,6 +146,15 @@ async function start(options = {}) {
     if (currentDatabaseStatus() === 'connected') {
       await ensureIndexes();
       lifecycle.markReady();
+      if (!options.connectDatabase) {
+        const { resumePendingEvidenceExports } = require('./services/evidence.service');
+        void resumePendingEvidenceExports().catch((error) =>
+          activeLogger.error(
+            { error: safeLogPayload(error), event: 'evidence.export_recovery_failed' },
+            'Evidence export recovery failed',
+          ),
+        );
+      }
     } else if (options.connectDatabase) {
       lifecycle.markReady();
     }

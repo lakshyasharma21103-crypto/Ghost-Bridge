@@ -27,6 +27,17 @@ const CredentialBinding = require('./CredentialBinding');
 const CredentialLease = require('./CredentialLease');
 const CredentialRotationAttempt = require('./CredentialRotationAttempt');
 const EncryptionRewrapJob = require('./EncryptionRewrapJob');
+const ApprovalWorkflow = require('./ApprovalWorkflow');
+const ApprovalRequest = require('./ApprovalRequest');
+const ApprovalDecision = require('./ApprovalDecision');
+const ApprovalGrant = require('./ApprovalGrant');
+const ComplianceNotification = require('./ComplianceNotification');
+const EvidenceEvent = require('./EvidenceEvent');
+const AuditChainState = require('./AuditChainState');
+const AuditCheckpoint = require('./AuditCheckpoint');
+const RetentionPolicy = require('./RetentionPolicy');
+const LegalHold = require('./LegalHold');
+const EvidenceExport = require('./EvidenceExport');
 
 module.exports = {
   Partner,
@@ -58,4 +69,15 @@ module.exports = {
   CredentialLease,
   CredentialRotationAttempt,
   EncryptionRewrapJob,
+  ApprovalWorkflow,
+  ApprovalRequest,
+  ApprovalDecision,
+  ApprovalGrant,
+  ComplianceNotification,
+  EvidenceEvent,
+  AuditChainState,
+  AuditCheckpoint,
+  RetentionPolicy,
+  LegalHold,
+  EvidenceExport,
 };

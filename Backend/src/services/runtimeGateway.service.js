@@ -10,6 +10,12 @@ const { adapters } = require('./adapters');
 const { createAuditLog } = require('./auditService');
 const { checkConnectionHealth: checkConnectionHealthService } = require('./connectionService');
 const { resolveCredentialForRuntime } = require('./credentialBroker.service');
+const {
+  enforceApproval,
+  consumeApprovalGrants,
+  invalidateApprovalRequest,
+  markApprovedExecutionFailure,
+} = require('./approval.service');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { redactSecrets } = require('../utils/redact');
@@ -887,6 +893,14 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
       ...(actor.authorizationEvidence
         ? { authorizationEvidence: actor.authorizationEvidence }
         : {}),
+      ...(actor.approvalRequestIds?.length || actor.approvalRequestId
+        ? {
+            approvalRequestIds: [
+              ...(actor.approvalRequestIds || []),
+              actor.approvalRequestId,
+            ].filter(Boolean),
+          }
+        : {}),
       ...(actor.recoveryParentInvocationId
         ? { recoveryParentInvocationId: actor.recoveryParentInvocationId }
         : {}),
@@ -1465,6 +1479,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
   let executionLeaseId;
   let brokeredCredential;
   let durableContext;
+  let approvalEnforcement;
   let stopDurableHeartbeat = async () => undefined;
   let durableFailureSettled = false;
   const progressPersistenceOptions = () => ({
@@ -1505,27 +1520,12 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       },
       connection,
     );
-    const authorizationDecision = await observer.stage('authorization_check', () =>
-      assertAuthorized(revalidationActor, 'connection.invoke', resourceFromConnection(connection), {
-        requestId: actor.requestId,
-        traceId: actor.traceId,
-        allowLegacyOwner: true,
-        trustedSystem: actor.actorType === 'system' || actor.trustedSystem === true,
-        trustedConnection: context.connection,
-        trustedPassport: context.passport,
-        trustedCapability: context.capability,
-        trustedWorkspace: context.workspace,
-        trustedEnvironment: { name: env.NODE_ENV },
-      }),
-    );
-    if (
-      context.capability.requiredPermission &&
-      context.capability.requiredPermission !== 'connection.invoke'
-    ) {
-      await observer.stage('authorization_check', () =>
+    let authorizationDecision;
+    try {
+      authorizationDecision = await observer.stage('authorization_check', () =>
         assertAuthorized(
           revalidationActor,
-          context.capability.requiredPermission,
+          'connection.invoke',
           resourceFromConnection(connection),
           {
             requestId: actor.requestId,
@@ -1540,6 +1540,43 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
           },
         ),
       );
+      if (
+        context.capability.requiredPermission &&
+        context.capability.requiredPermission !== 'connection.invoke'
+      ) {
+        await observer.stage('authorization_check', () =>
+          assertAuthorized(
+            revalidationActor,
+            context.capability.requiredPermission,
+            resourceFromConnection(connection),
+            {
+              requestId: actor.requestId,
+              traceId: actor.traceId,
+              allowLegacyOwner: true,
+              trustedSystem: actor.actorType === 'system' || actor.trustedSystem === true,
+              trustedConnection: context.connection,
+              trustedPassport: context.passport,
+              trustedCapability: context.capability,
+              trustedWorkspace: context.workspace,
+              trustedEnvironment: { name: env.NODE_ENV },
+            },
+          ),
+        );
+      }
+    } catch (authorizationError) {
+      const approvalIds = [...(actor.approvalRequestIds || []), actor.approvalRequestId].filter(
+        Boolean,
+      );
+      for (const approvalRequestId of approvalIds) {
+        await invalidateApprovalRequest(approvalRequestId, 'APPROVAL_POLICY_REVOKED', {
+          organizationId: idOf(connection.organizationId || connection.partnerId),
+          actorId: revalidationActor.id,
+          actorType: revalidationActor.type,
+          requestId: actor.requestId,
+          traceId: actor.traceId,
+        }).catch(() => undefined);
+      }
+      throw authorizationError;
     }
     actor.authorizationEvidence = {
       permission: 'connection.invoke',
@@ -1584,6 +1621,47 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
         ...serializeInvocation(invocation),
         idempotencyReplayed: true,
       };
+    }
+
+    approvalEnforcement = await observer.stage('approval_check', () =>
+      enforceApproval(
+        {
+          organizationId: authorizationDecision.organizationId,
+          workspaceId: authorizationDecision.workspaceId || connection.receivingWorkspaceId,
+          requesterActorId: revalidationActor.id,
+          requesterActorType: revalidationActor.type,
+          permission: 'connection.invoke',
+          resourceType: 'Connection',
+          resourceId: idOf(connection),
+          connectionId: idOf(connection),
+          passportId: idOf(context.passport),
+          capabilityId: idOf(context.capability),
+          capabilityClassification: context.capability.classification || 'UNCLASSIFIED',
+          capabilityCategory: context.capability.category || 'UNCLASSIFIED',
+          sideEffect: context.capability.sideEffect || 'UNKNOWN',
+          operationType: actor.recoveryParentInvocationId ? 'RECOVERY_RETRY' : 'INVOCATION',
+          environment: context.workspace?.environment || env.NODE_ENV,
+          policySnapshotRevision: authorizationDecision.policySnapshotRevision,
+          safeRequestAttributes: input,
+          approvalRequestId: actor.approvalRequestId,
+          approvalRequestIds: actor.approvalRequestIds || invocation.approvalRequestIds,
+        },
+        { allowConsumed: Boolean(actor.durableWorkItemId) },
+      ),
+    );
+    if (approvalEnforcement.required && !invocation.approvalRequired) {
+      invocation = await Invocation.findOneAndUpdate(
+        { _id: invocation._id, receivingWorkspaceId: connection.receivingWorkspaceId },
+        {
+          $set: {
+            approvalRequired: true,
+            approvalRequestIds: approvalEnforcement.approvals.map(
+              (item) => item.request.approvalRequestId,
+            ),
+          },
+        },
+        { new: true, runValidators: true },
+      );
     }
 
     durableContext = await observer.stage('invocation_persistence', () =>
@@ -1759,6 +1837,13 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       });
       throw capacityError;
     }
+
+    approvalEnforcement = await consumeApprovalGrants(approvalEnforcement, {
+      actorId: revalidationActor.id,
+      actorType: revalidationActor.type,
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+    });
 
     const adapter = adapters[context.connection.runtimeType];
     if (!adapter || typeof adapter.invoke !== 'function') {
@@ -2109,6 +2194,14 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     };
   } catch (error) {
     let runtimeError = normalizedError(error);
+    await markApprovedExecutionFailure(approvalEnforcement, {
+      actorId: actor.actorId || actor.id,
+      actorType: actor.actorType || actor.type,
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      reasonCode: runtimeError.reasonCode || runtimeError.code,
+      recoveryRequired: runtimeError.code === ErrorCodes.INVOCATION_RECOVERY_REQUIRED,
+    }).catch(() => undefined);
     const lifecycleSignal =
       executionSignal || lifecycleRegistration?.signal || lifecycleAdmission?.signal;
     if (

@@ -24,6 +24,7 @@ const { getPermission, hasPermission } = require('../constants/permissionRegistr
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const metrics = require('./policyMetrics.service');
+const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
 
 const ADMINISTRATIVE_PERMISSIONS = Object.freeze([
   'policy.read',
@@ -86,12 +87,44 @@ async function authorizeAction(permission, input, actor, stablePolicyId) {
       reasonCode: 'TENANT_SCOPE_MISMATCH',
     });
   }
-  await assertAuthorized(scope.actor, permission, resourceForPolicy(scope, stablePolicyId), {
+  scope.authorizationDecision = await assertAuthorized(
+    scope.actor,
+    permission,
+    resourceForPolicy(scope, stablePolicyId),
+    {
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      workspaceId: scope.workspaceId,
+    },
+  );
+  return scope;
+}
+
+async function enforcePolicyApproval(scope, permission, stablePolicyId, version, input, actor) {
+  const enforcement = await enforceApproval({
+    organizationId: scope.organizationId,
+    workspaceId: scope.workspaceId,
+    requesterActorId: scope.actor.id,
+    requesterActorType: scope.actor.type,
+    permission,
+    resourceType: 'Policy',
+    resourceId: stablePolicyId,
+    operationType: permission === 'policy.activate' ? 'POLICY_ACTIVATION' : 'POLICY_RETIREMENT',
+    environment: process.env.NODE_ENV,
+    policySnapshotRevision: scope.authorizationDecision?.policySnapshotRevision,
+    safeRequestAttributes: input.safeRequestAttributes || {
+      version: Number(version),
+      expectedRevision: Number(input.expectedRevision),
+    },
+    approvalRequestId: input.approvalRequestId,
+    approvalRequestIds: input.approvalRequestIds,
+  });
+  return consumeApprovalGrants(enforcement, {
+    actorId: scope.actor.id,
+    actorType: scope.actor.type,
     requestId: actor.requestId,
     traceId: actor.traceId,
-    workspaceId: scope.workspaceId,
   });
-  return scope;
 }
 
 function normalizeStringArray(value) {
@@ -850,6 +883,7 @@ async function activateDraft(stablePolicyId, version, input = {}, actor = {}) {
   }
   throwIfInvalid(draft);
   await validateTenantReferences(draft, scope);
+  await enforcePolicyApproval(scope, 'policy.activate', stablePolicyId, version, input, actor);
   const active = await loadActivePolicySnapshot(scope.organizationId, draft.workspaceId);
   await assertNoOwnerLockout(draft, { ...scope, workspaceId: draft.workspaceId }, active);
   let activated;
@@ -896,6 +930,7 @@ async function activateDraft(stablePolicyId, version, input = {}, actor = {}) {
 
 async function retirePolicy(stablePolicyId, version, input = {}, actor = {}) {
   const scope = await authorizeAction('policy.retire', input, actor, stablePolicyId);
+  await enforcePolicyApproval(scope, 'policy.retire', stablePolicyId, version, input, actor);
   const expectedRevision = Number(input.expectedRevision);
   let retired;
   await mongoose.connection.transaction(async (session) => {

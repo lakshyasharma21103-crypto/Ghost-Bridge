@@ -71,6 +71,7 @@ const runtimeWorkItemSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    approvalRequestId: { type: String, trim: true, index: true },
     credentialBindingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'CredentialBinding',
@@ -166,6 +167,7 @@ runtimeWorkItemSchema.index({
 });
 runtimeWorkItemSchema.index({ partnerId: 1, receivingWorkspaceId: 1, connectionId: 1, status: 1 });
 runtimeWorkItemSchema.index({ invocationId: 1, status: 1, updatedAt: -1 });
+runtimeWorkItemSchema.index({ organizationId: 1, approvalRequestId: 1, status: 1 });
 runtimeWorkItemSchema.index({ credentialBindingId: 1, status: 1, availableAt: 1 });
 runtimeWorkItemSchema.index({ outboxRepairRequiredAt: 1, updatedAt: 1 });
 

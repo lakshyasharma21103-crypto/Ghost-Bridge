@@ -32,8 +32,10 @@
     "verify:durable-recovery": "npm run verify:durable-recovery --workspace backend",
     "verify:policy-engine": "npm run verify:policy-engine --workspace backend",
     "verify:secret-governance": "npm run verify:secret-governance --workspace backend",
+    "verify:compliance-governance": "npm run verify:compliance-governance --workspace backend",
     "migrate:policy-engine": "npm run migrate:policy-engine --workspace backend",
     "migrate:secret-governance": "npm run migrate:secret-governance --workspace backend",
+    "migrate:compliance-governance": "npm run migrate:compliance-governance --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"

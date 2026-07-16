@@ -139,7 +139,7 @@ function defaultLoadInvocation(workItem) {
     connectionId: workItem.connectionId,
   })
     .select(
-      'capability lifecycleState cancellationState traceId requestId authorizationEvidence credentialBindingId credentialRequirement',
+      'capability lifecycleState cancellationState traceId requestId authorizationEvidence credentialBindingId credentialRequirement +approvalRequestIds approvalRequired',
     )
     .lean();
 }
@@ -386,6 +386,7 @@ async function executeClaimedWork(claim, options = {}) {
         policySkipPersistentRoles:
           invocation.authorizationEvidence?.actorType === 'service_account',
         expectedCredentialBindingId: workItem.credentialBindingId || invocation.credentialBindingId,
+        approvalRequestIds: invocation.approvalRequestIds,
         signal: controller.signal,
         async onExecutionClaimed(ownership) {
           runtimeOwnership = ownership;

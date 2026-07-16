@@ -2,6 +2,7 @@ const INVOCATION_STATES = Object.freeze([
   'accepted',
   'validating',
   'authorized',
+  'waiting_for_approval',
   'retry_scheduled',
   'running',
   'waiting_for_runtime',
@@ -15,7 +16,13 @@ const INVOCATION_STATES = Object.freeze([
 const TERMINAL_INVOCATION_STATES = Object.freeze(['succeeded', 'failed', 'cancelled', 'timed_out']);
 
 const ALLOWED_INVOCATION_TRANSITIONS = Object.freeze({
-  accepted: Object.freeze(['validating', 'retry_scheduled', 'recovery_required', 'cancelled']),
+  accepted: Object.freeze([
+    'validating',
+    'waiting_for_approval',
+    'retry_scheduled',
+    'recovery_required',
+    'cancelled',
+  ]),
   validating: Object.freeze([
     'authorized',
     'retry_scheduled',
@@ -30,6 +37,7 @@ const ALLOWED_INVOCATION_TRANSITIONS = Object.freeze({
     'recovery_required',
     'cancelled',
   ]),
+  waiting_for_approval: Object.freeze(['authorized', 'failed', 'cancelled']),
   retry_scheduled: Object.freeze(['authorized', 'failed', 'recovery_required', 'cancelled']),
   running: Object.freeze([
     'waiting_for_runtime',
@@ -168,6 +176,7 @@ const LIFECYCLE_TIMESTAMP_FIELDS = Object.freeze({
   accepted: 'acceptedAt',
   validating: 'validatingAt',
   authorized: 'authorizedAt',
+  waiting_for_approval: 'waitingForApprovalAt',
   retry_scheduled: 'retryScheduledAt',
   running: 'runningAt',
   waiting_for_runtime: 'waitingForRuntimeAt',
@@ -189,6 +198,7 @@ const LIFECYCLE_STATE_TO_LEGACY_STATUS = Object.freeze({
   accepted: 'queued',
   validating: 'queued',
   authorized: 'queued',
+  waiting_for_approval: 'queued',
   retry_scheduled: 'queued',
   running: 'running',
   waiting_for_runtime: 'running',

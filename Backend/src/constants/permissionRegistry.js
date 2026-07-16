@@ -1,4 +1,4 @@
-const PERMISSION_REGISTRY_VERSION = 3;
+const PERMISSION_REGISTRY_VERSION = 4;
 const PERMISSION_REGISTRY_ID = `permission-registry.v${PERMISSION_REGISTRY_VERSION}`;
 
 const RiskLevels = Object.freeze({
@@ -532,6 +532,178 @@ const permissionDefinitions = [
     defaultRoles: ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
     auditRequired: true,
   },
+  ...[
+    [
+      'approval.workflow.read',
+      'Read approval workflow definitions and version history.',
+      'MEDIUM',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'approval.workflow.create',
+      'Create tenant-scoped approval workflow drafts.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin'],
+    ],
+    [
+      'approval.workflow.update',
+      'Update draft approval workflows and create new versions.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin'],
+    ],
+    [
+      'approval.workflow.activate',
+      'Activate an immutable approval workflow version.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin'],
+    ],
+    [
+      'approval.workflow.retire',
+      'Retire an active approval workflow version.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin'],
+    ],
+    [
+      'approval.request.read',
+      'Read tenant-scoped approval requests and safe decision history.',
+      'MEDIUM',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'auditor'],
+    ],
+    [
+      'approval.request.create',
+      'Create an approval request bound to one exact action.',
+      'HIGH',
+      [
+        'organization_owner',
+        'organization_admin',
+        'security_admin',
+        'workspace_admin',
+        'operator',
+        'developer',
+      ],
+    ],
+    [
+      'approval.request.cancel',
+      'Cancel an unconsumed approval request.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
+    ],
+    [
+      'approval.request.approve',
+      'Approve an eligible stage of a governed request.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
+    ],
+    [
+      'approval.request.reject',
+      'Reject an eligible stage of a governed request.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
+    ],
+    [
+      'approval.audit.read',
+      'Read redacted approval lifecycle evidence.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'evidence.read',
+      'Query normalized, redacted evidence event metadata.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'evidence.export',
+      'Create bounded tenant-scoped evidence packages.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'evidence.download',
+      'Download a completed evidence package through authorized access.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'evidence.verify',
+      'Verify evidence package and audit-chain integrity.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'audit.integrity.read',
+      'Read audit-chain and checkpoint status.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'audit.integrity.verify',
+      'Run tenant-scoped audit-chain verification.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin', 'auditor'],
+    ],
+    [
+      'audit.retention.read',
+      'Read retention policies and safe deletion previews.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'audit.retention.manage',
+      'Activate retention policies and run explicit deletion jobs.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin'],
+    ],
+    [
+      'legal-hold.read',
+      'Read tenant-scoped legal-hold metadata.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'legal-hold.create',
+      'Create and activate a bounded legal hold.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin'],
+    ],
+    [
+      'legal-hold.release',
+      'Release a legal hold without immediately deleting evidence.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin'],
+    ],
+    [
+      'control.read',
+      'Read the internal control catalog and informational mappings.',
+      'MEDIUM',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'control.manage',
+      'Manage internal control mappings and implementation metadata.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin'],
+    ],
+    [
+      'compliance.report.read',
+      'Generate tenant-scoped compliance activity reports.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+  ].map(([id, description, riskLevel, defaultRoles]) => ({
+    id,
+    description,
+    category: id.startsWith('approval.')
+      ? 'Approval Governance'
+      : id.startsWith('legal-hold.')
+        ? 'Legal Hold'
+        : id.startsWith('control.') || id.startsWith('compliance.')
+          ? 'Compliance'
+          : 'Audit Evidence',
+    riskLevel: RiskLevels[riskLevel],
+    defaultRoles,
+    auditRequired: true,
+  })),
 ].map((permission) =>
   Object.freeze({
     registryId: PERMISSION_REGISTRY_ID,

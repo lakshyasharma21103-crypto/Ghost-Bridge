@@ -17,6 +17,7 @@ import { DeveloperSandbox } from './pages/DeveloperSandbox.jsx';
 import { Operations } from './pages/Operations.jsx';
 import { Policies } from './pages/Policies.jsx';
 import { Secrets } from './pages/Secrets.jsx';
+import { Compliance } from './pages/Compliance.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/operations" element={<Operations />} />
         <Route path="/policies" element={<Policies />} />
         <Route path="/secrets" element={<Secrets />} />
+        <Route path="/compliance" element={<Compliance />} />
         <Route path="/passports/new" element={<CreatePassport />} />
         <Route path="/passports" element={<PassportsList />} />
         <Route path="/passports/:passportId" element={<PassportDetail />} />

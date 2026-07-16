@@ -107,6 +107,8 @@ const invocationSchema = new mongoose.Schema(
     },
     protectedReplayAvailable: { type: Boolean, default: false },
     authorizationEvidence: { type: authorizationEvidenceSchema },
+    approvalRequestIds: { type: [String], default: undefined, select: false },
+    approvalRequired: { type: Boolean, default: false },
     credentialBindingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'CredentialBinding',
@@ -282,6 +284,12 @@ invocationSchema.index({ receivingWorkspaceId: 1, cancellationState: 1, createdA
 invocationSchema.index({ receivingWorkspaceId: 1, recoveryState: 1, updatedAt: -1 });
 invocationSchema.index({ receivingWorkspaceId: 1, recoveryEligible: 1, updatedAt: -1 });
 invocationSchema.index({ receivingWorkspaceId: 1, recoveryState: 1, recoveryClaimExpiresAt: 1 });
+invocationSchema.index({
+  organizationId: 1,
+  approvalRequired: 1,
+  lifecycleState: 1,
+  createdAt: -1,
+});
 invocationSchema.index({ receivingWorkspaceId: 1, lifecycleState: 1, lastProgressAt: 1 });
 invocationSchema.index({ receivingWorkspaceId: 1, lifecycleState: 1, runtimeDeadlineAt: 1 });
 invocationSchema.index({ lifecycleState: 1, executionLeaseExpiresAt: 1 });
