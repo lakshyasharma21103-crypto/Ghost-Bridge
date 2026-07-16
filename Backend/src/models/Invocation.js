@@ -58,6 +58,22 @@ const encryptedExecutionPayloadSchema = new mongoose.Schema(
   { _id: false, strict: 'throw' },
 );
 
+const authorizationEvidenceSchema = new mongoose.Schema(
+  {
+    permission: { type: String, required: true, trim: true, maxlength: 200 },
+    actorType: { type: String, required: true, trim: true, maxlength: 64 },
+    actorId: { type: String, required: true, trim: true, maxlength: 128 },
+    organizationId: { type: String, trim: true, maxlength: 128 },
+    workspaceId: { type: String, trim: true, maxlength: 256 },
+    roleKeys: { type: [String], default: undefined },
+    decision: { type: String, enum: ['ALLOW', 'DENY'], required: true },
+    reasonCode: { type: String, trim: true, match: SAFE_CODE_PATTERN },
+    policySnapshotRevision: { type: Number, min: 0 },
+    evaluatedAt: { type: Date, required: true },
+  },
+  { _id: false, strict: 'throw' },
+);
+
 const invocationSchema = new mongoose.Schema(
   {
     connectionId: {
@@ -90,6 +106,7 @@ const invocationSchema = new mongoose.Schema(
       select: false,
     },
     protectedReplayAvailable: { type: Boolean, default: false },
+    authorizationEvidence: { type: authorizationEvidenceSchema },
     executionGeneration: { type: Number, default: 1, min: 1 },
     currentWorkItemId: {
       type: mongoose.Schema.Types.ObjectId,

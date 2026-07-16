@@ -9,6 +9,27 @@ const SUPPORTED_AUTH_TYPES = ['no_auth_dev', 'api_key', 'bearer_token', 'oauth2'
 const SUPPORTED_RUNTIME_TYPES = ['rest', 'mcp'];
 const INSTALL_MODES = ['delegated_runtime_access', 'auth_required', 'metadata_only'];
 const RISK_LEVELS = ['low', 'medium', 'high'];
+const GOVERNANCE_CLASSIFICATIONS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'UNCLASSIFIED'];
+const GOVERNANCE_CATEGORIES = [
+  'SEARCH',
+  'DOCUMENT',
+  'DATABASE',
+  'CRM',
+  'EMAIL',
+  'FILESYSTEM',
+  'FINANCE',
+  'PAYMENT',
+  'ADMINISTRATION',
+  'OTHER',
+  'UNCLASSIFIED',
+];
+const GOVERNANCE_SIDE_EFFECTS = [
+  'READ_ONLY',
+  'LOCAL_CHANGE',
+  'REMOTE_WRITE',
+  'IRREVERSIBLE',
+  'UNKNOWN',
+];
 
 const ajv = new Ajv({
   allErrors: true,
@@ -111,6 +132,13 @@ const passportV1Schema = {
           inputSchema: { type: 'object' },
           outputSchema: { type: 'object' },
           riskLevel: { enum: RISK_LEVELS },
+          classification: { enum: GOVERNANCE_CLASSIFICATIONS },
+          category: { enum: GOVERNANCE_CATEGORIES },
+          sideEffect: { enum: GOVERNANCE_SIDE_EFFECTS },
+          requiredPermission: { type: 'string', minLength: 1, maxLength: 200 },
+          retrySafety: { enum: ['SAFE', 'UNSAFE', 'UNKNOWN'] },
+          cancellationSupport: { enum: ['SUPPORTED', 'UNSUPPORTED', 'UNKNOWN'] },
+          idempotencySupport: { enum: ['SUPPORTED', 'UNSUPPORTED', 'UNKNOWN'] },
           runtimeToolName: { type: 'string', minLength: 1, maxLength: 200 },
           enabled: { type: 'boolean' },
         },

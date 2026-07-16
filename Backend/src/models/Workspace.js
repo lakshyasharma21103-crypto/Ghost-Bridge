@@ -11,6 +11,14 @@ const workspaceSchema = new mongoose.Schema(
     externalWorkspaceId: { type: String, required: true, trim: true, index: true },
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, trim: true, lowercase: true },
+    environment: {
+      type: String,
+      enum: ['DEVELOPMENT', 'TEST', 'STAGING', 'PRODUCTION', 'UNKNOWN'],
+      default: 'UNKNOWN',
+      index: true,
+    },
+    productionApproved: { type: Boolean, default: false },
+    timezone: { type: String, default: 'UTC', trim: true, maxlength: 100 },
     status: {
       type: String,
       enum: ['active', 'suspended', 'deleted'],

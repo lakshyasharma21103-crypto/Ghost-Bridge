@@ -1,5 +1,7 @@
 # Agent Passport Runtime Gateway
 
+Phase 13C2 conditional governance is documented in [POLICY_ENGINE.md](./POLICY_ENGINE.md).
+
 One key to discover, connect, and invoke any compatible AI agent.
 
 Agent Passport Runtime Gateway lets a partner platform register an Agent Passport, issue a one-time install key, and let a receiving platform resolve that key into a usable runtime connection. REST runtime invocation is available in v1.

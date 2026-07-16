@@ -1,4 +1,4 @@
-const PERMISSION_REGISTRY_VERSION = 1;
+const PERMISSION_REGISTRY_VERSION = 2;
 const PERMISSION_REGISTRY_ID = `permission-registry.v${PERMISSION_REGISTRY_VERSION}`;
 
 const RiskLevels = Object.freeze({
@@ -47,12 +47,7 @@ const permissionDefinitions = [
     description: 'Create, update, and administer workspaces.',
     category: 'Workspace',
     riskLevel: RiskLevels.HIGH,
-    defaultRoles: [
-      'organization_owner',
-      'organization_admin',
-      'security_admin',
-      'workspace_admin',
-    ],
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
     auditRequired: true,
   },
   {
@@ -75,12 +70,7 @@ const permissionDefinitions = [
     description: 'Create, update, and manage teams.',
     category: 'Identity',
     riskLevel: RiskLevels.HIGH,
-    defaultRoles: [
-      'organization_owner',
-      'organization_admin',
-      'security_admin',
-      'workspace_admin',
-    ],
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
     auditRequired: true,
   },
   {
@@ -103,12 +93,7 @@ const permissionDefinitions = [
     description: 'Create, update, suspend, and assign enterprise users.',
     category: 'Identity',
     riskLevel: RiskLevels.HIGH,
-    defaultRoles: [
-      'organization_owner',
-      'organization_admin',
-      'security_admin',
-      'workspace_admin',
-    ],
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
     auditRequired: true,
   },
   {
@@ -226,7 +211,13 @@ const permissionDefinitions = [
     description: 'Invoke a connected Agent Passport capability.',
     category: 'Connection',
     riskLevel: RiskLevels.HIGH,
-    defaultRoles: ['organization_owner', 'organization_admin', 'workspace_admin', 'operator', 'developer'],
+    defaultRoles: [
+      'organization_owner',
+      'organization_admin',
+      'workspace_admin',
+      'operator',
+      'developer',
+    ],
     auditRequired: true,
   },
   {
@@ -304,7 +295,13 @@ const permissionDefinitions = [
     description: 'Read aggregate runtime worker and durable queue health.',
     category: 'Operations',
     riskLevel: RiskLevels.MEDIUM,
-    defaultRoles: ['organization_owner', 'organization_admin', 'workspace_admin', 'operator', 'auditor'],
+    defaultRoles: [
+      'organization_owner',
+      'organization_admin',
+      'workspace_admin',
+      'operator',
+      'auditor',
+    ],
     auditRequired: true,
   },
   {
@@ -340,7 +337,7 @@ const permissionDefinitions = [
   },
   {
     id: 'policy.read',
-    description: 'Read policy placeholders and future policy attachment points.',
+    description: 'Read policy definitions, versions, and the trusted attribute catalog.',
     category: 'Authorization',
     riskLevel: RiskLevels.LOW,
     defaultRoles: ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
@@ -348,10 +345,66 @@ const permissionDefinitions = [
   },
   {
     id: 'policy.manage',
-    description: 'Reserve policy management for future conditional policy engines.',
+    description: 'Legacy aggregate permission for policy administration.',
     category: 'Authorization',
     riskLevel: RiskLevels.CRITICAL,
     defaultRoles: ['organization_owner', 'organization_admin', 'security_admin'],
+    auditRequired: true,
+  },
+  {
+    id: 'policy.create',
+    description: 'Create a tenant-scoped draft policy.',
+    category: 'Authorization',
+    riskLevel: RiskLevels.HIGH,
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin'],
+    auditRequired: true,
+  },
+  {
+    id: 'policy.update',
+    description: 'Update a draft policy or create a new version.',
+    category: 'Authorization',
+    riskLevel: RiskLevels.HIGH,
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin'],
+    auditRequired: true,
+  },
+  {
+    id: 'policy.validate',
+    description: 'Validate policy syntax, targets, and tenant references.',
+    category: 'Authorization',
+    riskLevel: RiskLevels.MEDIUM,
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin'],
+    auditRequired: true,
+  },
+  {
+    id: 'policy.simulate',
+    description: 'Run a non-mutating tenant-scoped policy simulation.',
+    category: 'Authorization',
+    riskLevel: RiskLevels.HIGH,
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    auditRequired: true,
+  },
+  {
+    id: 'policy.activate',
+    description: 'Atomically activate a validated draft policy version.',
+    category: 'Authorization',
+    riskLevel: RiskLevels.CRITICAL,
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin'],
+    auditRequired: true,
+  },
+  {
+    id: 'policy.retire',
+    description: 'Retire an active policy version while retaining history.',
+    category: 'Authorization',
+    riskLevel: RiskLevels.CRITICAL,
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin'],
+    auditRequired: true,
+  },
+  {
+    id: 'policy.audit.read',
+    description: 'Read policy decision and lifecycle audit evidence.',
+    category: 'Authorization',
+    riskLevel: RiskLevels.MEDIUM,
+    defaultRoles: ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
     auditRequired: true,
   },
 ].map((permission) =>
@@ -362,7 +415,9 @@ const permissionDefinitions = [
   }),
 );
 
-const permissionsById = new Map(permissionDefinitions.map((permission) => [permission.id, permission]));
+const permissionsById = new Map(
+  permissionDefinitions.map((permission) => [permission.id, permission]),
+);
 
 function getPermission(permissionId) {
   return permissionsById.get(permissionId);

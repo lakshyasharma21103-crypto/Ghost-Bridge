@@ -291,7 +291,7 @@ function attachFormattingRecovery(error) {
 
 function isTransient(error) {
   const status = numericStatus(error);
-  if (status === 429 || (status && status >= 500)) return true;
+  if (status === 408 || status === 429 || (status && status >= 500)) return true;
   return [
     'ECONNRESET',
     'ECONNREFUSED',
@@ -398,6 +398,13 @@ class GeminiProvider extends AIProvider {
       this.config.formattingTimeoutMs ??
       this.config.requestTimeoutMs ??
       DEFAULT_FORMATTING_TIMEOUT_MS;
+    const configuredResearchAttempts = Number(this.config.researchMaxAttempts);
+    this.researchMaxAttempts =
+      Number.isInteger(configuredResearchAttempts) &&
+      configuredResearchAttempts >= 1 &&
+      configuredResearchAttempts <= 2
+        ? configuredResearchAttempts
+        : 1;
     const configuredFormattingAttempts = Number(this.config.formattingMaxAttempts);
     this.formattingMaxAttempts =
       Number.isInteger(configuredFormattingAttempts) &&
@@ -427,7 +434,8 @@ class GeminiProvider extends AIProvider {
         const retryAllowed =
           attemptNumber < boundedMaxAttempts && isTransient(error) && !signal.aborted;
         if (!retryAllowed) throw error;
-        await this.delay(200 + Math.floor(this.random() * 300), signal);
+        const exponentialBaseMs = 1_000 * 2 ** Math.max(0, attemptNumber - 1);
+        await this.delay(exponentialBaseMs + Math.floor(this.random() * 500), signal);
       }
     }
     throw new Error('Gemini generation exited without an attempt result.');
@@ -540,7 +548,7 @@ class GeminiProvider extends AIProvider {
         operation: 'grounded_research',
         timeoutMs: this.researchTimeoutMs,
         parentSignal: signal,
-        maxAttempts: 1,
+        maxAttempts: this.researchMaxAttempts,
         parameters: (operationSignal) => ({
           model: this.config.model,
           contents: buildResearchInput(topic),

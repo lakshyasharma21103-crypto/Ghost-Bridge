@@ -137,8 +137,40 @@ function defaultLoadInvocation(workItem) {
     receivingWorkspaceId: workItem.receivingWorkspaceId,
     connectionId: workItem.connectionId,
   })
-    .select('capability lifecycleState cancellationState traceId requestId')
+    .select('capability lifecycleState cancellationState traceId requestId authorizationEvidence')
     .lean();
+}
+
+async function markInvocationPolicyDenied(workItem, error) {
+  const now = new Date();
+  await Invocation.findOneAndUpdate(
+    {
+      _id: workItem.invocationId,
+      receivingWorkspaceId: workItem.receivingWorkspaceId,
+      connectionId: workItem.connectionId,
+      lifecycleState: { $in: ['accepted', 'validating', 'authorized'] },
+    },
+    {
+      $set: {
+        lifecycleState: 'failed',
+        status: 'failed',
+        terminalAt: now,
+        terminalizedAt: now,
+        lastTransitionAt: now,
+        error: {
+          code: ErrorCodes.AUTHORIZATION_DENIED,
+          reasonCode: safeCode(error?.reasonCode, 'POLICY_REVALIDATION_DENIED'),
+        },
+        'authorizationEvidence.decision': 'DENY',
+        'authorizationEvidence.reasonCode': safeCode(
+          error?.reasonCode,
+          'POLICY_REVALIDATION_DENIED',
+        ),
+        'authorizationEvidence.evaluatedAt': now,
+      },
+    },
+    { runValidators: true },
+  );
 }
 
 async function settleOrphanedWork({ workItem, ownership, result, error, dependencies }) {
@@ -202,6 +234,7 @@ function executionDependencies(overrides = {}) {
     heartbeatWork,
     invoke: RuntimeGateway.invoke,
     loadInvocation: defaultLoadInvocation,
+    markInvocationPolicyDenied,
     recordMilestone,
     renewRuntimeExecutionOwnership: RuntimeGateway.renewRuntimeExecutionOwnership,
     startWork,
@@ -344,6 +377,11 @@ async function executeClaimedWork(claim, options = {}) {
         executionOwner: workerId,
         requireDurablePersistence: true,
         runtimeProtectionOptions: { forcePersistence: true },
+        policyActorType: invocation.authorizationEvidence?.actorType,
+        policyActorId: invocation.authorizationEvidence?.actorId,
+        policyRoleKeys: invocation.authorizationEvidence?.roleKeys,
+        policySkipPersistentRoles:
+          invocation.authorizationEvidence?.actorType === 'service_account',
         signal: controller.signal,
         async onExecutionClaimed(ownership) {
           runtimeOwnership = ownership;
@@ -355,6 +393,9 @@ async function executeClaimedWork(claim, options = {}) {
     return result;
   } catch (error) {
     executionError = error;
+    if (error?.code === ErrorCodes.AUTHORIZATION_DENIED) {
+      await dependencies.markInvocationPolicyDenied(workItem, error);
+    }
     throw error;
   } finally {
     await stopHeartbeat();

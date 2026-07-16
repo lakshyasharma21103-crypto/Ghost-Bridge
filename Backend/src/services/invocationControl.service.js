@@ -112,6 +112,11 @@ async function authorizedContext(invocationId, input, partner, options = {}) {
     receivingUserId: identity.receivingUserId,
   });
   if (!connection) throw notFound();
+  const snapshot = connection.resolvedPassportSnapshot || {};
+  const passport = { ...snapshot, _id: connection.passportId };
+  const capability = (snapshot.capabilities || []).find(
+    (item) => item.name === invocation.capability,
+  );
   await assertAuthorized(
     actorFromPartner(partner, { workspaceId: identity.receivingWorkspaceId }),
     options.permission || 'invocation.read',
@@ -121,9 +126,12 @@ async function authorizedContext(invocationId, input, partner, options = {}) {
       traceId: options.traceId,
       workspaceId: identity.receivingWorkspaceId,
       auditDecision: false,
+      trustedConnection: connection,
+      trustedPassport: passport,
+      trustedCapability: capability,
     },
   );
-  return { identity, invocation, connection };
+  return { identity, invocation, connection, passport, capability };
 }
 
 async function audit(action, context, actor, metadata = {}) {

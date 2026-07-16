@@ -30,6 +30,8 @@
     "verify:gemini-agent": "npm run verify:gemini-agent --workspace external-agent",
     "verify:external-flow": "npm run verify:external-flow --workspace backend",
     "verify:durable-recovery": "npm run verify:durable-recovery --workspace backend",
+    "verify:policy-engine": "npm run verify:policy-engine --workspace backend",
+    "migrate:policy-engine": "npm run migrate:policy-engine --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"

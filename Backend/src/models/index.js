@@ -19,6 +19,8 @@ const Team = require('./Team');
 const EnterpriseUser = require('./EnterpriseUser');
 const ServiceAccount = require('./ServiceAccount');
 const Role = require('./Role');
+const Policy = require('./Policy');
+const PolicyRevision = require('./PolicyRevision');
 
 module.exports = {
   Partner,
@@ -42,4 +44,6 @@ module.exports = {
   EnterpriseUser,
   ServiceAccount,
   Role,
+  Policy,
+  PolicyRevision,
 };

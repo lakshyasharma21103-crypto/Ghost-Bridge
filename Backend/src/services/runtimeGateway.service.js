@@ -2,6 +2,7 @@ const Ajv = require('ajv');
 const crypto = require('node:crypto');
 const AgentPassport = require('../models/AgentPassport');
 const Capability = require('../models/Capability');
+const Workspace = require('../models/Workspace');
 const PassportConnection = require('../models/PassportConnection');
 const Invocation = require('../models/Invocation');
 const InvocationAttempt = require('../models/InvocationAttempt');
@@ -80,7 +81,9 @@ function idOf(value) {
 }
 
 function combineAbortSignals(signals) {
-  const active = signals.filter((signal) => signal && typeof signal.addEventListener === 'function');
+  const active = signals.filter(
+    (signal) => signal && typeof signal.addEventListener === 'function',
+  );
   if (!active.length) return undefined;
   if (active.length === 1) return active[0];
   if (typeof AbortSignal.any === 'function') return AbortSignal.any(active);
@@ -138,10 +141,7 @@ function durableLeaseError(workItemId, reasonCode = 'DURABLE_WORK_OWNERSHIP_LOST
 
 async function initializeDurableWork({ invocation, connection, actor }) {
   if (actor.durableWorkItemId) {
-    if (
-      !actor.durableWorkOwnership?.leaseOwner ||
-      !actor.durableWorkOwnership?.leaseToken
-    ) {
+    if (!actor.durableWorkOwnership?.leaseOwner || !actor.durableWorkOwnership?.leaseToken) {
       throw durableLeaseError(actor.durableWorkItemId, 'DURABLE_WORK_OWNERSHIP_REQUIRED');
     }
     return {
@@ -280,27 +280,21 @@ function attachDurableExecutionActor(actor, durableContext) {
     await assertWorkControl();
     const name = DURABLE_PROGRESS_MILESTONES[stage];
     if (name) {
-      await recordMilestone(
-        durableContext.workItemId,
-        durableContext.ownership,
-        {
-          name,
-          at,
-          attemptNumber: durableContext.attemptNumber,
-          safeStatus: 'completed',
-        },
-      );
+      await recordMilestone(durableContext.workItemId, durableContext.ownership, {
+        name,
+        at,
+        attemptNumber: durableContext.attemptNumber,
+        safeStatus: 'completed',
+      });
     }
     await upstreamProgress?.(stage, at);
   }
 
   async function heartbeat() {
     try {
-      const result = await heartbeatWork(
-        durableContext.workItemId,
-        durableContext.ownership,
-        { leaseMs: env.DURABLE_WORK_LEASE_MS },
-      );
+      const result = await heartbeatWork(durableContext.workItemId, durableContext.ownership, {
+        leaseMs: env.DURABLE_WORK_LEASE_MS,
+      });
       if (result.cancellationRequested) {
         throw durableCancellationError(result.workItem.cancellationReasonCode);
       }
@@ -322,10 +316,7 @@ function attachDurableExecutionActor(actor, durableContext) {
             runtimeOwnership = undefined;
             return;
           }
-          throw durableLeaseError(
-            durableContext.workItemId,
-            'RUNTIME_EXECUTION_OWNERSHIP_LOST',
-          );
+          throw durableLeaseError(durableContext.workItemId, 'RUNTIME_EXECUTION_OWNERSHIP_LOST');
         }
         runtimeOwnership = renewed;
       }
@@ -381,10 +372,9 @@ function attachDurableExecutionActor(actor, durableContext) {
 async function settleDurableFailure(durableContext, runtimeError, options = {}) {
   if (!durableContext) return;
   if (
-    [
-      ErrorCodes.DURABLE_WORK_LEASE_LOST,
-      ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT,
-    ].includes(runtimeError?.code)
+    [ErrorCodes.DURABLE_WORK_LEASE_LOST, ErrorCodes.DURABLE_WORK_FINALIZATION_CONFLICT].includes(
+      runtimeError?.code,
+    )
   ) {
     return;
   }
@@ -409,16 +399,12 @@ async function settleDurableFailure(durableContext, runtimeError, options = {}) 
       return;
     }
     if (options.recoveryRequired === true) {
-      await finalizeWork(
-        durableContext.workItemId,
-        durableContext.ownership,
-        {
-          status: 'recovery_required',
-          lastErrorCode: runtimeError?.code || ErrorCodes.INTERNAL_SERVER_ERROR,
-          retryDecisionReason: options.retryDecision?.reason || 'REMOTE_OUTCOME_UNKNOWN',
-          recoveryReasonCode: recoveryReasonForDurableFailure(options),
-        },
-      );
+      await finalizeWork(durableContext.workItemId, durableContext.ownership, {
+        status: 'recovery_required',
+        lastErrorCode: runtimeError?.code || ErrorCodes.INTERNAL_SERVER_ERROR,
+        retryDecisionReason: options.retryDecision?.reason || 'REMOTE_OUTCOME_UNKNOWN',
+        recoveryReasonCode: recoveryReasonForDurableFailure(options),
+      });
       return;
     }
     if (runtimeError?.code === ErrorCodes.INVOCATION_CANCELLED) {
@@ -891,6 +877,9 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
       idempotencyKeyHash: idempotency.keyHash,
       requestFingerprint: idempotency.requestFingerprint,
       clientIdempotencyProvided: idempotency.clientProvided,
+      ...(actor.authorizationEvidence
+        ? { authorizationEvidence: actor.authorizationEvidence }
+        : {}),
       ...(actor.recoveryParentInvocationId
         ? { recoveryParentInvocationId: actor.recoveryParentInvocationId }
         : {}),
@@ -1018,9 +1007,7 @@ async function startInvocationAttempt({
   actor,
   observer,
 }) {
-  const maximumAttempts = Number(
-    actor.durableMaximumAttempts || env.RUNTIME_RETRY_MAX_ATTEMPTS,
-  );
+  const maximumAttempts = Number(actor.durableMaximumAttempts || env.RUNTIME_RETRY_MAX_ATTEMPTS);
   if ((invocation.attemptCount || 0) >= maximumAttempts) {
     throw new AppError(
       409,
@@ -1420,7 +1407,14 @@ async function loadInvocationContext(
       );
     }
   });
-  return { connection, passport, capability };
+  const workspace =
+    databaseStatus() === 'connected'
+      ? await Workspace.findOne({
+          partnerId: connection.partnerId,
+          externalWorkspaceId: connection.receivingWorkspaceId,
+        }).lean()
+      : undefined;
+  return { connection, passport, capability, workspace };
 }
 
 async function invoke(connectionId, capabilityName, input, actor = {}) {
@@ -1473,19 +1467,79 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     );
     connection = await observer.stage('connection_lookup', () => loadConnection(connectionId));
     assertConnectionOwnership(connection, actor);
-    await observer.stage('authorization_check', () =>
-      assertAuthorized(
-        actorFromRuntimeActor(actor, connection),
-        'connection.invoke',
-        resourceFromConnection(connection),
-        {
-          requestId: actor.requestId,
-          traceId: actor.traceId,
-          allowLegacyOwner: true,
-          trustedSystem: actor.actorType === 'system' || actor.trustedSystem === true,
-        },
-      ),
+    context = await loadInvocationContext(
+      connectionId,
+      normalizedCapabilityName,
+      actor,
+      observer,
+      connection,
     );
+    observer = observer.child({
+      connectionId: idOf(context.connection),
+      agentId: idOf(context.passport),
+      capabilityId: idOf(context.capability),
+      capabilityName: context.capability.name,
+    });
+    const revalidationActor = actorFromRuntimeActor(
+      {
+        ...actor,
+        type: actor.policyActorType || actor.type || actor.actorType,
+        actorType: actor.policyActorType || actor.actorType,
+        id: actor.policyActorId || actor.id || actor.actorId,
+        actorId: actor.policyActorId || actor.actorId,
+        roleKeys: actor.policyRoleKeys || actor.roleKeys,
+        skipPersistentRoles: actor.policySkipPersistentRoles ?? actor.skipPersistentRoles,
+      },
+      connection,
+    );
+    const authorizationDecision = await observer.stage('authorization_check', () =>
+      assertAuthorized(revalidationActor, 'connection.invoke', resourceFromConnection(connection), {
+        requestId: actor.requestId,
+        traceId: actor.traceId,
+        allowLegacyOwner: true,
+        trustedSystem: actor.actorType === 'system' || actor.trustedSystem === true,
+        trustedConnection: context.connection,
+        trustedPassport: context.passport,
+        trustedCapability: context.capability,
+        trustedWorkspace: context.workspace,
+        trustedEnvironment: { name: env.NODE_ENV },
+      }),
+    );
+    if (
+      context.capability.requiredPermission &&
+      context.capability.requiredPermission !== 'connection.invoke'
+    ) {
+      await observer.stage('authorization_check', () =>
+        assertAuthorized(
+          revalidationActor,
+          context.capability.requiredPermission,
+          resourceFromConnection(connection),
+          {
+            requestId: actor.requestId,
+            traceId: actor.traceId,
+            allowLegacyOwner: true,
+            trustedSystem: actor.actorType === 'system' || actor.trustedSystem === true,
+            trustedConnection: context.connection,
+            trustedPassport: context.passport,
+            trustedCapability: context.capability,
+            trustedWorkspace: context.workspace,
+            trustedEnvironment: { name: env.NODE_ENV },
+          },
+        ),
+      );
+    }
+    actor.authorizationEvidence = {
+      permission: 'connection.invoke',
+      actorType: revalidationActor.type,
+      actorId: revalidationActor.id,
+      organizationId: authorizationDecision.organizationId,
+      workspaceId: authorizationDecision.workspaceId,
+      roleKeys: authorizationDecision.roleKeys,
+      decision: authorizationDecision.decision,
+      reasonCode: authorizationDecision.reasonCode,
+      policySnapshotRevision: authorizationDecision.policySnapshotRevision,
+      evaluatedAt: new Date(),
+    };
     auditActor = actorFor(connection, actor);
 
     const reservation = await observer.stage('invocation_persistence', () =>
@@ -1594,19 +1648,6 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       });
     }
 
-    context = await loadInvocationContext(
-      connectionId,
-      normalizedCapabilityName,
-      actor,
-      observer,
-      connection,
-    );
-    observer = observer.child({
-      connectionId: idOf(context.connection),
-      agentId: idOf(context.passport),
-      capabilityId: idOf(context.capability),
-      capabilityName: context.capability.name,
-    });
     await observer.stage('request_validation', async () =>
       validateCapabilityInput(context.capability, input),
     );
@@ -2493,20 +2534,20 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
             : deadLetterDisposition
               ? 'SAFE_RETRY_ATTEMPTS_EXHAUSTED'
               : targetState === 'recovery_required'
-            ? recoveryReasonFor(runtimeError, { responsePersistenceUncertain })
-            : targetState === 'timed_out'
-              ? 'INVOCATION_TIMED_OUT'
-              : 'INVOCATION_FAILED';
+                ? recoveryReasonFor(runtimeError, { responsePersistenceUncertain })
+                : targetState === 'timed_out'
+                  ? 'INVOCATION_TIMED_OUT'
+                  : 'INVOCATION_FAILED';
         const retryState =
           targetState === 'recovery_required'
             ? 'recovery_required'
             : targetState === 'retry_scheduled'
               ? 'scheduled'
-            : retryDecision.reason === 'MAX_ATTEMPTS_REACHED'
-              ? 'exhausted'
-              : retryDecision.allowed
-                ? 'scheduled'
-                : 'not_allowed';
+              : retryDecision.reason === 'MAX_ATTEMPTS_REACHED'
+                ? 'exhausted'
+                : retryDecision.allowed
+                  ? 'scheduled'
+                  : 'not_allowed';
         try {
           invocation = await observer.stage('invocation_persistence', () =>
             transitionAndAudit({
@@ -2521,9 +2562,7 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
               observer,
               connection,
               actor: auditActor,
-              ...(executionOwner && executionLeaseId
-                ? { executionOwner, executionLeaseId }
-                : {}),
+              ...(executionOwner && executionLeaseId ? { executionOwner, executionLeaseId } : {}),
               outcome: {
                 error: {
                   ...invocationErrorPayload(runtimeError),
@@ -2699,6 +2738,9 @@ function normalizeMcpTool(tool, index) {
         ? tool.outputSchema
         : { type: 'object' },
     riskLevel: ['low', 'medium', 'high'].includes(tool.riskLevel) ? tool.riskLevel : 'medium',
+    classification: 'UNCLASSIFIED',
+    category: 'UNCLASSIFIED',
+    sideEffect: 'UNKNOWN',
     runtimeToolName: tool.name.trim(),
     enabled: tool.enabled !== false,
   };
@@ -2737,6 +2779,19 @@ async function importMcpTools(connectionId, actor = {}) {
       'Agent Passport is not available for MCP tool import.',
     );
   }
+
+  await assertAuthorized(
+    actorFromRuntimeActor(actor, connection),
+    'connection.create',
+    resourceFromConnection(connection),
+    {
+      requestId: actor.requestId,
+      traceId: actor.traceId,
+      allowLegacyOwner: true,
+      trustedConnection: connection,
+      trustedPassport: passport,
+    },
+  );
 
   const adapter = adapters.mcp;
   if (

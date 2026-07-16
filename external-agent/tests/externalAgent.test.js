@@ -146,6 +146,7 @@ test('Gemini stage defaults leave request-level processing overhead', () => {
 
   assert.equal(parsed.gemini.researchTimeoutMs, 180_000);
   assert.equal(parsed.gemini.formattingTimeoutMs, 90_000);
+  assert.equal(parsed.gemini.researchMaxAttempts, 1);
   assert.equal(parsed.gemini.formattingMaxAttempts, 2);
   assert.ok(
     parsed.requestTimeoutMs >
@@ -257,6 +258,33 @@ test('formatting attempts are configurable only within the conservative bound', 
           EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
         }),
       /GEMINI_FORMATTING_MAX_ATTEMPTS/,
+    );
+  }
+});
+
+test('grounded research retries require an explicit conservative opt-in', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_RESEARCH_MAX_ATTEMPTS: '2',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+
+  assert.equal(parsed.gemini.researchMaxAttempts, 2);
+  for (const invalidValue of ['0', '3', '1.5']) {
+    assert.throws(
+      () =>
+        readEnvironment({
+          NODE_ENV: 'test',
+          AI_PROVIDER: 'gemini',
+          GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+          GEMINI_MODEL: 'gemini-2.5-flash',
+          GEMINI_RESEARCH_MAX_ATTEMPTS: invalidValue,
+          EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+        }),
+      /GEMINI_RESEARCH_MAX_ATTEMPTS/,
     );
   }
 });

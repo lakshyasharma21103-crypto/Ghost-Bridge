@@ -121,6 +121,7 @@ export async function apiRequest(path, options = {}) {
   const requiresPartnerAuthentication =
     path.startsWith('/partner') ||
     path.startsWith('/enterprise') ||
+    path.startsWith('/policies') ||
     isPhase13B3Control(path, options.method);
   if (requiresPartnerAuthentication && !headers.has('X-Partner-Api-Key')) {
     if (!partnerApiKey) {

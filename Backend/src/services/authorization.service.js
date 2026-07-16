@@ -11,7 +11,13 @@ const {
   PERMISSION_REGISTRY_VERSION,
   getPermission,
 } = require('../constants/permissionRegistry');
-const { getBuiltInRole, hasBuiltInRole, permissionsForBuiltInRole } = require('../constants/builtInRoles');
+const {
+  getBuiltInRole,
+  hasBuiltInRole,
+  permissionsForBuiltInRole,
+} = require('../constants/builtInRoles');
+const { evaluateActivePolicies, trustedAttributes } = require('./policyEngine.service');
+const { POLICY_REASON_CODES } = require('../constants/policy');
 
 const defaultAuditCreate = AuditLog.create;
 
@@ -86,7 +92,11 @@ function tenantDecision(actor, resource, context = {}) {
   const resourceOrganizationId = idOf(
     resource.organizationId || resource.partnerId || context.organizationId || context.partnerId,
   );
-  if (resourceOrganizationId && actorOrganizationId && resourceOrganizationId !== actorOrganizationId) {
+  if (
+    resourceOrganizationId &&
+    actorOrganizationId &&
+    resourceOrganizationId !== actorOrganizationId
+  ) {
     return {
       allowed: false,
       reason: 'ORGANIZATION_MISMATCH',
@@ -162,12 +172,13 @@ async function roleKeysFromPersistentIdentity(actor, tenant) {
   if (actor.skipPersistentRoles === true) return [];
   let identity;
   if (actor.type === 'user' && (actor.enterpriseUserId || actor.id || actor.userId)) {
-    const filter = actor.enterpriseUserId && mongoose.isValidObjectId(actor.enterpriseUserId)
-      ? { _id: actor.enterpriseUserId }
-      : {
-          partnerId: actor.partnerId,
-          externalUserId: actor.userId || actor.id,
-        };
+    const filter =
+      actor.enterpriseUserId && mongoose.isValidObjectId(actor.enterpriseUserId)
+        ? { _id: actor.enterpriseUserId }
+        : {
+            partnerId: actor.partnerId,
+            externalUserId: actor.userId || actor.id,
+          };
     identity = await EnterpriseUser.findOne({ ...filter, status: 'active' }).lean();
   }
   if (actor.type === 'service_account' && actor.serviceAccountId) {
@@ -237,7 +248,16 @@ async function auditAuthorizationDecision(result) {
         registryId: PERMISSION_REGISTRY_ID,
         registryVersion: PERMISSION_REGISTRY_VERSION,
         decision: result.decision,
-        reason: result.reason,
+        reason: result.reasonCode || result.reason,
+        reasonCode: result.reasonCode || result.reason,
+        rbacDecision: result.rbacDecision,
+        policyDecision: result.policyDecision,
+        matchedPolicyIds: (result.matchedPolicies || []).map((policy) => policy.stablePolicyId),
+        matchedPolicyVersions: (result.matchedPolicies || []).map((policy) => policy.version),
+        matchedPolicyEffects: (result.matchedPolicies || []).map((policy) => policy.effect),
+        policySnapshotRevision: result.policySnapshotRevision,
+        evaluationDurationMs: result.evaluationDurationMs,
+        simulation: result.context?.simulation === true,
         actorType: result.actor.type,
         actorId: result.actor.id,
         organizationId: result.organizationId,
@@ -277,15 +297,21 @@ async function authorize(actorInput, permissionId, resourceInput = {}, context =
     workspaceId: undefined,
     registryId: PERMISSION_REGISTRY_ID,
     registryVersion: PERMISSION_REGISTRY_VERSION,
+    rbacDecision: 'DENY',
+    policyDecision: 'NOT_EVALUATED',
+    matchedPolicies: [],
+    traceId: context.traceId,
   };
 
   if (!permission) {
     result.reason = 'UNKNOWN_PERMISSION';
+    result.reasonCode = 'UNKNOWN_PERMISSION';
     await auditAuthorizationDecision(result);
     return result;
   }
   if (!actor.type || !actor.id) {
     result.reason = 'ACTOR_REQUIRED';
+    result.reasonCode = 'ACTOR_REQUIRED';
     await auditAuthorizationDecision(result);
     return result;
   }
@@ -295,12 +321,14 @@ async function authorize(actorInput, permissionId, resourceInput = {}, context =
   result.workspaceId = tenant.workspaceId;
   if (!tenant.allowed) {
     result.reason = tenant.reason;
+    result.reasonCode = POLICY_REASON_CODES.TENANT_SCOPE_MISMATCH;
     await auditAuthorizationDecision(result);
     return result;
   }
 
   if (context.requireOwner === true && resource.ownerUserId && resource.ownerUserId !== actor.id) {
     result.reason = 'OWNER_MISMATCH';
+    result.reasonCode = POLICY_REASON_CODES.TENANT_SCOPE_MISMATCH;
     await auditAuthorizationDecision(result);
     return result;
   }
@@ -308,6 +336,7 @@ async function authorize(actorInput, permissionId, resourceInput = {}, context =
   const evaluated = await actorPermissions(actor, resource, tenant, context);
   if (!evaluated.permissions.has(permission.id)) {
     result.reason = evaluated.roleKeys.length ? 'PERMISSION_NOT_GRANTED' : 'NO_APPLICABLE_ROLE';
+    result.reasonCode = POLICY_REASON_CODES.RBAC_PERMISSION_DENIED;
     result.roleKeys = evaluated.roleKeys;
     await auditAuthorizationDecision(result);
     return result;
@@ -315,10 +344,52 @@ async function authorize(actorInput, permissionId, resourceInput = {}, context =
 
   result = {
     ...result,
-    allowed: true,
-    decision: 'ALLOW',
+    rbacDecision: 'ALLOW',
     reason: 'ROLE_PERMISSION_GRANTED',
     roleKeys: evaluated.roleKeys,
+  };
+
+  const attributes = trustedAttributes({
+    actor,
+    resource,
+    context,
+    roleKeys: evaluated.roleKeys,
+    tenant,
+  });
+  const capability = context.trustedCapability || {};
+  const connection = context.trustedConnection || {};
+  const passport = context.trustedPassport || {};
+  const policyResult = await evaluateActivePolicies(
+    {
+      permission: permission.id,
+      organizationId: tenant.organizationId,
+      workspaceId: tenant.workspaceId,
+      actorType: actor.type,
+      resourceType: resource.type,
+      resourceId: resource.id,
+      passportId: idOf(passport),
+      connectionId: idOf(connection),
+      capabilityId: idOf(capability),
+      capabilityCategory: capability.category || 'UNCLASSIFIED',
+      capabilityClassification: capability.classification || 'UNCLASSIFIED',
+      capabilitySideEffect: capability.sideEffect || 'UNKNOWN',
+      environment: context.trustedWorkspace?.environment || context.trustedEnvironment?.name,
+    },
+    attributes,
+    {
+      policyLoader: context.policyLoader,
+      simulation: context.simulation === true,
+    },
+  );
+  result = {
+    ...result,
+    allowed: policyResult.allowed,
+    decision: policyResult.decision,
+    reasonCode: policyResult.reasonCode,
+    policyDecision: policyResult.decision,
+    matchedPolicies: policyResult.matchedPolicies,
+    policySnapshotRevision: policyResult.policySnapshotRevision,
+    evaluationDurationMs: policyResult.evaluationDurationMs,
   };
   await auditAuthorizationDecision(result);
   return result;
@@ -339,7 +410,8 @@ async function assertAuthorized(actor, permissionId, resource, context = {}) {
     {
       permission: permissionId,
       authorizationDecision: decision.decision,
-      reasonCode: decision.reason,
+      reasonCode: decision.reasonCode || decision.reason,
+      traceId: decision.traceId,
       registryVersion: PERMISSION_REGISTRY_VERSION,
     },
   );
@@ -362,10 +434,10 @@ function actorFromPartner(partner, extras = {}) {
 function actorFromRuntimeActor(actor = {}, connection) {
   const partnerId = actor.partnerId || actor.partner?._id;
   const actorType = actor.type || actor.actorType || (connection ? 'user' : undefined);
-  const actorId = actor.id || actor.actorId || (actorType === 'user' ? connection?.receivingUserId : undefined);
+  const actorId =
+    actor.id || actor.actorId || (actorType === 'user' ? connection?.receivingUserId : undefined);
   const skipPersistentRoles =
-    actor.skipPersistentRoles ??
-    (!actor.enterpriseUserId && !actor.serviceAccountId && !partnerId);
+    actor.skipPersistentRoles ?? (!actor.enterpriseUserId && !actor.serviceAccountId && !partnerId);
   return normalizeActor({
     ...actor,
     type: actorType,
@@ -400,7 +472,8 @@ function resourceFromInvocation(invocation, connection) {
     type: 'Invocation',
     id: idOf(invocation),
     partnerId: connection?.partnerId,
-    organizationId: connection?.organizationId || connection?.partnerId || invocation?.organizationId,
+    organizationId:
+      connection?.organizationId || connection?.partnerId || invocation?.organizationId,
     workspaceId: invocation?.receivingWorkspaceId || connection?.receivingWorkspaceId,
     ownerUserId: connection?.receivingUserId,
   });

@@ -14,6 +14,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  ShieldEllipsis,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -23,6 +24,7 @@ import { useAppState } from '../app/AppState.jsx';
 const primaryItems = [
   { label: 'Overview', path: '/', icon: Home, end: true },
   { label: 'Operations', path: '/operations', icon: Gauge },
+  { label: 'Policies', path: '/policies', icon: ShieldEllipsis },
   { label: 'Passports', path: '/passports', icon: ShieldCheck },
   { label: 'Install Keys', path: '/install-keys/resolve', icon: KeyRound, match: '/install-keys' },
   { label: 'Connections', path: '/connections', icon: Link2 },

@@ -331,6 +331,7 @@ function externalAgentConfig() {
     'GEMINI_WEB_SEARCH_ENABLED',
     'GEMINI_RESEARCH_TIMEOUT_MS',
     'GEMINI_FORMATTING_TIMEOUT_MS',
+    'GEMINI_RESEARCH_MAX_ATTEMPTS',
     'GEMINI_REQUEST_TIMEOUT_MS',
     'GEMINI_MAX_OUTPUT_TOKENS',
     'GEMINI_MAX_SOURCES',
@@ -342,6 +343,13 @@ function externalAgentConfig() {
   return readExternalEnvironment({
     ...local,
     ...overrides,
+    // This command is an explicitly billed live gate. A single bounded retry makes the
+    // verifier resilient to Gemini's documented transient 408/429/5xx responses without
+    // changing the production service's single-attempt default.
+    GEMINI_RESEARCH_MAX_ATTEMPTS:
+      process.env.EXTERNAL_FLOW_GEMINI_RESEARCH_MAX_ATTEMPTS ||
+      overrides.GEMINI_RESEARCH_MAX_ATTEMPTS ||
+      '2',
     PORT: String(externalAgentPort),
     NODE_ENV: 'development',
     EXTERNAL_AGENT_RUNTIME_TOKEN: runtimeToken,

@@ -1151,6 +1151,36 @@ test('transient grounded research failures never repeat Google Search', async ()
   assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
 });
 
+test('explicit grounded-research retry recovers once from a transient provider failure', async () => {
+  const transient = Object.assign(new Error('temporary'), { status: 503 });
+  const groundedText = 'Grounded facts after bounded provider recovery.';
+  const delays = [];
+  const client = fakeClient([
+    transient,
+    candidate(groundedText, {
+      sources: [{ title: 'Source', uri: 'https://authority.example/source' }],
+    }),
+    candidate(JSON.stringify({ summary: 'Recovered research.' })),
+  ]);
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, researchMaxAttempts: 2, formattingMaxAttempts: 1 },
+    {
+      client,
+      delay: async (milliseconds) => delays.push(milliseconds),
+      random: () => 0,
+    },
+  );
+
+  const result = await provider.research({ topic: 'Secure agents' });
+
+  assert.equal(result.summary, 'Recovered research.');
+  assert.deepEqual(delays, [1_000]);
+  assert.equal(client.calls.length, 3);
+  assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
+  assert.deepEqual(client.calls[1].config.tools, [{ googleSearch: {} }]);
+  assert.equal(client.calls[2].config.tools, undefined);
+});
+
 test('a transient formatting failure retries only formatting with the in-memory research result', async () => {
   const transient = Object.assign(new Error('temporary'), { status: 503 });
   const groundedText = 'Grounded facts retained only for this request.';

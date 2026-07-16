@@ -17,6 +17,11 @@ const {
 } = require('./connectionHealth.service');
 const { createObserver } = require('../utils/observability');
 const { runtimeSupport } = require('./adapters');
+const {
+  actorFromRuntimeActor,
+  assertAuthorized,
+  resourceFromConnection,
+} = require('./authorization.service');
 
 const INSTALL_KEY_PATTERN = /^agentpass_install_[A-Za-z0-9_-]{32,}$/;
 const CREDENTIAL_TYPES = ['api_key', 'bearer_token'];
@@ -99,6 +104,13 @@ function serializeCapability(capability) {
     inputSchema: capability.inputSchema,
     outputSchema: capability.outputSchema,
     riskLevel: capability.riskLevel,
+    classification: capability.classification || 'UNCLASSIFIED',
+    category: capability.category || 'UNCLASSIFIED',
+    sideEffect: capability.sideEffect || 'UNKNOWN',
+    requiredPermission: capability.requiredPermission,
+    retrySafety: capability.retrySafety,
+    cancellationSupport: capability.cancellationSupport,
+    idempotencySupport: capability.idempotencySupport,
   };
 }
 
@@ -573,6 +585,25 @@ function validateCredentialInput(body, passportAuth) {
 async function storeConnectionCredential(connectionId, body, requestId) {
   const { connection, identity } = await findOwnedConnection(connectionId, body);
   const snapshot = connection.resolvedPassportSnapshot || {};
+  await assertAuthorized(
+    actorFromRuntimeActor(
+      {
+        actorType: 'user',
+        actorId: identity.receivingUserId,
+        receivingWorkspaceId: identity.receivingWorkspaceId,
+        receivingUserId: identity.receivingUserId,
+      },
+      connection,
+    ),
+    'credential.rotate',
+    resourceFromConnection(connection),
+    {
+      requestId,
+      allowLegacyOwner: true,
+      trustedConnection: connection,
+      trustedPassport: { ...snapshot, _id: connection.passportId },
+    },
+  );
   const validated = validateCredentialInput(body, snapshot.auth);
   const credential = await Credential.create({
     connectionId: connection._id,
@@ -747,6 +778,26 @@ function healthTarget(connection) {
 
 async function checkConnectionHealth(connectionId, body, requestId) {
   const { connection, identity } = await findOwnedConnection(connectionId, body);
+  const snapshot = connection.resolvedPassportSnapshot || {};
+  await assertAuthorized(
+    actorFromRuntimeActor(
+      {
+        actorType: 'user',
+        actorId: identity.receivingUserId,
+        receivingWorkspaceId: identity.receivingWorkspaceId,
+        receivingUserId: identity.receivingUserId,
+      },
+      connection,
+    ),
+    'connection.read',
+    resourceFromConnection(connection),
+    {
+      requestId,
+      allowLegacyOwner: true,
+      trustedConnection: connection,
+      trustedPassport: { ...snapshot, _id: connection.passportId },
+    },
+  );
   const target = healthTarget(connection);
   const headers = await credentialHeadersForConnection(connection, undefined, {
     allowMissing: true,
