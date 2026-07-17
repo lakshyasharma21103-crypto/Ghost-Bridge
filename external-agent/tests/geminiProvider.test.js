@@ -9,6 +9,7 @@ const {
   mapGeminiError,
 } = require('../src/providers/gemini.provider');
 const {
+  GEMINI_API_MODES,
   extractGeminiSources,
   inspectGeminiResponseShape,
   requireGeminiSources,
@@ -669,8 +670,14 @@ test('documented grounding chunks extract web.uri and web.title', () => {
     requestId: undefined,
     operation: 'grounded_research',
     model: undefined,
+    apiMode: 'models.generateContent',
     candidateCount: 1,
     candidateFinishReasons: ['STOP'],
+    finishReason: 'STOP',
+    responseStepTypes: [],
+    googleSearchCallCount: 0,
+    googleSearchResultCount: 0,
+    citationAnnotationCount: 0,
     contentPartCount: 1,
     groundingMetadataPresent: true,
     groundingMetadataCount: 1,
@@ -686,6 +693,109 @@ test('documented grounding chunks extract web.uri and web.title', () => {
     searchEntryPointPresent: true,
     usageMetadataKeys: ['promptTokenCount', 'toolUsePromptTokenCount'],
   });
+});
+
+test('Interactions responses use search steps and url_citation annotations only', () => {
+  const response = {
+    status: 'completed',
+    output_text: 'Current answer with a generated URL https://invented.example/not-a-citation',
+    steps: [
+      {
+        type: 'google_search_call',
+        id: 'search_call_1',
+        arguments: { queries: ['private query must not be logged'] },
+      },
+      {
+        type: 'google_search_result',
+        call_id: 'search_call_1',
+        result: [{ search_suggestions: 'private provider search result' }],
+      },
+      {
+        type: 'model_output',
+        content: [
+          {
+            type: 'text',
+            text: 'Private answer content.',
+            annotations: [
+              {
+                type: 'url_citation',
+                url: 'https://official.example/current-report?utm_source=search',
+                title: 'Official current report',
+                start_index: 0,
+                end_index: 7,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const options = { apiMode: GEMINI_API_MODES.INTERACTIONS };
+
+  assert.deepEqual(extractGeminiSources(response, options), [
+    { title: 'Official current report', url: 'https://official.example/current-report' },
+  ]);
+  assert.deepEqual(inspectGeminiResponseShape(response, options), {
+    requestId: undefined,
+    operation: 'grounded_research',
+    model: undefined,
+    apiMode: 'interactions.create',
+    candidateCount: 0,
+    candidateFinishReasons: [],
+    finishReason: '[unavailable]',
+    responseStepTypes: ['google_search_call', 'google_search_result', 'model_output'],
+    googleSearchCallCount: 1,
+    googleSearchResultCount: 1,
+    citationAnnotationCount: 1,
+    contentPartCount: 1,
+    groundingMetadataPresent: false,
+    groundingMetadataCount: 0,
+    groundingMetadataKeys: [],
+    webSearchQueryCount: 0,
+    groundingChunkCount: 0,
+    groundingSupportCount: 0,
+    searchEntryPointPresent: false,
+    usageMetadataKeys: [],
+  });
+  assert.doesNotMatch(
+    JSON.stringify(inspectGeminiResponseShape(response, options)),
+    /private|official\.example|invented\.example/i,
+  );
+});
+
+test('Interactions generated URLs without provider citation annotations are rejected', () => {
+  const response = {
+    output_text: 'https://invented.example/top-level-output',
+    steps: [
+      { type: 'google_search_call', id: 'search_call_1', arguments: { queries: ['current fact'] } },
+      {
+        type: 'google_search_result',
+        call_id: 'search_call_1',
+        result: [{ search_suggestions: 'provider search UI content' }],
+      },
+      {
+        type: 'model_output',
+        content: [
+          {
+            type: 'text',
+            text: 'Generated link: https://invented.example/answer-text-only',
+            annotations: [],
+          },
+        ],
+      },
+    ],
+  };
+  const options = { apiMode: GEMINI_API_MODES.INTERACTIONS };
+
+  assert.deepEqual(extractGeminiSources(response, options), []);
+  assert.throws(
+    () => requireGeminiSources(response, options),
+    (error) =>
+      error.code === 'GEMINI_GROUNDING_METADATA_MISSING' &&
+      error.diagnostics.googleSearchCallCount === 1 &&
+      error.diagnostics.googleSearchResultCount === 1 &&
+      error.diagnostics.citationAnnotationCount === 0,
+  );
 });
 
 test('source extraction inspects all candidates and supports SDK snake-case metadata', () => {
@@ -841,8 +951,15 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
   );
   assert.ok(shapeLog);
   assert.equal(shapeLog.fields.requestId, 'req_safe-shape');
+  assert.equal(shapeLog.fields.apiMode, 'models.generateContent');
+  assert.equal(shapeLog.fields.candidateCount, 1);
+  assert.deepEqual(shapeLog.fields.responseStepTypes, []);
+  assert.equal(shapeLog.fields.googleSearchCallCount, 0);
+  assert.equal(shapeLog.fields.googleSearchResultCount, 0);
+  assert.equal(shapeLog.fields.citationAnnotationCount, 0);
   assert.equal(shapeLog.fields.groundingMetadataPresent, true);
   assert.equal(shapeLog.fields.groundingChunkCount, 1);
+  assert.equal(shapeLog.fields.finishReason, 'STOP');
   assert.equal(shapeLog.fields.webSearchQueryCount, 1);
   const serializedLogs = JSON.stringify(logger.entries);
   for (const forbidden of [
@@ -859,8 +976,11 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
   }
 });
 
-test('missing grounding metadata fails without fabricated citations', async () => {
-  const client = fakeClient([candidate('Ungrounded answer.')]);
+test('two successful responses without search evidence fail without fabricated citations', async () => {
+  const client = fakeClient([
+    candidate('First ungrounded answer with https://invented.example/first.'),
+    candidate('Second ungrounded answer with https://invented.example/second.'),
+  ]);
   const provider = new GeminiProvider(TEST_CONFIG, {
     client,
   });
@@ -871,10 +991,66 @@ test('missing grounding metadata fails without fabricated citations', async () =
       error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED' &&
       error.internalCode === 'GEMINI_GROUNDING_METADATA_MISSING' &&
       error.operation === 'grounded_research' &&
+      error.apiMode === 'models.generateContent' &&
+      error.researchAttemptCount === 2 &&
+      error.groundingFallbackUsed === true &&
       error.groundingMetadataPresent === false &&
-      error.groundingChunkCount === 0,
+      error.groundingChunkCount === 0 &&
+      error.googleSearchCallCount === 0 &&
+      error.citationAnnotationCount === 0,
   );
-  assert.equal(client.calls.length, 1);
+  assert.equal(client.calls.length, 2);
+  assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
+  assert.deepEqual(client.calls[1].config.tools, [{ googleSearch: {} }]);
+});
+
+test('an ungrounded successful response gets one grounding-specific fallback', async () => {
+  const logger = memoryLogger();
+  const client = fakeClient([
+    candidate('First response has no provider grounding evidence.'),
+    candidate('Recent verifiable facts from Search.', {
+      sources: [
+        { title: 'Official one', uri: 'https://one.example/recent' },
+        { title: 'Official two', uri: 'https://two.example/recent' },
+      ],
+    }),
+    candidate(JSON.stringify({ summary: 'Concise grounded fallback result.' })),
+  ]);
+  const attemptIds = ['attempt_primary', 'attempt_grounding_fallback', 'attempt_formatting'];
+  const provider = new GeminiProvider(TEST_CONFIG, {
+    client,
+    logger,
+    attemptId: () => attemptIds.shift(),
+  });
+
+  const result = await provider.research({
+    topic: 'Current facts requiring live verification',
+    requestId: 'req_grounding-fallback',
+  });
+
+  assert.equal(result.summary, 'Concise grounded fallback result.');
+  assert.equal(result.researchDiagnostics.attemptCount, 2);
+  assert.equal(result.researchDiagnostics.groundingFallbackUsed, true);
+  assert.equal(result.sourceReferences.length, 2);
+  assert.equal(client.calls.length, 3);
+  assert.match(client.calls[1].config.systemInstruction, /grounding fallback/i);
+  assert.match(client.calls[1].config.systemInstruction, /execute Google Search/i);
+  assert.match(client.calls[1].config.systemInstruction, /recent, independently verifiable facts/i);
+  const researchStarts = logger.entries.filter(
+    (entry) =>
+      entry.fields.event === 'gemini.attempt.started' &&
+      entry.fields.operation === 'grounded_research',
+  );
+  assert.deepEqual(
+    researchStarts.map((entry) => ({
+      attemptId: entry.fields.attemptId,
+      groundingFallback: entry.fields.groundingFallback,
+    })),
+    [
+      { attemptId: 'attempt_primary', groundingFallback: false },
+      { attemptId: 'attempt_grounding_fallback', groundingFallback: true },
+    ],
+  );
 });
 
 test('timeout and rate-limit failures map to stable safe codes', () => {
@@ -1250,6 +1426,7 @@ test('503 followed by success uses one fallback grounded-research profile', asyn
     attemptCount: 2,
     attemptDurationsMs: result.researchDiagnostics.attemptDurationsMs,
     fallbackProfileUsed: true,
+    groundingFallbackUsed: false,
     finalProviderStatus: 'OK',
     groundingMetadataCount: 1,
   });
@@ -1260,11 +1437,8 @@ test('503 followed by success uses one fallback grounded-research profile', asyn
   assert.equal(client.calls[2].config.tools, undefined);
   assert.equal(client.calls[0].config.maxOutputTokens, 512);
   assert.equal(client.calls[1].config.maxOutputTokens, 256);
-  assert.equal(
-    client.calls[1].config.systemInstruction.length <
-      client.calls[0].config.systemInstruction.length,
-    true,
-  );
+  assert.match(client.calls[1].config.systemInstruction, /at most 2 one-line records/i);
+  assert.doesNotMatch(client.calls[1].config.systemInstruction, /grounding fallback/i);
   assert.equal(client.calls[1].contents.length < client.calls[0].contents.length, true);
   const researchAttempts = logger.entries.filter(
     (entry) =>

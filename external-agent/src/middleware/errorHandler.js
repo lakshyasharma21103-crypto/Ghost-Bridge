@@ -3,6 +3,27 @@ const { safeLogPayload } = require('../utils/logger');
 const { isRetryableError } = require('../utils/retryability');
 
 const SAFE_GEMINI_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
+const SAFE_GEMINI_API_MODES = new Set(['models.generateContent', 'interactions.create']);
+const SAFE_GEMINI_STEP_TYPES = new Set([
+  '[unavailable]',
+  'code_execution_call',
+  'code_execution_result',
+  'file_search_call',
+  'file_search_result',
+  'function_call',
+  'function_result',
+  'google_maps_call',
+  'google_maps_result',
+  'google_search_call',
+  'google_search_result',
+  'mcp_server_tool_call',
+  'mcp_server_tool_result',
+  'model_output',
+  'thought',
+  'url_context_call',
+  'url_context_result',
+  'user_input',
+]);
 const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
@@ -16,6 +37,7 @@ const SAFE_LIFECYCLE_REASONS = Object.freeze({
   SERVICE_SHUTDOWN: 'SERVICE_SHUTDOWN',
 });
 const SAFE_RETRY_REASONS = new Set([
+  'GROUNDING_EVIDENCE_MISSING',
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'NOT_RETRYABLE',
   'PROVIDER_DEADLINE_EXCEEDED',
@@ -106,6 +128,28 @@ function errorHandler(logger) {
     const sourceDiagnostics =
       normalized.code === 'GEMINI_SOURCE_EXTRACTION_FAILED'
         ? {
+            ...(SAFE_GEMINI_API_MODES.has(normalized.apiMode)
+              ? { apiMode: normalized.apiMode }
+              : {}),
+            ...(Number.isInteger(normalized.candidateCount) && normalized.candidateCount >= 0
+              ? { candidateCount: normalized.candidateCount }
+              : {}),
+            ...(Array.isArray(normalized.responseStepTypes) &&
+            normalized.responseStepTypes.every((type) => SAFE_GEMINI_STEP_TYPES.has(type))
+              ? { responseStepTypes: normalized.responseStepTypes }
+              : {}),
+            ...(Number.isInteger(normalized.googleSearchCallCount) &&
+            normalized.googleSearchCallCount >= 0
+              ? { googleSearchCallCount: normalized.googleSearchCallCount }
+              : {}),
+            ...(Number.isInteger(normalized.googleSearchResultCount) &&
+            normalized.googleSearchResultCount >= 0
+              ? { googleSearchResultCount: normalized.googleSearchResultCount }
+              : {}),
+            ...(Number.isInteger(normalized.citationAnnotationCount) &&
+            normalized.citationAnnotationCount >= 0
+              ? { citationAnnotationCount: normalized.citationAnnotationCount }
+              : {}),
             ...(typeof normalized.groundingMetadataPresent === 'boolean'
               ? { groundingMetadataPresent: normalized.groundingMetadataPresent }
               : {}),
@@ -120,6 +164,11 @@ function errorHandler(logger) {
             ...(Number.isInteger(normalized.groundingMetadataCount) &&
             normalized.groundingMetadataCount >= 0
               ? { groundingMetadataCount: normalized.groundingMetadataCount }
+              : {}),
+            ...(normalized.finishReason === '[unavailable]' ||
+            (typeof normalized.finishReason === 'string' &&
+              /^[A-Z][A-Z0-9_]{0,63}$/.test(normalized.finishReason))
+              ? { finishReason: normalized.finishReason }
               : {}),
           }
         : {};
@@ -197,6 +246,9 @@ function errorHandler(logger) {
           : {}),
         ...(typeof normalized.fallbackResearchProfileUsed === 'boolean'
           ? { fallbackResearchProfileUsed: normalized.fallbackResearchProfileUsed }
+          : {}),
+        ...(typeof normalized.groundingFallbackUsed === 'boolean'
+          ? { groundingFallbackUsed: normalized.groundingFallbackUsed }
           : {}),
         ...(SAFE_FINAL_PROVIDER_STATUSES.has(normalized.finalProviderStatus)
           ? { finalProviderStatus: normalized.finalProviderStatus }

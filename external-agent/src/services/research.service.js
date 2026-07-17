@@ -13,6 +13,7 @@ const providerResultSchema = z
         attemptCount: z.number().int().min(1).max(2),
         attemptDurationsMs: z.array(z.number().int().nonnegative()).min(1).max(2),
         fallbackProfileUsed: z.boolean(),
+        groundingFallbackUsed: z.boolean(),
         finalProviderStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
         groundingMetadataCount: z.number().int().nonnegative(),
       })
@@ -71,6 +72,7 @@ class ResearchService {
           researchAttemptCount: result.researchDiagnostics.attemptCount,
           researchAttemptDurationsMs: result.researchDiagnostics.attemptDurationsMs,
           fallbackResearchProfileUsed: result.researchDiagnostics.fallbackProfileUsed,
+          groundingFallbackUsed: result.researchDiagnostics.groundingFallbackUsed,
           finalProviderStatus: result.researchDiagnostics.finalProviderStatus,
           groundingMetadataCount: result.researchDiagnostics.groundingMetadataCount,
         },

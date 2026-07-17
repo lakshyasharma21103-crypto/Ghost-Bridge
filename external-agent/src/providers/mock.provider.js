@@ -26,6 +26,7 @@ class MockProvider extends AIProvider {
         attemptCount: 1,
         attemptDurationsMs: [0],
         fallbackProfileUsed: false,
+        groundingFallbackUsed: false,
         finalProviderStatus: 'OK',
         groundingMetadataCount: 0,
       },

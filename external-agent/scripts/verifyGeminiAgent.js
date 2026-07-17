@@ -91,6 +91,16 @@ function report(detail) {
   console.log(`PASS Gemini agent: ${detail}`);
 }
 
+function verificationResearchTopic(now = new Date()) {
+  const currentDate = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const date = currentDate.toISOString().slice(0, 10);
+  return (
+    'Use Google Search to report the current latest stable release version and official release ' +
+    `date for both Node.js and Python as of ${date}. Use at least two genuine web sources, ` +
+    'give only source-backed factual findings, and keep the output concise.'
+  );
+}
+
 async function verify() {
   console.log('This verification performs one live Gemini research request.');
   assert(apiKey?.trim(), 'GEMINI_API_KEY is required.');
@@ -120,7 +130,7 @@ async function verify() {
         'X-Request-Id': requestId,
       },
       body: JSON.stringify({
-        topic: 'What are the current approaches to secure AI-agent interoperability?',
+        topic: verificationResearchTopic(),
       }),
       signal: controller.signal,
     });
@@ -145,6 +155,30 @@ async function verify() {
         `Application error code: ${error.code || '[unavailable]'}`,
         `Safe message: ${error.message || '[unavailable]'}`,
         `Operation: ${error.operation || '[unavailable]'}`,
+        `API mode: ${error.apiMode || '[unavailable]'}`,
+        `Response candidate count: ${
+          Number.isInteger(error.candidateCount) ? error.candidateCount : '[unavailable]'
+        }`,
+        `Response step types: ${
+          Array.isArray(error.responseStepTypes)
+            ? error.responseStepTypes.join(', ')
+            : '[unavailable]'
+        }`,
+        `Google Search call count: ${
+          Number.isInteger(error.googleSearchCallCount)
+            ? error.googleSearchCallCount
+            : '[unavailable]'
+        }`,
+        `Google Search result count: ${
+          Number.isInteger(error.googleSearchResultCount)
+            ? error.googleSearchResultCount
+            : '[unavailable]'
+        }`,
+        `Citation annotation count: ${
+          Number.isInteger(error.citationAnnotationCount)
+            ? error.citationAnnotationCount
+            : '[unavailable]'
+        }`,
         `Safe timeout reason: ${error.reason || '[unavailable]'}`,
         `Grounding metadata present: ${
           typeof error.groundingMetadataPresent === 'boolean'
@@ -172,6 +206,12 @@ async function verify() {
             ? error.fallbackResearchProfileUsed
             : '[unavailable]'
         }`,
+        `Grounding fallback used: ${
+          typeof error.groundingFallbackUsed === 'boolean'
+            ? error.groundingFallbackUsed
+            : '[unavailable]'
+        }`,
+        `Finish reason: ${error.finishReason || '[unavailable]'}`,
         `Final provider status: ${safeFinalProviderStatus(error.finalProviderStatus) || '[unavailable]'}`,
         `Genuine grounding metadata count: ${
           Number.isInteger(error.groundingMetadataCount)
@@ -193,8 +233,8 @@ async function verify() {
   assert(Array.isArray(body?.response?.sources), 'Sources is not an array.');
   if (webSearchEnabled) {
     assert(
-      body.response.sources.some((source) => /^https:\/\//i.test(source)),
-      'No genuine HTTPS grounding source was returned.',
+      body.response.sources.filter((source) => /^https:\/\//i.test(source)).length >= 2,
+      'Fewer than two genuine HTTPS grounding sources were returned.',
     );
   }
   assert(
@@ -226,6 +266,10 @@ async function verify() {
       runtime.fallbackResearchProfileUsed === (runtime.researchAttemptCount === 2),
     'Fallback research profile reporting is invalid.',
   );
+  assert(
+    typeof runtime.groundingFallbackUsed === 'boolean',
+    'Grounding fallback reporting is invalid.',
+  );
   assert(runtime.finalProviderStatus === 'OK', 'Final Gemini provider status is not OK.');
   if (webSearchEnabled) {
     assert(
@@ -248,6 +292,7 @@ async function verify() {
   report(`research attempt count ${runtime.researchAttemptCount}`);
   report(`research attempt durations ms ${runtime.researchAttemptDurationsMs.join(', ')}`);
   report(`fallback research profile used ${runtime.fallbackResearchProfileUsed}`);
+  report(`grounding fallback used ${runtime.groundingFallbackUsed}`);
   report(`final provider status ${runtime.finalProviderStatus}`);
   report(`genuine grounding metadata count ${runtime.groundingMetadataCount}`);
 }
@@ -259,4 +304,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { resolveVerifierTimeoutMs, verifierTimeoutMs };
+module.exports = { resolveVerifierTimeoutMs, verificationResearchTopic, verifierTimeoutMs };

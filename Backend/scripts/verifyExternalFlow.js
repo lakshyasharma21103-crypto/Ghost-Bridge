@@ -54,6 +54,27 @@ const SAFE_READINESS_STATUSES = new Set(['ready', 'not_ready']);
 const SAFE_PROVIDER_NAMES = new Set(['gemini', 'mock']);
 const SAFE_LIFECYCLE_STATUSES = new Set(['starting', 'ready', 'draining', 'stopped']);
 const SAFE_GEMINI_OPERATIONS = new Set(['grounded_research', 'structured_formatting']);
+const SAFE_GEMINI_API_MODES = new Set(['models.generateContent', 'interactions.create']);
+const SAFE_GEMINI_STEP_TYPES = new Set([
+  '[unavailable]',
+  'code_execution_call',
+  'code_execution_result',
+  'file_search_call',
+  'file_search_result',
+  'function_call',
+  'function_result',
+  'google_maps_call',
+  'google_maps_result',
+  'google_search_call',
+  'google_search_result',
+  'mcp_server_tool_call',
+  'mcp_server_tool_result',
+  'model_output',
+  'thought',
+  'url_context_call',
+  'url_context_result',
+  'user_input',
+]);
 const SAFE_FINAL_PROVIDER_STATUSES = new Set([
   'ABORTED',
   'ALREADY_EXISTS',
@@ -84,9 +105,10 @@ function verificationResearchTopic(now = new Date()) {
   const currentDate = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
   const date = currentDate.toISOString().slice(0, 10);
   return (
-    'Using current official web sources, identify the latest published release/version status ' +
+    'Using Google Search and at least two genuine current official web sources, identify the ' +
+    'latest published release/version status ' +
     'and publication dates of the Model Context Protocol and Agent2Agent Protocol ' +
-    `specifications as of ${date}`
+    `specifications as of ${date}. Give only source-backed factual findings and keep the output concise.`
   );
 }
 
@@ -120,18 +142,26 @@ class ExternalFlowVerificationError extends Error {
       'providerName',
       'draining',
       'sourceExtractionCode',
+      'apiMode',
+      'candidateCount',
+      'responseStepTypes',
+      'googleSearchCallCount',
+      'googleSearchResultCount',
+      'citationAnnotationCount',
       'groundingMetadataPresent',
       'groundingChunkCount',
       'webSearchQueryCount',
       'researchAttemptCount',
       'researchAttemptDurationsMs',
       'fallbackResearchProfileUsed',
+      'groundingFallbackUsed',
       'finalProviderStatus',
       'groundingMetadataCount',
       'requestId',
       'traceId',
       'durationMs',
       'operation',
+      'finishReason',
       'timeoutReason',
       'configuredTimeoutMs',
       'connectionId',
@@ -184,6 +214,25 @@ function safeGeminiOperation(value) {
   return SAFE_GEMINI_OPERATIONS.has(value) ? value : undefined;
 }
 
+function safeGeminiApiMode(value) {
+  return SAFE_GEMINI_API_MODES.has(value) ? value : undefined;
+}
+
+function safeGeminiStepTypes(value) {
+  return Array.isArray(value) &&
+    value.length <= 32 &&
+    value.every((type) => SAFE_GEMINI_STEP_TYPES.has(type))
+    ? value
+    : undefined;
+}
+
+function safeFinishReason(value) {
+  return value === '[unavailable]' ||
+    (typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(value))
+    ? value
+    : undefined;
+}
+
 function safeConfiguredTimeoutMs(value) {
   return Number.isInteger(value) && value >= 1_000 && value <= 600_000 ? value : undefined;
 }
@@ -221,12 +270,19 @@ function sourceExtractionDiagnostics(logChunks, identifiers = {}) {
 
     return {
       sourceExtractionCode: safeSourceExtractionCode(record.internalCode),
+      apiMode: safeGeminiApiMode(record.apiMode),
+      candidateCount: safeDiagnosticCount(record.candidateCount),
+      responseStepTypes: safeGeminiStepTypes(record.responseStepTypes),
+      googleSearchCallCount: safeDiagnosticCount(record.googleSearchCallCount),
+      googleSearchResultCount: safeDiagnosticCount(record.googleSearchResultCount),
+      citationAnnotationCount: safeDiagnosticCount(record.citationAnnotationCount),
       groundingMetadataPresent:
         typeof record.groundingMetadataPresent === 'boolean'
           ? record.groundingMetadataPresent
           : undefined,
       groundingChunkCount: safeDiagnosticCount(record.groundingChunkCount),
       webSearchQueryCount: safeDiagnosticCount(record.webSearchQueryCount),
+      finishReason: safeFinishReason(record.finishReason),
     };
   }
 
@@ -268,6 +324,12 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
       providerName: safeProviderName(errorField(error, 'providerName')),
       draining: typeof rawDraining === 'boolean' ? rawDraining : undefined,
       sourceExtractionCode: safeSourceExtractionCode(errorField(error, 'sourceExtractionCode')),
+      apiMode: safeGeminiApiMode(errorField(error, 'apiMode')),
+      candidateCount: safeDiagnosticCount(errorField(error, 'candidateCount')),
+      responseStepTypes: safeGeminiStepTypes(errorField(error, 'responseStepTypes')),
+      googleSearchCallCount: safeDiagnosticCount(errorField(error, 'googleSearchCallCount')),
+      googleSearchResultCount: safeDiagnosticCount(errorField(error, 'googleSearchResultCount')),
+      citationAnnotationCount: safeDiagnosticCount(errorField(error, 'citationAnnotationCount')),
       groundingMetadataPresent:
         typeof rawGroundingMetadataPresent === 'boolean' ? rawGroundingMetadataPresent : undefined,
       groundingChunkCount: safeDiagnosticCount(errorField(error, 'groundingChunkCount')),
@@ -280,12 +342,17 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
         typeof errorField(error, 'fallbackResearchProfileUsed') === 'boolean'
           ? errorField(error, 'fallbackResearchProfileUsed')
           : undefined,
+      groundingFallbackUsed:
+        typeof errorField(error, 'groundingFallbackUsed') === 'boolean'
+          ? errorField(error, 'groundingFallbackUsed')
+          : undefined,
       finalProviderStatus: safeFinalProviderStatus(errorField(error, 'finalProviderStatus')),
       groundingMetadataCount: safeDiagnosticCount(errorField(error, 'groundingMetadataCount')),
       requestId: safeIdentifier(errorField(error, 'requestId')),
       traceId: safeIdentifier(errorField(error, 'traceId')),
       durationMs: Math.max(0, now - state.stageStartedAt),
       operation: safeGeminiOperation(errorField(error, 'operation')),
+      finishReason: safeFinishReason(errorField(error, 'finishReason')),
       timeoutReason: safeCode(rawTimeoutReason),
       configuredTimeoutMs: safeConfiguredTimeoutMs(errorField(error, 'configuredTimeoutMs')),
       connectionId:
@@ -304,6 +371,18 @@ function formatVerificationFailure(error) {
     `Provider: ${safeProviderName(error.providerName) || '[unavailable]'}`,
     `Draining: ${typeof error.draining === 'boolean' ? error.draining : '[unavailable]'}`,
     `Source extraction code: ${safeSourceExtractionCode(error.sourceExtractionCode) || '[unavailable]'}`,
+    `API mode: ${safeGeminiApiMode(error.apiMode) || '[unavailable]'}`,
+    `Response candidate count: ${safeDiagnosticCount(error.candidateCount) ?? '[unavailable]'}`,
+    `Response step types: ${safeGeminiStepTypes(error.responseStepTypes)?.join(', ') || '[none]'}`,
+    `Google Search call count: ${
+      safeDiagnosticCount(error.googleSearchCallCount) ?? '[unavailable]'
+    }`,
+    `Google Search result count: ${
+      safeDiagnosticCount(error.googleSearchResultCount) ?? '[unavailable]'
+    }`,
+    `Citation annotation count: ${
+      safeDiagnosticCount(error.citationAnnotationCount) ?? '[unavailable]'
+    }`,
     `Grounding metadata present: ${
       typeof error.groundingMetadataPresent === 'boolean'
         ? error.groundingMetadataPresent
@@ -320,6 +399,11 @@ function formatVerificationFailure(error) {
         ? error.fallbackResearchProfileUsed
         : '[unavailable]'
     }`,
+    `Grounding fallback used: ${
+      typeof error.groundingFallbackUsed === 'boolean'
+        ? error.groundingFallbackUsed
+        : '[unavailable]'
+    }`,
     `Final provider status: ${
       safeFinalProviderStatus(error.finalProviderStatus) || '[unavailable]'
     }`,
@@ -331,6 +415,7 @@ function formatVerificationFailure(error) {
     `Trace ID: ${safeIdentifier(error.traceId) || '[unavailable]'}`,
     `Duration ms: ${Number.isInteger(error.durationMs) ? error.durationMs : '[unavailable]'}`,
     `Operation: ${safeGeminiOperation(error.operation) || '[unavailable]'}`,
+    `Finish reason: ${safeFinishReason(error.finishReason) || '[unavailable]'}`,
     `Timeout reason: ${safeCode(error.timeoutReason) || '[unavailable]'}`,
     `Configured timeout ms: ${safeConfiguredTimeoutMs(error.configuredTimeoutMs) ?? '[unavailable]'}`,
     `Connection ID: ${safeIdentifier(error.connectionId) || '[unavailable]'}`,
@@ -521,6 +606,10 @@ function success(result, label, options = {}) {
       fallbackResearchProfileUsed:
         typeof result.body?.error?.fallbackResearchProfileUsed === 'boolean'
           ? result.body.error.fallbackResearchProfileUsed
+          : undefined,
+      groundingFallbackUsed:
+        typeof result.body?.error?.groundingFallbackUsed === 'boolean'
+          ? result.body.error.groundingFallbackUsed
           : undefined,
       finalProviderStatus: safeFinalProviderStatus(result.body?.error?.finalProviderStatus),
       groundingMetadataCount: safeDiagnosticCount(result.body?.error?.groundingMetadataCount),
@@ -812,7 +901,10 @@ async function verify() {
       'Invocation summary is empty.',
     );
     assert(Array.isArray(invocation.output?.sources), 'Invocation sources are absent.');
-    assert(invocation.output.sources.length > 0, 'Invocation sources are empty.');
+    assert(
+      invocation.output.sources.length >= 2,
+      'Invocation returned fewer than two grounding sources.',
+    );
     assert(
       invocation.output.sources.every((source) => {
         try {
@@ -855,6 +947,10 @@ async function verify() {
       'Invocation fallback research profile reporting is invalid.',
     );
     assert(
+      typeof researchRuntime.groundingFallbackUsed === 'boolean',
+      'Invocation grounding fallback reporting is invalid.',
+    );
+    assert(
       researchRuntime.finalProviderStatus === 'OK',
       'Invocation final Gemini provider status is not OK.',
     );
@@ -866,6 +962,7 @@ async function verify() {
     report('research attempt count', String(researchRuntime.researchAttemptCount));
     report('research attempt durations ms', researchRuntime.researchAttemptDurationsMs.join(', '));
     report('fallback research profile used', String(researchRuntime.fallbackResearchProfileUsed));
+    report('grounding fallback used', String(researchRuntime.groundingFallbackUsed));
     report('final provider status', researchRuntime.finalProviderStatus);
     report('genuine grounding metadata count', String(researchRuntime.groundingMetadataCount));
 

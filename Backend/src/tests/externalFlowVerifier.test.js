@@ -118,6 +118,10 @@ test('external-flow verifier uses a current topic that requires official web res
   const topic = verificationResearchTopic(new Date('2026-07-14T12:00:00.000Z'));
 
   assert.match(topic, /current official web sources/i);
+  assert.match(topic, /Google Search/i);
+  assert.match(topic, /at least two genuine/i);
+  assert.match(topic, /source-backed factual findings/i);
+  assert.match(topic, /concise/i);
   assert.match(topic, /latest published/i);
   assert.match(topic, /Model Context Protocol/);
   assert.match(topic, /Agent2Agent Protocol/);
@@ -407,9 +411,16 @@ test('source-extraction failures report only correlated allowlisted Gemini shape
       requestId: 'req_endpoint-test',
       traceId: 'trace_endpoint-test',
       internalCode: 'GEMINI_GROUNDING_METADATA_MISSING',
+      apiMode: 'models.generateContent',
+      candidateCount: 1,
+      responseStepTypes: [],
+      googleSearchCallCount: 0,
+      googleSearchResultCount: 0,
+      citationAnnotationCount: 0,
       groundingMetadataPresent: false,
       groundingChunkCount: 0,
       webSearchQueryCount: 0,
+      finishReason: 'STOP',
       prompt: `private prompt ${secret}`,
       sources: [`https://example.test/?token=${secret}`],
     })}\n`,
@@ -431,9 +442,16 @@ test('source-extraction failures report only correlated allowlisted Gemini shape
     }),
     {
       sourceExtractionCode: 'GEMINI_GROUNDING_METADATA_MISSING',
+      apiMode: 'models.generateContent',
+      candidateCount: 1,
+      responseStepTypes: [],
+      googleSearchCallCount: 0,
+      googleSearchResultCount: 0,
+      citationAnnotationCount: 0,
       groundingMetadataPresent: false,
       groundingChunkCount: 0,
       webSearchQueryCount: 0,
+      finishReason: 'STOP',
     },
   );
 
@@ -458,9 +476,16 @@ test('source-extraction failures report only correlated allowlisted Gemini shape
 
   assert.match(output, /Application error code: GEMINI_SOURCE_EXTRACTION_FAILED/);
   assert.match(output, /Source extraction code: GEMINI_GROUNDING_METADATA_MISSING/);
+  assert.match(output, /API mode: models\.generateContent/);
+  assert.match(output, /Response candidate count: 1/);
+  assert.match(output, /Response step types: \[none\]/);
+  assert.match(output, /Google Search call count: 0/);
+  assert.match(output, /Google Search result count: 0/);
+  assert.match(output, /Citation annotation count: 0/);
   assert.match(output, /Grounding metadata present: false/);
   assert.match(output, /Grounding chunk count: 0/);
   assert.match(output, /Web Search query count: 0/);
+  assert.match(output, /Finish reason: STOP/);
   assert.match(output, /Request ID: req_endpoint-test/);
   assert.match(output, /Trace ID: trace_endpoint-test/);
   assert.equal(output.includes(secret), false);

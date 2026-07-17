@@ -10,7 +10,10 @@ const {
   providerRequestBudget,
 } = require('../src/config/timeoutBudget');
 const { MockProvider } = require('../src/providers/mock.provider');
-const { resolveVerifierTimeoutMs } = require('../scripts/verifyGeminiAgent');
+const {
+  resolveVerifierTimeoutMs,
+  verificationResearchTopic,
+} = require('../scripts/verifyGeminiAgent');
 const { startupErrorLogFields } = require('../src/server');
 const { createLogger, safeLogPayload } = require('../src/utils/logger');
 const { redactSecrets } = require('../src/utils/redact');
@@ -272,6 +275,17 @@ test('live verifier timeout is above the external request and remains explicitly
       }),
     /must be less than RUNTIME_INVOCATION_TIMEOUT_MS/,
   );
+});
+
+test('Gemini live verifier topic requires current concise multi-source Google Search research', () => {
+  const topic = verificationResearchTopic(new Date('2026-07-17T12:00:00.000Z'));
+
+  assert.match(topic, /Google Search/i);
+  assert.match(topic, /current latest stable release/i);
+  assert.match(topic, /2026-07-17/);
+  assert.match(topic, /at least two genuine web sources/i);
+  assert.match(topic, /source-backed factual findings/i);
+  assert.match(topic, /concise/i);
 });
 
 test('formatting attempts are configurable only within the conservative bound', () => {
@@ -653,6 +667,7 @@ test('valid bearer token returns Passport-compatible mock research output', asyn
       researchAttemptCount: 1,
       researchAttemptDurationsMs: [0],
       fallbackResearchProfileUsed: false,
+      groundingFallbackUsed: false,
       finalProviderStatus: 'OK',
       groundingMetadataCount: 0,
     },

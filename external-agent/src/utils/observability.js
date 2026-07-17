@@ -47,6 +47,8 @@ function safeErrorFields(error) {
       typeof error?.fallbackResearchProfileUsed === 'boolean'
         ? error.fallbackResearchProfileUsed
         : undefined,
+    groundingFallbackUsed:
+      typeof error?.groundingFallbackUsed === 'boolean' ? error.groundingFallbackUsed : undefined,
     finalProviderStatus: error?.finalProviderStatus,
     groundingMetadataCount: error?.groundingMetadataCount,
     reason,

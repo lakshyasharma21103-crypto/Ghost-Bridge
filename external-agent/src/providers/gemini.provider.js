@@ -17,6 +17,8 @@ const {
 } = require('../prompts/research.prompt');
 const { RuntimeError, requestCancelledError } = require('../utils/errors');
 const {
+  GEMINI_API_MODES,
+  extractGeminiSources,
   inspectGeminiResponseShape,
   requireGeminiSources,
 } = require('../utils/extractGeminiSources');
@@ -30,6 +32,7 @@ const DEFAULT_RESEARCH_MAX_OUTPUT_TOKENS = 512;
 const DEFAULT_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 256;
 const DEFAULT_FORMATTING_MAX_OUTPUT_TOKENS = 1_500;
 const ATTEMPT_SCHEDULING_GRACE_MS = 100;
+const GEMINI_API_MODE = GEMINI_API_MODES.GENERATE_CONTENT;
 const TRANSIENT_TRANSPORT_CODES = new Set([
   'EAI_AGAIN',
   'ECONNABORTED',
@@ -85,6 +88,7 @@ const researchResultSchema = z
         attemptCount: z.number().int().min(1).max(2),
         attemptDurationsMs: z.array(z.number().int().nonnegative()).min(1).max(2),
         fallbackProfileUsed: z.boolean(),
+        groundingFallbackUsed: z.boolean(),
         finalProviderStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
         groundingMetadataCount: z.number().int().nonnegative(),
       })
@@ -246,6 +250,9 @@ function attachSourceDiagnostics(error, sourceError) {
 
   for (const field of [
     'candidateCount',
+    'googleSearchCallCount',
+    'googleSearchResultCount',
+    'citationAnnotationCount',
     'groundingMetadataCount',
     'groundingChunkCount',
     'webSearchQueryCount',
@@ -259,7 +266,22 @@ function attachSourceDiagnostics(error, sourceError) {
   for (const field of ['groundingMetadataPresent', 'searchEntryPointPresent']) {
     if (typeof diagnostics[field] === 'boolean') error[field] = diagnostics[field];
   }
-  for (const field of ['candidateFinishReasons', 'chunkShapeKeys', 'rejectionReasons']) {
+  if (Object.values(GEMINI_API_MODES).includes(diagnostics.apiMode)) {
+    error.apiMode = diagnostics.apiMode;
+  }
+  if (
+    diagnostics.finishReason === '[unavailable]' ||
+    (typeof diagnostics.finishReason === 'string' &&
+      /^[A-Z][A-Z0-9_]{0,63}$/.test(diagnostics.finishReason))
+  ) {
+    error.finishReason = diagnostics.finishReason;
+  }
+  for (const field of [
+    'candidateFinishReasons',
+    'responseStepTypes',
+    'chunkShapeKeys',
+    'rejectionReasons',
+  ]) {
     if (Array.isArray(diagnostics[field])) error[field] = Object.freeze([...diagnostics[field]]);
   }
   return error;
@@ -405,6 +427,7 @@ function researchTelemetry(attemptState) {
     attemptCount: attemptState.count,
     attemptDurationsMs: Object.freeze(attemptState.attempts.map((attempt) => attempt.durationMs)),
     fallbackProfileUsed: attemptState.attempts.some((attempt) => attempt.fallbackProfileUsed),
+    groundingFallbackUsed: attemptState.attempts.some((attempt) => attempt.groundingFallback),
     finalProviderStatus: attemptState.finalProviderStatus || 'UNKNOWN',
     groundingMetadataCount: attemptState.groundingMetadataCount || 0,
   });
@@ -415,6 +438,7 @@ function attachResearchTelemetry(error, telemetry) {
   error.researchAttemptCount = telemetry.attemptCount;
   error.researchAttemptDurationsMs = telemetry.attemptDurationsMs;
   error.fallbackResearchProfileUsed = telemetry.fallbackProfileUsed;
+  error.groundingFallbackUsed = telemetry.groundingFallbackUsed;
   error.finalProviderStatus = telemetry.finalProviderStatus;
   error.groundingMetadataCount = telemetry.groundingMetadataCount;
   return error;
@@ -601,6 +625,8 @@ class GeminiProvider extends AIProvider {
       );
       attemptState.lastConfiguredTimeoutMs = configuredAttemptTimeoutMs;
       const fallbackProfileUsed = operation === 'grounded_research' && attemptNumber === 2;
+      const groundingFallback =
+        operation === 'grounded_research' && attemptState.groundingFallbackPending === true;
       let providerAttemptId = this.attemptId();
       if (
         typeof providerAttemptId !== 'string' ||
@@ -630,6 +656,8 @@ class GeminiProvider extends AIProvider {
           attemptNumber,
           configuredTimeoutMs: configuredAttemptTimeoutMs,
           fallbackProfileUsed,
+          groundingFallback,
+          apiMode: GEMINI_API_MODE,
           status: 'started',
         },
         'Gemini attempt started',
@@ -641,6 +669,7 @@ class GeminiProvider extends AIProvider {
             attemptId: providerAttemptId,
             attemptNumber,
             fallbackProfileUsed,
+            groundingFallback,
           }),
         );
       } catch (error) {
@@ -659,20 +688,74 @@ class GeminiProvider extends AIProvider {
       const durationMs = Math.max(0, Math.round(this.now() - attemptStartedAt));
       const shape =
         !failure && operation === 'grounded_research'
-          ? inspectGeminiResponseShape(response)
+          ? inspectGeminiResponseShape(response, { apiMode: GEMINI_API_MODE })
           : undefined;
       const groundingMetadataCount = shape?.groundingMetadataCount || 0;
+      const groundingEvidenceMissing =
+        !failure &&
+        operation === 'grounded_research' &&
+        this.config.webSearchEnabled &&
+        !isBlockedResponse(response) &&
+        extractGeminiSources(response, {
+          apiMode: GEMINI_API_MODE,
+          maxSources: this.config.maxSources,
+          forbiddenValues: [this.config.apiKey],
+        }).length === 0;
+      const groundingFallbackAllowed =
+        groundingEvidenceMissing && attemptNumber === 1 && attemptNumber < boundedMaxAttempts;
+
+      if (groundingFallbackAllowed) {
+        attemptState.attempts.push({
+          attemptNumber,
+          durationMs,
+          fallbackProfileUsed,
+          groundingFallback,
+        });
+        attemptState.finalProviderStatus = 'OK';
+        attemptState.groundingMetadataCount = groundingMetadataCount;
+        attemptState.retryReason = 'GROUNDING_EVIDENCE_MISSING';
+        attemptState.groundingFallbackPending = true;
+        this.logger.warn(
+          {
+            ...shape,
+            event: 'gemini.attempt.completed',
+            version: SERVICE_VERSION,
+            timestamp: new Date().toISOString(),
+            traceId,
+            requestId: safeRequestId(requestId),
+            invocationId,
+            operation,
+            attemptId: providerAttemptId,
+            attemptNumber,
+            durationMs,
+            configuredTimeoutMs: configuredAttemptTimeoutMs,
+            retryReason: 'GROUNDING_EVIDENCE_MISSING',
+            retryDelayMs: 0,
+            providerStatus: 'OK',
+            groundingMetadataAvailable: groundingMetadataCount > 0,
+            groundingMetadataCount,
+            fallbackProfileUsed,
+            groundingFallback,
+            groundingFallbackScheduled: true,
+            status: 'completed',
+          },
+          'Gemini attempt completed without grounding evidence',
+        );
+        continue;
+      }
 
       if (!failure) {
         attemptState.attempts.push({
           attemptNumber,
           durationMs,
           fallbackProfileUsed,
+          groundingFallback,
         });
         attemptState.finalProviderStatus = 'OK';
         attemptState.groundingMetadataCount = groundingMetadataCount;
         this.logger.info(
           {
+            ...(shape || {}),
             event: 'gemini.attempt.completed',
             version: SERVICE_VERSION,
             timestamp: new Date().toISOString(),
@@ -690,6 +773,7 @@ class GeminiProvider extends AIProvider {
             groundingMetadataAvailable: groundingMetadataCount > 0,
             groundingMetadataCount,
             fallbackProfileUsed,
+            groundingFallback,
             status: 'completed',
           },
           'Gemini attempt completed',
@@ -706,7 +790,12 @@ class GeminiProvider extends AIProvider {
       const retryAllowed = retryCandidate && !retryBudgetExhausted;
       const providerStatus = attemptProviderStatus(failure);
 
-      attemptState.attempts.push({ attemptNumber, durationMs, fallbackProfileUsed });
+      attemptState.attempts.push({
+        attemptNumber,
+        durationMs,
+        fallbackProfileUsed,
+        groundingFallback,
+      });
       attemptState.finalProviderStatus = providerStatus;
       attemptState.retryReason = decision.reason;
       if (retryBudgetExhausted) failure.retryBudgetExhausted = true;
@@ -730,6 +819,8 @@ class GeminiProvider extends AIProvider {
           groundingMetadataAvailable: false,
           groundingMetadataCount: 0,
           fallbackProfileUsed,
+          groundingFallback,
+          apiMode: GEMINI_API_MODE,
           status: 'failed',
         },
         'Gemini attempt completed',
@@ -763,6 +854,7 @@ class GeminiProvider extends AIProvider {
       finalProviderStatus: undefined,
       groundingMetadataCount: 0,
       retryReason: undefined,
+      groundingFallbackPending: false,
     };
     let operationError;
 
@@ -828,6 +920,7 @@ class GeminiProvider extends AIProvider {
         operation,
         status: operationError ? 'failed' : 'completed',
         model: safeModelName(this.config.model),
+        apiMode: operation === 'grounded_research' ? GEMINI_API_MODE : undefined,
         durationMs: Math.max(0, Math.round(this.now() - startedAt)),
         configuredTimeoutMs: attemptTimeoutMs,
         operationTimeoutMs,
@@ -839,6 +932,7 @@ class GeminiProvider extends AIProvider {
         providerStatus: attemptState.finalProviderStatus || 'UNKNOWN',
         groundingMetadataAvailable: attemptState.groundingMetadataCount > 0,
         groundingMetadataCount: attemptState.groundingMetadataCount,
+        groundingFallbackUsed: attemptState.attempts.some((attempt) => attempt.groundingFallback),
       };
       const providerHttpStatus =
         operationError instanceof RuntimeError ? undefined : numericStatus(operationError);
@@ -895,7 +989,10 @@ class GeminiProvider extends AIProvider {
             config: {
               abortSignal: operationSignal,
               httpOptions: sdkHttpOptions(attemptTimeoutMs),
-              systemInstruction: buildResearchInstruction({ profile }),
+              systemInstruction: buildResearchInstruction({
+                profile,
+                groundingFallback: attemptContext.groundingFallback,
+              }),
               maxOutputTokens: attemptContext.fallbackProfileUsed
                 ? this.researchFallbackMaxOutputTokens
                 : this.researchMaxOutputTokens,
@@ -916,6 +1013,7 @@ class GeminiProvider extends AIProvider {
         requestId: safeRequestId(requestId),
         invocationId,
         model: safeModelName(this.config.model),
+        apiMode: GEMINI_API_MODE,
       });
       this.logger.info(
         {
@@ -931,20 +1029,11 @@ class GeminiProvider extends AIProvider {
           operation: 'grounded_research',
         });
       }
-      const groundedText = visibleResponseText(researchResponse);
-      if (!groundedText) {
-        throw attachOperationDiagnostics(
-          geminiError(
-            this.config.webSearchEnabled ? 'GEMINI_WEB_SEARCH_FAILED' : 'GEMINI_UNKNOWN_ERROR',
-          ),
-          { operation: 'grounded_research' },
-        );
-      }
-
       let sourceReferences = [];
       if (this.config.webSearchEnabled) {
         try {
           sourceReferences = requireGeminiSources(researchResponse, {
+            apiMode: GEMINI_API_MODE,
             maxSources: this.config.maxSources,
             forbiddenValues: [this.config.apiKey],
             diagnosticContext: {
@@ -971,6 +1060,16 @@ class GeminiProvider extends AIProvider {
           }
           throw attachResearchTelemetry(mapGeminiError(error), groundedResearchTelemetry);
         }
+      }
+
+      const groundedText = visibleResponseText(researchResponse);
+      if (!groundedText) {
+        throw attachOperationDiagnostics(
+          geminiError(
+            this.config.webSearchEnabled ? 'GEMINI_WEB_SEARCH_FAILED' : 'GEMINI_UNKNOWN_ERROR',
+          ),
+          { operation: 'grounded_research' },
+        );
       }
 
       throwIfParentAborted(signal);
