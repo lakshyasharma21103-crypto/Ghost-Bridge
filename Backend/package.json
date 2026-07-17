@@ -16,7 +16,7 @@
     "verify:demo": "node scripts/verifyDemo.js",
     "seed:sandbox": "node scripts/seedSandbox.js",
     "verify:sandbox": "node scripts/verifySandbox.js",
-    "verify:external-flow": "node scripts/verifyExternalFlow.js",
+    "verify:external-flow": "node --env-file=.env scripts/verifyExternalFlow.js",
     "verify:durable-recovery": "node scripts/verifyDurableRecovery.js",
     "verify:policy-engine": "node scripts/verifyPolicyEngine.js",
     "verify:secret-governance": "node scripts/verifySecretGovernance.js",
