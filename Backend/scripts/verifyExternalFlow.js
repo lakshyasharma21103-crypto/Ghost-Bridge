@@ -587,7 +587,9 @@ function formatVerificationFailure(error) {
     `Timeout reason: ${safeCode(error.timeoutReason) || '[unavailable]'}`,
     `Configured timeout ms: ${safeConfiguredTimeoutMs(error.configuredTimeoutMs) ?? '[unavailable]'}`,
     `Resolved hostname: ${safeResolvedHostname(error.resolvedHostname) || '[unavailable]'}`,
-    `Startup probe timeout ms: ${safeProbeTimeoutMs(error.probeTimeoutMs) ?? '[unavailable]'}`,
+    `Configured startup probe timeout ms: ${
+      safeProbeTimeoutMs(error.probeTimeoutMs) ?? '[unavailable]'
+    }`,
     `Network error name: ${safeNetworkErrorName(error.networkErrorName) || '[unavailable]'}`,
     `Network cause code: ${
       SAFE_NETWORK_CAUSE_CODES.has(error.networkCauseCode)
@@ -713,26 +715,21 @@ async function request(baseUrl, path, options = {}) {
         probeStage,
       })
     : undefined;
-  const timer = setTimeout(
+  const timerApi = options.timerApi || { setTimeout, clearTimeout };
+  const timer = timerApi.setTimeout(
     () => controller.abort(new DOMException('Verification request timed out', 'TimeoutError')),
     timeoutMs,
   );
   timer.unref?.();
-  let response;
-  try {
-    response = await (options.fetchFn || fetch)(targetUrl, {
-      method: options.method || 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        ...options.headers,
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      signal: controller.signal,
-    });
-  } catch (error) {
+  let timerActive = true;
+  const clearRequestTimer = () => {
+    if (!timerActive) return;
+    timerApi.clearTimeout(timer);
+    timerActive = false;
+  };
+  const networkFailure = (error) => {
     const timedOut = error?.name === 'TimeoutError' || controller.signal.aborted;
-    throw new ExternalFlowVerificationError('Verification HTTP request failed.', {
+    return new ExternalFlowVerificationError('Verification HTTP request failed.', {
       cause: error,
       applicationErrorCode: timedOut ? 'VERIFICATION_REQUEST_TIMEOUT' : undefined,
       timeoutReason: timedOut ? 'LOCAL_VERIFICATION_REQUEST_TIMEOUT' : undefined,
@@ -747,10 +744,37 @@ async function request(baseUrl, path, options = {}) {
       probeStage,
       connectionId: options.connectionId,
     });
+  };
+  let response;
+  let text;
+  try {
+    try {
+      response = await (options.fetchFn || fetch)(targetUrl, {
+        method: options.method || 'GET',
+        headers: {
+          Accept: 'application/json',
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...options.headers,
+        },
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      throw networkFailure(error);
+    }
+
+    // Preserve the existing runtime invocation behavior. Only startup probes keep their
+    // dedicated deadline active while the response body is read.
+    if (!probeStage) clearRequestTimer();
+    try {
+      text = await response.text();
+    } catch (error) {
+      if (probeStage) throw networkFailure(error);
+      throw error;
+    }
   } finally {
-    clearTimeout(timer);
+    clearRequestTimer();
   }
-  const text = await response.text();
   capturedApiResponses.push(text);
   let body;
   try {

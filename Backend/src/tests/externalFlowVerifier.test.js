@@ -64,6 +64,39 @@ function jsonFetchResponse(body, status = 200) {
   });
 }
 
+function immediateProbeTimeout() {
+  const configuredTimeouts = [];
+  return {
+    configuredTimeouts,
+    timerApi: {
+      setTimeout(callback, timeoutMs) {
+        configuredTimeouts.push(timeoutMs);
+        queueMicrotask(callback);
+        return { unref() {} };
+      },
+      clearTimeout() {},
+    },
+  };
+}
+
+function fetchUntilAborted(secret, causeCode) {
+  return async (_url, options) =>
+    new Promise((_resolve, reject) => {
+      options.signal.addEventListener(
+        'abort',
+        () => {
+          const error = new Error(`private network detail ${secret}`);
+          error.name = 'TimeoutError';
+          error.cause = Object.assign(new Error(`private socket detail ${secret}`), {
+            code: causeCode,
+          });
+          reject(error);
+        },
+        { once: true },
+      );
+    });
+}
+
 function createVerifierLaunchFixture() {
   const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'external-flow-env-'));
   const fixtureBackend = path.join(fixtureRoot, 'backend');
@@ -259,21 +292,19 @@ test('external-flow verifier rejects invalid, credentialed, and ambiguous base U
 });
 
 test('external health probe timeout reports only safe network diagnostics', async () => {
-  const timeout = new Error('private network error must not be reported');
-  timeout.name = 'TimeoutError';
-  timeout.cause = Object.assign(new Error('private connect details'), {
-    code: 'UND_ERR_CONNECT_TIMEOUT',
-  });
+  const secret = 'health-probe-secret-value';
+  const timeout = immediateProbeTimeout();
 
   await assert.rejects(
     () =>
       request('https://agent.example.test/', '/health', {
         probeStage: 'external_health',
-        fetchFn: async () => {
-          throw timeout;
-        },
+        headers: { Authorization: `Bearer ${secret}` },
+        fetchFn: fetchUntilAborted(secret, 'UND_ERR_CONNECT_TIMEOUT'),
+        timerApi: timeout.timerApi,
       }),
     (error) => {
+      assert.deepEqual(timeout.configuredTimeouts, [30_000]);
       assert.equal(error.applicationErrorCode, 'VERIFICATION_REQUEST_TIMEOUT');
       assert.equal(error.timeoutReason, 'LOCAL_VERIFICATION_REQUEST_TIMEOUT');
       assert.equal(error.resolvedHostname, 'agent.example.test');
@@ -285,14 +316,98 @@ test('external health probe timeout reports only safe network diagnostics', asyn
         wrapVerificationFailure(error, { stage: 'external_health', stageStartedAt: 1_000 }, 1_010),
       );
       assert.match(output, /Resolved hostname: agent\.example\.test/);
-      assert.match(output, /Startup probe timeout ms: 30000/);
+      assert.match(output, /Configured startup probe timeout ms: 30000/);
       assert.match(output, /Network error name: TimeoutError/);
       assert.match(output, /Network cause code: UND_ERR_CONNECT_TIMEOUT/);
       assert.match(output, /Startup probe stage: external_health/);
-      assert.doesNotMatch(output, /private network|private connect/i);
+      assert.match(output, /Duration ms: 10/);
+      assert.equal(output.includes(secret), false);
+      assert.doesNotMatch(output, /private network|private socket/i);
       return true;
     },
   );
+});
+
+test('slow external health response below 30 seconds succeeds without a billed request', async () => {
+  const state = { stage: 'external_health', stageStartedAt: 1_000 };
+  const urls = [];
+
+  await verifyExternalStartup('https://agent.example.test/', state, {
+    requestFn: (baseUrl, pathname, options) =>
+      request(baseUrl, pathname, {
+        ...options,
+        fetchFn: async (url) => {
+          urls.push(url);
+          if (url.endsWith('/health')) {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            return jsonFetchResponse({
+              success: true,
+              data: {
+                service: 'external-research-agent',
+                status: 'ok',
+                version: '2.0.0',
+              },
+            });
+          }
+          return jsonFetchResponse({ success: true, data: readyData() });
+        },
+      }),
+    reportFn() {},
+  });
+
+  assert.deepEqual(urls, ['https://agent.example.test/health', 'https://agent.example.test/ready']);
+  assert.equal(state.stage, 'external_readiness');
+});
+
+test('external readiness probe timeout reports its stage and safe network diagnostics', async () => {
+  const secret = 'readiness-probe-secret-value';
+  const timeout = immediateProbeTimeout();
+  const state = { stage: 'external_health', stageStartedAt: 2_000 };
+  let failure;
+
+  try {
+    await verifyExternalStartup('https://ready-agent.example.test/', state, {
+      requestFn: (baseUrl, pathname, options) =>
+        request(baseUrl, pathname, {
+          ...options,
+          ...(pathname === '/ready'
+            ? {
+                headers: { 'X-Probe-Credential': secret },
+                fetchFn: fetchUntilAborted(secret, 'ETIMEDOUT'),
+                timerApi: timeout.timerApi,
+              }
+            : {
+                fetchFn: async () =>
+                  jsonFetchResponse({
+                    success: true,
+                    data: {
+                      service: 'external-research-agent',
+                      status: 'ok',
+                      version: '2.0.0',
+                    },
+                  }),
+              }),
+        }),
+      reportFn() {},
+    });
+  } catch (error) {
+    failure = wrapVerificationFailure(error, state, state.stageStartedAt + 40);
+  }
+
+  assert.ok(failure);
+  assert.deepEqual(timeout.configuredTimeouts, [30_000]);
+  assert.equal(failure.stage, 'external_readiness');
+  assert.equal(failure.resolvedHostname, 'ready-agent.example.test');
+  assert.equal(failure.probeStage, 'external_readiness');
+  assert.equal(failure.probeTimeoutMs, 30_000);
+  assert.equal(failure.networkErrorName, 'TimeoutError');
+  assert.equal(failure.networkCauseCode, 'ETIMEDOUT');
+  assert.equal(failure.durationMs, 40);
+  const output = formatVerificationFailure(failure);
+  assert.match(output, /Startup probe stage: external_readiness/);
+  assert.match(output, /Configured startup probe timeout ms: 30000/);
+  assert.match(output, /Duration ms: 40/);
+  assert.equal(output.includes(secret), false);
 });
 
 test('HTTP 503 health response is attributed to the external health probe', async () => {
