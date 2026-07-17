@@ -4,11 +4,16 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 const {
+  EXTERNAL_AGENT_BASE_URL_ENV,
+  EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
   ExternalFlowVerificationError,
   VERIFICATION_REQUEST_TIMEOUT_MS,
   VERIFICATION_STAGES,
+  externalAgentProbeUrl,
   formatVerificationFailure,
+  normalizeExternalAgentBaseUrl,
   request,
+  resolveExternalAgentBaseUrl,
   sourceExtractionDiagnostics,
   success,
   validateExternalHealth,
@@ -51,6 +56,13 @@ function readyData(overrides = {}) {
   };
 }
 
+function jsonFetchResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 test('runtime invocation timeout accepts at least 360000 milliseconds and rejects non-positive values', () => {
   const valid = spawnSync(
     process.execPath,
@@ -83,6 +95,7 @@ test('external-flow verifier preserves the provider, request, client, and gatewa
   );
 
   assert.equal(VERIFICATION_REQUEST_TIMEOUT_MS, 410_000);
+  assert.equal(EXTERNAL_STARTUP_PROBE_TIMEOUT_MS, 30_000);
   assert.match(source, /RUNTIME_INVOCATION_TIMEOUT_MS\s*=\s*'430000'/);
   assert.match(source, /REQUEST_TIMEOUT_MS:\s*'390000'/);
   assert.ok(120_000 < 390_000);
@@ -90,6 +103,188 @@ test('external-flow verifier preserves the provider, request, client, and gatewa
   assert.ok(390_000 < VERIFICATION_REQUEST_TIMEOUT_MS);
   assert.ok(VERIFICATION_REQUEST_TIMEOUT_MS < 430_000);
   assert.doesNotMatch(source, /RUNTIME_REQUEST_TIMEOUT_MS\s*=.*70000/);
+  assert.ok(source.indexOf('dotenv.config') < source.indexOf('const externalAgentPort'));
+  assert.ok(source.indexOf('dotenv.config') < source.indexOf('requestedVerificationTimeoutMs'));
+  assert.doesNotMatch(
+    source,
+    /process\.env\.EXTERNAL_TEST_AGENT_BASE_URL\s*=\s*`http:\/\/127\.0\.0\.1/,
+  );
+});
+
+test('external-agent base URL without a trailing slash is preserved safely', () => {
+  assert.equal(EXTERNAL_AGENT_BASE_URL_ENV, 'EXTERNAL_TEST_AGENT_BASE_URL');
+  assert.equal(
+    resolveExternalAgentBaseUrl({ EXTERNAL_TEST_AGENT_BASE_URL: 'https://agent.example.test' }),
+    'https://agent.example.test',
+  );
+  assert.equal(
+    externalAgentProbeUrl('https://agent.example.test', 'external_health'),
+    'https://agent.example.test/health',
+  );
+  assert.equal(
+    externalAgentProbeUrl('https://agent.example.test', 'external_readiness'),
+    'https://agent.example.test/ready',
+  );
+});
+
+test('external-agent base URL trailing slashes are removed before probe paths are appended', () => {
+  assert.equal(
+    normalizeExternalAgentBaseUrl('https://agent.example.test/runtime///'),
+    'https://agent.example.test/runtime',
+  );
+  assert.equal(
+    externalAgentProbeUrl('https://agent.example.test/runtime///', 'external_health'),
+    'https://agent.example.test/runtime/health',
+  );
+  assert.equal(
+    externalAgentProbeUrl('https://agent.example.test/runtime///', 'external_readiness'),
+    'https://agent.example.test/runtime/ready',
+  );
+});
+
+test('external-flow verifier rejects a missing base URL without a localhost fallback', () => {
+  assert.throws(
+    () => resolveExternalAgentBaseUrl({}),
+    (error) =>
+      error.applicationErrorCode === 'EXTERNAL_AGENT_BASE_URL_MISSING' &&
+      error.message.includes(EXTERNAL_AGENT_BASE_URL_ENV) &&
+      !error.message.includes('localhost') &&
+      !error.message.includes('127.0.0.1'),
+  );
+});
+
+test('external-flow verifier rejects invalid, credentialed, and ambiguous base URLs', () => {
+  for (const value of [
+    'not a URL',
+    'ftp://agent.example.test',
+    'https://user:password@agent.example.test',
+    'https://agent.example.test?token=private',
+    'https://agent.example.test/health',
+  ]) {
+    assert.throws(
+      () => normalizeExternalAgentBaseUrl(value),
+      (error) => error.applicationErrorCode === 'EXTERNAL_AGENT_BASE_URL_INVALID',
+    );
+  }
+});
+
+test('external health probe timeout reports only safe network diagnostics', async () => {
+  const timeout = new Error('private network error must not be reported');
+  timeout.name = 'TimeoutError';
+  timeout.cause = Object.assign(new Error('private connect details'), {
+    code: 'UND_ERR_CONNECT_TIMEOUT',
+  });
+
+  await assert.rejects(
+    () =>
+      request('https://agent.example.test/', '/health', {
+        probeStage: 'external_health',
+        fetchFn: async () => {
+          throw timeout;
+        },
+      }),
+    (error) => {
+      assert.equal(error.applicationErrorCode, 'VERIFICATION_REQUEST_TIMEOUT');
+      assert.equal(error.timeoutReason, 'LOCAL_VERIFICATION_REQUEST_TIMEOUT');
+      assert.equal(error.resolvedHostname, 'agent.example.test');
+      assert.equal(error.probeTimeoutMs, 30_000);
+      assert.equal(error.networkErrorName, 'TimeoutError');
+      assert.equal(error.networkCauseCode, 'UND_ERR_CONNECT_TIMEOUT');
+      assert.equal(error.probeStage, 'external_health');
+      const output = formatVerificationFailure(
+        wrapVerificationFailure(error, { stage: 'external_health', stageStartedAt: 1_000 }, 1_010),
+      );
+      assert.match(output, /Resolved hostname: agent\.example\.test/);
+      assert.match(output, /Startup probe timeout ms: 30000/);
+      assert.match(output, /Network error name: TimeoutError/);
+      assert.match(output, /Network cause code: UND_ERR_CONNECT_TIMEOUT/);
+      assert.match(output, /Startup probe stage: external_health/);
+      assert.doesNotMatch(output, /private network|private connect/i);
+      return true;
+    },
+  );
+});
+
+test('HTTP 503 health response is attributed to the external health probe', async () => {
+  const state = { stage: 'external_health', stageStartedAt: 2_000 };
+  let failure;
+  try {
+    await verifyExternalStartup('https://agent.example.test/', state, {
+      requestFn: (baseUrl, pathname, options) =>
+        request(baseUrl, pathname, {
+          ...options,
+          fetchFn: async () =>
+            jsonFetchResponse({ success: false, error: { code: 'SERVICE_UNAVAILABLE' } }, 503),
+        }),
+      reportFn() {},
+    });
+  } catch (error) {
+    failure = wrapVerificationFailure(error, state, state.stageStartedAt + 25);
+  }
+
+  assert.ok(failure);
+  assert.equal(failure.stage, 'external_health');
+  assert.equal(failure.httpStatus, 503);
+  assert.equal(failure.applicationErrorCode, 'SERVICE_UNAVAILABLE');
+  assert.equal(failure.resolvedHostname, 'agent.example.test');
+  assert.equal(failure.probeTimeoutMs, 30_000);
+  assert.equal(failure.probeStage, 'external_health');
+});
+
+test('successful startup probes use normalized health and readiness URLs exactly once', async () => {
+  const urls = [];
+  const diagnostics = [];
+  const reports = [];
+  const state = { stage: 'external_health', stageStartedAt: 3_000 };
+  await verifyExternalStartup('https://agent.example.test/runtime///', state, {
+    requestFn: async (baseUrl, pathname, options) => {
+      const result = await request(baseUrl, pathname, {
+        ...options,
+        fetchFn: async (url) => {
+          urls.push(url);
+          return url.endsWith('/health')
+            ? jsonFetchResponse({
+                success: true,
+                data: {
+                  service: 'external-research-agent',
+                  status: 'ok',
+                  version: '2.0.0',
+                },
+              })
+            : jsonFetchResponse({ success: true, data: readyData() });
+        },
+      });
+      diagnostics.push(result.probeDiagnostics);
+      return result;
+    },
+    reportFn: (label) => reports.push(label),
+  });
+
+  assert.deepEqual(urls, [
+    'https://agent.example.test/runtime/health',
+    'https://agent.example.test/runtime/ready',
+  ]);
+  assert.deepEqual(
+    diagnostics.map(({ resolvedHostname, probeTimeoutMs, probeStage }) => ({
+      resolvedHostname,
+      probeTimeoutMs,
+      probeStage,
+    })),
+    [
+      {
+        resolvedHostname: 'agent.example.test',
+        probeTimeoutMs: 30_000,
+        probeStage: 'external_health',
+      },
+      {
+        resolvedHostname: 'agent.example.test',
+        probeTimeoutMs: 30_000,
+        probeStage: 'external_readiness',
+      },
+    ],
+  );
+  assert.deepEqual(reports, ['external liveness', 'external readiness']);
+  assert.equal(state.stage, 'external_readiness');
 });
 
 test('verifier-local request failures retain safe outbound correlation identifiers', async () => {

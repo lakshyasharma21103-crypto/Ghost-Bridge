@@ -5,13 +5,17 @@ const path = require('node:path');
 const { Writable } = require('node:stream');
 const dotenv = require('dotenv');
 
+const BACKEND_ENV_PATH = path.resolve(__dirname, '../.env');
+dotenv.config({ path: BACKEND_ENV_PATH });
+
+const EXTERNAL_AGENT_BASE_URL_ENV = 'EXTERNAL_TEST_AGENT_BASE_URL';
+const EXTERNAL_STARTUP_PROBE_TIMEOUT_MS = 30_000;
 const externalAgentPort = Number(process.env.EXTERNAL_FLOW_AGENT_PORT || 5002);
 const gatewayPort = Number(process.env.EXTERNAL_FLOW_GATEWAY_PORT || 5014);
 const runtimeToken = crypto.randomBytes(32).toString('base64url');
 
 process.env.NODE_ENV = 'development';
 process.env.PORT = String(gatewayPort);
-process.env.EXTERNAL_TEST_AGENT_BASE_URL = `http://127.0.0.1:${externalAgentPort}`;
 process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN = runtimeToken;
 process.env.ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV = 'true';
 process.env.RUNTIME_INVOCATION_TIMEOUT_MS = '430000';
@@ -101,6 +105,77 @@ const SAFE_SOURCE_EXTRACTION_CODES = new Set([
   'GEMINI_RESEARCH_RESPONSE_INCOMPLETE',
   'GEMINI_SOURCE_PARSING_FAILED',
 ]);
+const SAFE_STARTUP_PROBE_STAGES = new Set(['external_health', 'external_readiness']);
+const SAFE_NETWORK_ERROR_NAMES = new Set(['AbortError', 'Error', 'TimeoutError', 'TypeError']);
+const SAFE_NETWORK_CAUSE_CODES = new Set([
+  'CERT_HAS_EXPIRED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'EAI_AGAIN',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'ERR_TLS_CERT_SIGNATURE_ALGORITHM_UNSUPPORTED',
+  'ETIMEDOUT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
+function normalizeExternalAgentBaseUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new ExternalFlowVerificationError(
+      `${EXTERNAL_AGENT_BASE_URL_ENV} is required for the live external-flow verifier.`,
+      { applicationErrorCode: 'EXTERNAL_AGENT_BASE_URL_MISSING' },
+    );
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new ExternalFlowVerificationError(
+      `${EXTERNAL_AGENT_BASE_URL_ENV} must be a valid HTTP(S) base URL.`,
+      { applicationErrorCode: 'EXTERNAL_AGENT_BASE_URL_INVALID' },
+    );
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new ExternalFlowVerificationError(
+      `${EXTERNAL_AGENT_BASE_URL_ENV} must use HTTP or HTTPS.`,
+      { applicationErrorCode: 'EXTERNAL_AGENT_BASE_URL_INVALID' },
+    );
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new ExternalFlowVerificationError(
+      `${EXTERNAL_AGENT_BASE_URL_ENV} must not contain credentials, a query string, or a fragment.`,
+      { applicationErrorCode: 'EXTERNAL_AGENT_BASE_URL_INVALID' },
+    );
+  }
+
+  const pathname = parsed.pathname.replace(/\/+$/, '');
+  if (/\/(?:health|ready)$/i.test(pathname)) {
+    throw new ExternalFlowVerificationError(
+      `${EXTERNAL_AGENT_BASE_URL_ENV} must be a base URL, not a health or readiness endpoint.`,
+      { applicationErrorCode: 'EXTERNAL_AGENT_BASE_URL_INVALID' },
+    );
+  }
+  return `${parsed.origin}${pathname}`;
+}
+
+function resolveExternalAgentBaseUrl(environment = process.env) {
+  return normalizeExternalAgentBaseUrl(environment[EXTERNAL_AGENT_BASE_URL_ENV]);
+}
+
+function externalAgentProbeUrl(baseUrl, probeStage) {
+  const normalizedBaseUrl = normalizeExternalAgentBaseUrl(baseUrl);
+  if (!SAFE_STARTUP_PROBE_STAGES.has(probeStage)) {
+    throw new ExternalFlowVerificationError('Unknown external startup probe stage.');
+  }
+  return `${normalizedBaseUrl}/${probeStage === 'external_health' ? 'health' : 'ready'}`;
+}
 
 function verificationResearchTopic(now = new Date()) {
   const currentDate = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
@@ -174,6 +249,11 @@ class ExternalFlowVerificationError extends Error {
       'finishReason',
       'timeoutReason',
       'configuredTimeoutMs',
+      'resolvedHostname',
+      'probeTimeoutMs',
+      'networkErrorName',
+      'networkCauseCode',
+      'probeStage',
       'connectionId',
     ]) {
       if (options[field] !== undefined) this[field] = options[field];
@@ -194,6 +274,46 @@ function safeIdentifier(value) {
     return undefined;
   }
   return value;
+}
+
+function safeResolvedHostname(value) {
+  return typeof value === 'string' &&
+    value.length >= 1 &&
+    value.length <= 253 &&
+    /^[A-Za-z0-9.:[\]-]+$/.test(value)
+    ? value
+    : undefined;
+}
+
+function safeProbeTimeoutMs(value) {
+  return Number.isInteger(value) && value >= 1_000 && value <= 60_000 ? value : undefined;
+}
+
+function safeNetworkErrorName(value) {
+  return SAFE_NETWORK_ERROR_NAMES.has(value) ? value : undefined;
+}
+
+function safeNetworkCauseCode(error) {
+  let current = error;
+  for (let depth = 0; current && depth < 6; depth += 1) {
+    const code = typeof current.code === 'string' ? current.code.toUpperCase() : undefined;
+    if (SAFE_NETWORK_CAUSE_CODES.has(code)) return code;
+    current = current.cause;
+  }
+  return undefined;
+}
+
+function safeProbeStage(value) {
+  return SAFE_STARTUP_PROBE_STAGES.has(value) ? value : undefined;
+}
+
+function probeDiagnostics(result) {
+  const diagnostics = result?.probeDiagnostics;
+  return {
+    resolvedHostname: safeResolvedHostname(diagnostics?.resolvedHostname),
+    probeTimeoutMs: safeProbeTimeoutMs(diagnostics?.probeTimeoutMs),
+    probeStage: safeProbeStage(diagnostics?.probeStage),
+  };
 }
 
 function safeHealthStatus(value) {
@@ -379,6 +499,13 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
       finishReason: safeFinishReason(errorField(error, 'finishReason')),
       timeoutReason: safeCode(rawTimeoutReason),
       configuredTimeoutMs: safeConfiguredTimeoutMs(errorField(error, 'configuredTimeoutMs')),
+      resolvedHostname: safeResolvedHostname(errorField(error, 'resolvedHostname')),
+      probeTimeoutMs: safeProbeTimeoutMs(errorField(error, 'probeTimeoutMs')),
+      networkErrorName: safeNetworkErrorName(errorField(error, 'networkErrorName')),
+      networkCauseCode: SAFE_NETWORK_CAUSE_CODES.has(errorField(error, 'networkCauseCode'))
+        ? errorField(error, 'networkCauseCode')
+        : undefined,
+      probeStage: safeProbeStage(errorField(error, 'probeStage')),
       connectionId:
         safeIdentifier(errorField(error, 'connectionId')) ?? safeIdentifier(state.connectionId),
     },
@@ -448,6 +575,15 @@ function formatVerificationFailure(error) {
     `Finish reason: ${safeFinishReason(error.finishReason) || '[unavailable]'}`,
     `Timeout reason: ${safeCode(error.timeoutReason) || '[unavailable]'}`,
     `Configured timeout ms: ${safeConfiguredTimeoutMs(error.configuredTimeoutMs) ?? '[unavailable]'}`,
+    `Resolved hostname: ${safeResolvedHostname(error.resolvedHostname) || '[unavailable]'}`,
+    `Startup probe timeout ms: ${safeProbeTimeoutMs(error.probeTimeoutMs) ?? '[unavailable]'}`,
+    `Network error name: ${safeNetworkErrorName(error.networkErrorName) || '[unavailable]'}`,
+    `Network cause code: ${
+      SAFE_NETWORK_CAUSE_CODES.has(error.networkCauseCode)
+        ? error.networkCauseCode
+        : '[unavailable]'
+    }`,
+    `Startup probe stage: ${safeProbeStage(error.probeStage) || '[unavailable]'}`,
     `Connection ID: ${safeIdentifier(error.connectionId) || '[unavailable]'}`,
   ].join('\n');
 }
@@ -550,10 +686,22 @@ function externalAgentConfig() {
 
 async function request(baseUrl, path, options = {}) {
   const controller = new AbortController();
-  const timeoutMs = Math.max(
-    VERIFICATION_REQUEST_TIMEOUT_MS,
-    Number(options.timeoutMs) || VERIFICATION_REQUEST_TIMEOUT_MS,
-  );
+  const probeStage = safeProbeStage(options.probeStage);
+  const targetUrl = probeStage ? externalAgentProbeUrl(baseUrl, probeStage) : `${baseUrl}${path}`;
+  const resolvedHostname = probeStage ? new URL(targetUrl).hostname : undefined;
+  const timeoutMs = probeStage
+    ? EXTERNAL_STARTUP_PROBE_TIMEOUT_MS
+    : Math.max(
+        VERIFICATION_REQUEST_TIMEOUT_MS,
+        Number(options.timeoutMs) || VERIFICATION_REQUEST_TIMEOUT_MS,
+      );
+  const safeProbeDiagnostics = probeStage
+    ? Object.freeze({
+        resolvedHostname,
+        probeTimeoutMs: timeoutMs,
+        probeStage,
+      })
+    : undefined;
   const timer = setTimeout(
     () => controller.abort(new DOMException('Verification request timed out', 'TimeoutError')),
     timeoutMs,
@@ -561,7 +709,7 @@ async function request(baseUrl, path, options = {}) {
   timer.unref?.();
   let response;
   try {
-    response = await (options.fetchFn || fetch)(`${baseUrl}${path}`, {
+    response = await (options.fetchFn || fetch)(targetUrl, {
       method: options.method || 'GET',
       headers: {
         Accept: 'application/json',
@@ -572,16 +720,20 @@ async function request(baseUrl, path, options = {}) {
       signal: controller.signal,
     });
   } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || controller.signal.aborted;
     throw new ExternalFlowVerificationError('Verification HTTP request failed.', {
       cause: error,
-      applicationErrorCode:
-        error?.name === 'TimeoutError' ? 'VERIFICATION_REQUEST_TIMEOUT' : undefined,
-      timeoutReason:
-        error?.name === 'TimeoutError' ? 'LOCAL_VERIFICATION_REQUEST_TIMEOUT' : undefined,
+      applicationErrorCode: timedOut ? 'VERIFICATION_REQUEST_TIMEOUT' : undefined,
+      timeoutReason: timedOut ? 'LOCAL_VERIFICATION_REQUEST_TIMEOUT' : undefined,
       requestId: safeIdentifier(
         options.headers?.['X-Request-Id'] || options.headers?.['x-request-id'],
       ),
       traceId: safeIdentifier(options.headers?.['X-Trace-Id'] || options.headers?.['x-trace-id']),
+      resolvedHostname,
+      probeTimeoutMs: probeStage ? timeoutMs : undefined,
+      networkErrorName: safeNetworkErrorName(error?.name),
+      networkCauseCode: safeNetworkCauseCode(error),
+      probeStage,
       connectionId: options.connectionId,
     });
   } finally {
@@ -597,10 +749,11 @@ async function request(baseUrl, path, options = {}) {
       cause: error,
       httpStatus: response.status,
       requestId: response.headers.get('x-request-id') || undefined,
+      ...safeProbeDiagnostics,
       connectionId: options.connectionId,
     });
   }
-  return { response, body, text };
+  return { response, body, text, probeDiagnostics: safeProbeDiagnostics };
 }
 
 function success(result, label, options = {}) {
@@ -671,6 +824,7 @@ function validateExternalHealth(result) {
   const options = {
     httpStatus: Number.isInteger(result?.response?.status) ? result.response.status : undefined,
     applicationErrorCode: safeCode(result?.body?.error?.code),
+    ...probeDiagnostics(result),
     ...identifiers,
   };
   if (!result?.response?.ok || result?.body?.success === false) {
@@ -700,6 +854,7 @@ function readinessDiagnostics(result) {
     readinessStatus: safeReadinessStatus(readiness?.status),
     providerName: safeProviderName(readiness?.ai?.provider),
     draining: lifecycleStatus ? lifecycleStatus === 'draining' : undefined,
+    ...probeDiagnostics(result),
     ...safeResponseIdentifiers(result),
   };
 }
@@ -735,15 +890,24 @@ function validateExternalReadiness(result) {
 }
 
 async function verifyExternalStartup(externalBaseUrl, state, options = {}) {
+  const normalizedBaseUrl = normalizeExternalAgentBaseUrl(externalBaseUrl);
   const requestFn = options.requestFn || request;
   const reportFn = options.reportFn || report;
   beginStage(state, 'external_health');
-  validateExternalHealth(await requestFn(externalBaseUrl, '/health', { label: 'external health' }));
+  validateExternalHealth(
+    await requestFn(normalizedBaseUrl, '/health', {
+      label: 'external health',
+      probeStage: 'external_health',
+    }),
+  );
   reportFn('external liveness', 'independent research-agent process is alive');
 
   beginStage(state, 'external_readiness');
   validateExternalReadiness(
-    await requestFn(externalBaseUrl, '/ready', { label: 'external readiness' }),
+    await requestFn(normalizedBaseUrl, '/ready', {
+      label: 'external readiness',
+      probeStage: 'external_readiness',
+    }),
   );
   reportFn(
     'external readiness',
@@ -762,8 +926,10 @@ async function verify() {
   let gatewayServer;
   let geminiApiKey;
   let verificationFailure;
+  let externalBaseUrl;
 
   try {
+    externalBaseUrl = resolveExternalAgentBaseUrl();
     await connectDatabase();
     if (databaseStatus() !== 'connected') {
       throw new ExternalFlowVerificationError(
@@ -781,7 +947,6 @@ async function verify() {
     gatewayServer = http.createServer(createApp());
     await listen(gatewayServer, gatewayPort);
 
-    const externalBaseUrl = `http://127.0.0.1:${externalAgentPort}`;
     const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}/api/v1`;
 
     await verifyExternalStartup(externalBaseUrl, state);
@@ -1154,13 +1319,18 @@ if (require.main === module) {
 }
 
 module.exports = {
+  EXTERNAL_AGENT_BASE_URL_ENV,
+  EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
   ExternalFlowVerificationError,
   VERIFICATION_REQUEST_TIMEOUT_MS,
   VERIFICATION_STAGES,
   beginStage,
+  externalAgentProbeUrl,
   formatVerificationFailure,
+  normalizeExternalAgentBaseUrl,
   request,
   readinessDiagnostics,
+  resolveExternalAgentBaseUrl,
   sourceExtractionDiagnostics,
   success,
   validateExternalHealth,
