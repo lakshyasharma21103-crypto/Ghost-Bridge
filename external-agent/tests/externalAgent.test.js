@@ -160,8 +160,8 @@ test('Gemini attempt defaults leave room for every retry and request-level overh
   assert.equal(parsed.gemini.researchOperationTimeoutMs, 241_499);
   assert.equal(parsed.gemini.formattingOperationTimeoutMs, 121_499);
   assert.equal(parsed.gemini.retryDelayBudgetMs, 2_998);
-  assert.equal(parsed.gemini.researchMaxOutputTokens, 512);
-  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 256);
+  assert.equal(parsed.gemini.researchMaxOutputTokens, 2_048);
+  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 2_048);
   assert.equal(parsed.gemini.formattingMaxOutputTokens, 1_500);
   assert.equal(parsed.requestTimeoutMs, 390_000);
   assert.ok(parsed.requestTimeoutMs > 241_499 + 121_499 + GEMINI_PROCESSING_OVERHEAD_MS);
@@ -281,11 +281,12 @@ test('Gemini live verifier topic requires current concise multi-source Google Se
   const topic = verificationResearchTopic(new Date('2026-07-17T12:00:00.000Z'));
 
   assert.match(topic, /Google Search/i);
-  assert.match(topic, /current latest stable release/i);
+  assert.match(topic, /exactly 2/i);
+  assert.match(topic, /2026-07-11/);
   assert.match(topic, /2026-07-17/);
-  assert.match(topic, /at least two genuine web sources/i);
+  assert.match(topic, /at least 2 genuine web sources/i);
   assert.match(topic, /source-backed factual findings/i);
-  assert.match(topic, /concise/i);
+  assert.match(topic, /no introduction or long explanations/i);
 });
 
 test('formatting attempts are configurable only within the conservative bound', () => {
@@ -342,7 +343,7 @@ test('grounded research attempts remain configurable within the one-retry bound'
   }
 });
 
-test('grounded research output budgets stay below the legacy formatting budget', () => {
+test('grounded research output budgets are independently bounded at 2048', () => {
   const parsed = readEnvironment({
     NODE_ENV: 'test',
     AI_PROVIDER: 'gemini',
@@ -352,22 +353,19 @@ test('grounded research output budgets stay below the legacy formatting budget',
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
 
-  assert.equal(parsed.gemini.researchMaxOutputTokens, 512);
-  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 256);
+  assert.equal(parsed.gemini.researchMaxOutputTokens, 2_048);
+  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 2_048);
   assert.equal(parsed.gemini.formattingMaxOutputTokens, 1_800);
-  assert.throws(
-    () =>
-      readEnvironment({
-        NODE_ENV: 'test',
-        AI_PROVIDER: 'gemini',
-        GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
-        GEMINI_MODEL: 'gemini-2.5-flash',
-        GEMINI_RESEARCH_MAX_OUTPUT_TOKENS: '256',
-        GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS: '256',
-        EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
-      }),
-    /GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS.*must be less than/,
-  );
+  const equalCaps = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_RESEARCH_MAX_OUTPUT_TOKENS: '2048',
+    GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS: '2048',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+  assert.equal(equalCaps.gemini.researchFallbackMaxOutputTokens, 2_048);
 });
 
 test('Gemini model rejects resource names that could disclose project identifiers', () => {

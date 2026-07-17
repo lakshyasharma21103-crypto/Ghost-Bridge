@@ -12,8 +12,8 @@ const {
 
 const DEFAULT_GEMINI_RESEARCH_MAX_ATTEMPTS = 2;
 const DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS = 2;
-const DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS = 512;
-const DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 256;
+const DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS = 2_048;
+const DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 2_048;
 const DEFAULT_GEMINI_FORMATTING_MAX_OUTPUT_TOKENS = 1_500;
 
 const booleanValue = (defaultValue) =>
@@ -142,18 +142,6 @@ const environmentSchema = z
           code: z.ZodIssueCode.custom,
           path: ['REQUEST_TIMEOUT_MS'],
           message: `must be greater than ${budget.totalTimeoutMs} milliseconds (all configured Gemini attempts, maximum retry delays, and processing overhead)`,
-        });
-      }
-      const researchOutputTokens =
-        environment.GEMINI_RESEARCH_MAX_OUTPUT_TOKENS ?? DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS;
-      const fallbackOutputTokens =
-        environment.GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS ??
-        DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS;
-      if (fallbackOutputTokens >= researchOutputTokens) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS'],
-          message: 'must be less than GEMINI_RESEARCH_MAX_OUTPUT_TOKENS',
         });
       }
     }

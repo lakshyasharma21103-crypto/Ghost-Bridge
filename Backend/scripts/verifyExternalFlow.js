@@ -98,17 +98,21 @@ const SAFE_FINAL_PROVIDER_STATUSES = new Set([
 ]);
 const SAFE_SOURCE_EXTRACTION_CODES = new Set([
   'GEMINI_GROUNDING_METADATA_MISSING',
+  'GEMINI_RESEARCH_RESPONSE_INCOMPLETE',
   'GEMINI_SOURCE_PARSING_FAILED',
 ]);
 
 function verificationResearchTopic(now = new Date()) {
   const currentDate = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
-  const date = currentDate.toISOString().slice(0, 10);
+  const startDate = new Date(currentDate);
+  startDate.setUTCDate(startDate.getUTCDate() - 6);
+  const start = startDate.toISOString().slice(0, 10);
+  const end = currentDate.toISOString().slice(0, 10);
   return (
-    'Using Google Search and at least two genuine current official web sources, identify the ' +
-    'latest published release/version status ' +
-    'and publication dates of the Model Context Protocol and Agent2Agent Protocol ' +
-    `specifications as of ${date}. Give only source-backed factual findings and keep the output concise.`
+    'Using Google Search, find exactly 2 official software security advisories or release updates ' +
+    `published or updated from ${start} through ${end} UTC (inclusive). ` +
+    'Use at least 2 genuine web sources. Return only brief, source-backed factual findings with ' +
+    'no introduction or long explanations.'
   );
 }
 
@@ -144,6 +148,12 @@ class ExternalFlowVerificationError extends Error {
       'sourceExtractionCode',
       'apiMode',
       'candidateCount',
+      'configuredMaxOutputTokens',
+      'promptCharacterCount',
+      'promptTokenCount',
+      'candidatesTokenCount',
+      'thoughtsTokenCount',
+      'totalTokenCount',
       'responseStepTypes',
       'googleSearchCallCount',
       'googleSearchResultCount',
@@ -272,6 +282,12 @@ function sourceExtractionDiagnostics(logChunks, identifiers = {}) {
       sourceExtractionCode: safeSourceExtractionCode(record.internalCode),
       apiMode: safeGeminiApiMode(record.apiMode),
       candidateCount: safeDiagnosticCount(record.candidateCount),
+      configuredMaxOutputTokens: safeDiagnosticCount(record.configuredMaxOutputTokens),
+      promptCharacterCount: safeDiagnosticCount(record.promptCharacterCount),
+      promptTokenCount: safeDiagnosticCount(record.promptTokenCount),
+      candidatesTokenCount: safeDiagnosticCount(record.candidatesTokenCount),
+      thoughtsTokenCount: safeDiagnosticCount(record.thoughtsTokenCount),
+      totalTokenCount: safeDiagnosticCount(record.totalTokenCount),
       responseStepTypes: safeGeminiStepTypes(record.responseStepTypes),
       googleSearchCallCount: safeDiagnosticCount(record.googleSearchCallCount),
       googleSearchResultCount: safeDiagnosticCount(record.googleSearchResultCount),
@@ -326,6 +342,14 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
       sourceExtractionCode: safeSourceExtractionCode(errorField(error, 'sourceExtractionCode')),
       apiMode: safeGeminiApiMode(errorField(error, 'apiMode')),
       candidateCount: safeDiagnosticCount(errorField(error, 'candidateCount')),
+      configuredMaxOutputTokens: safeDiagnosticCount(
+        errorField(error, 'configuredMaxOutputTokens'),
+      ),
+      promptCharacterCount: safeDiagnosticCount(errorField(error, 'promptCharacterCount')),
+      promptTokenCount: safeDiagnosticCount(errorField(error, 'promptTokenCount')),
+      candidatesTokenCount: safeDiagnosticCount(errorField(error, 'candidatesTokenCount')),
+      thoughtsTokenCount: safeDiagnosticCount(errorField(error, 'thoughtsTokenCount')),
+      totalTokenCount: safeDiagnosticCount(errorField(error, 'totalTokenCount')),
       responseStepTypes: safeGeminiStepTypes(errorField(error, 'responseStepTypes')),
       googleSearchCallCount: safeDiagnosticCount(errorField(error, 'googleSearchCallCount')),
       googleSearchResultCount: safeDiagnosticCount(errorField(error, 'googleSearchResultCount')),
@@ -373,6 +397,12 @@ function formatVerificationFailure(error) {
     `Source extraction code: ${safeSourceExtractionCode(error.sourceExtractionCode) || '[unavailable]'}`,
     `API mode: ${safeGeminiApiMode(error.apiMode) || '[unavailable]'}`,
     `Response candidate count: ${safeDiagnosticCount(error.candidateCount) ?? '[unavailable]'}`,
+    `Configured max output tokens: ${safeDiagnosticCount(error.configuredMaxOutputTokens) ?? '[unavailable]'}`,
+    `Prompt character count: ${safeDiagnosticCount(error.promptCharacterCount) ?? '[unavailable]'}`,
+    `Prompt token count: ${safeDiagnosticCount(error.promptTokenCount) ?? '[unavailable]'}`,
+    `Candidate token count: ${safeDiagnosticCount(error.candidatesTokenCount) ?? '[unavailable]'}`,
+    `Thought token count: ${safeDiagnosticCount(error.thoughtsTokenCount) ?? '[unavailable]'}`,
+    `Total token count: ${safeDiagnosticCount(error.totalTokenCount) ?? '[unavailable]'}`,
     `Response step types: ${safeGeminiStepTypes(error.responseStepTypes)?.join(', ') || '[none]'}`,
     `Google Search call count: ${
       safeDiagnosticCount(error.googleSearchCallCount) ?? '[unavailable]'

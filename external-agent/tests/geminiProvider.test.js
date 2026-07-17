@@ -51,6 +51,7 @@ function candidate(text, options = {}) {
           ? {
               groundingMetadata: {
                 groundingChunks: options.sources.map((source) => ({ web: source })),
+                ...(options.webSearchQueries ? { webSearchQueries: options.webSearchQueries } : {}),
               },
             }
           : {}),
@@ -122,7 +123,7 @@ test('Gemini provider uses grounded research then strict formatting', async () =
   assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
   assert.equal(client.calls[0].config.httpOptions.retryOptions.attempts, 1);
   assert.equal(client.calls[0].config.httpOptions.timeout, TEST_CONFIG.requestTimeoutMs);
-  assert.equal(client.calls[0].config.maxOutputTokens, 512);
+  assert.equal(client.calls[0].config.maxOutputTokens, 2_048);
   assert.equal(client.calls[1].config.tools, undefined);
   assert.equal(client.calls[1].config.httpOptions.retryOptions.attempts, 1);
   assert.equal(client.calls[1].config.httpOptions.timeout, TEST_CONFIG.requestTimeoutMs);
@@ -131,8 +132,10 @@ test('Gemini provider uses grounded research then strict formatting', async () =
   assert.equal(client.calls[1].config.responseJsonSchema.additionalProperties, false);
   assert.equal(client.calls[0].model, TEST_CONFIG.model);
   assert.equal(client.calls[0].contents.includes('Secure agent interoperability'), true);
-  assert.deepEqual(client.calls[0].config.thinkingConfig, { thinkingLevel: 'MEDIUM' });
+  assert.deepEqual(client.calls[0].config.thinkingConfig, { thinkingLevel: 'LOW' });
   assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'MEDIUM' });
+  assert.equal(client.calls[0].config.responseMimeType, undefined);
+  assert.equal(client.calls[0].config.responseJsonSchema, undefined);
   assert.notEqual(client.calls[0].config.abortSignal, client.calls[1].config.abortSignal);
   assert.equal(client.calls[0].config.abortSignal instanceof AbortSignal, true);
   assert.equal(client.calls[1].config.abortSignal instanceof AbortSignal, true);
@@ -350,8 +353,8 @@ test('grounded research local timeout is stage-aware and does not begin formatti
   assert.equal(calls.length, 2);
   assert.equal(calls[0].config.httpOptions.timeout, 10);
   assert.equal(calls[1].config.httpOptions.timeout, 10);
-  assert.equal(calls[0].config.maxOutputTokens, 512);
-  assert.equal(calls[1].config.maxOutputTokens, 256);
+  assert.equal(calls[0].config.maxOutputTokens, 2_048);
+  assert.equal(calls[1].config.maxOutputTokens, 2_048);
   const completion = logger.entries.find((entry) => entry.message === 'Gemini operation completed');
   assert.deepEqual(
     {
@@ -692,6 +695,7 @@ test('documented grounding chunks extract web.uri and web.title', () => {
     groundingSupportCount: 1,
     searchEntryPointPresent: true,
     usageMetadataKeys: ['promptTokenCount', 'toolUsePromptTokenCount'],
+    promptTokenCount: 10,
   });
 });
 
@@ -938,7 +942,14 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
           },
         },
       ],
-      usageMetadata: { promptTokenCount: 12, toolUsePromptTokenCount: 4 },
+      usageMetadata: {
+        promptTokenCount: 12,
+        candidatesTokenCount: 34,
+        thoughtsTokenCount: 5,
+        totalTokenCount: 51,
+        toolUsePromptTokenCount: 4,
+        privateTokenPayload: 'sensitive-token-payload',
+      },
     },
     candidate(JSON.stringify({ summary: 'Safe summary.' })),
   ]);
@@ -961,6 +972,12 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
   assert.equal(shapeLog.fields.groundingChunkCount, 1);
   assert.equal(shapeLog.fields.finishReason, 'STOP');
   assert.equal(shapeLog.fields.webSearchQueryCount, 1);
+  assert.equal(shapeLog.fields.configuredMaxOutputTokens, 2_048);
+  assert.equal(Number.isInteger(shapeLog.fields.promptCharacterCount), true);
+  assert.equal(shapeLog.fields.promptTokenCount, 12);
+  assert.equal(shapeLog.fields.candidatesTokenCount, 34);
+  assert.equal(shapeLog.fields.thoughtsTokenCount, 5);
+  assert.equal(shapeLog.fields.totalTokenCount, 51);
   const serializedLogs = JSON.stringify(logger.entries);
   for (const forbidden of [
     secretTopic,
@@ -971,6 +988,7 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
     'Private title',
     'private support text',
     'private rendered content',
+    'sensitive-token-payload',
   ]) {
     assert.equal(serializedLogs.includes(forbidden), false);
   }
@@ -1036,6 +1054,11 @@ test('an ungrounded successful response gets one grounding-specific fallback', a
   assert.match(client.calls[1].config.systemInstruction, /grounding fallback/i);
   assert.match(client.calls[1].config.systemInstruction, /execute Google Search/i);
   assert.match(client.calls[1].config.systemInstruction, /recent, independently verifiable facts/i);
+  assert.deepEqual(client.calls[0].config.thinkingConfig, { thinkingLevel: 'LOW' });
+  assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'LOW' });
+  assert.equal(client.calls[0].config.maxOutputTokens, 2_048);
+  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
+  assert.match(client.calls[1].config.systemInstruction, /exactly 2 one-line records/i);
   const researchStarts = logger.entries.filter(
     (entry) =>
       entry.fields.event === 'gemini.attempt.started' &&
@@ -1051,6 +1074,86 @@ test('an ungrounded successful response gets one grounding-specific fallback', a
       { attemptId: 'attempt_grounding_fallback', groundingFallback: true },
     ],
   );
+});
+
+test('an ungrounded MAX_TOKENS response is incomplete and remains safely rejected', async () => {
+  const logger = memoryLogger();
+  const client = fakeClient([
+    candidate('Truncated answer with https://invented.example/truncated.', {
+      finishReason: 'MAX_TOKENS',
+    }),
+    candidate('Second answer with https://invented.example/final.'),
+  ]);
+  const provider = new GeminiProvider(TEST_CONFIG, { client, logger });
+
+  await assert.rejects(
+    () => provider.research({ topic: 'Current facts requiring web evidence' }),
+    (error) =>
+      error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED' &&
+      error.internalCode === 'GEMINI_GROUNDING_METADATA_MISSING' &&
+      error.finishReason === 'STOP' &&
+      error.groundingChunkCount === 0,
+  );
+  assert.equal(client.calls.length, 2);
+  const firstCompletion = logger.entries.find(
+    (entry) =>
+      entry.fields.event === 'gemini.attempt.completed' && entry.fields.attemptNumber === 1,
+  );
+  assert.equal(firstCompletion.fields.finishReason, 'MAX_TOKENS');
+  assert.equal(firstCompletion.fields.retryReason, 'GROUNDING_EVIDENCE_MISSING');
+});
+
+test('a grounded MAX_TOKENS response is retried once and never accepted as complete', async () => {
+  const groundedMaxTokens = candidate('Truncated but grounded.', {
+    finishReason: 'MAX_TOKENS',
+    webSearchQueries: ['current official update'],
+    sources: [{ title: 'Official source', uri: 'https://authority.example/current' }],
+  });
+  const client = fakeClient([groundedMaxTokens, groundedMaxTokens]);
+  const provider = new GeminiProvider(TEST_CONFIG, { client });
+
+  await assert.rejects(
+    () => provider.research({ topic: 'Current official update' }),
+    (error) =>
+      error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED' &&
+      error.internalCode === 'GEMINI_RESEARCH_RESPONSE_INCOMPLETE' &&
+      error.finishReason === 'MAX_TOKENS' &&
+      error.groundingMetadataPresent === true &&
+      error.groundingChunkCount === 1 &&
+      error.webSearchQueryCount === 1 &&
+      error.researchAttemptCount === 2,
+  );
+  assert.equal(client.calls.length, 2);
+  assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'LOW' });
+  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
+});
+
+test('a grounded STOP fallback completes after an incomplete first response', async () => {
+  const client = fakeClient([
+    candidate('Truncated grounded first response.', {
+      finishReason: 'MAX_TOKENS',
+      sources: [{ title: 'First source', uri: 'https://one.example/update' }],
+    }),
+    candidate('Two complete grounded findings.', {
+      webSearchQueries: ['updates in UTC date window'],
+      sources: [
+        { title: 'First source', uri: 'https://one.example/update' },
+        { title: 'Second source', uri: 'https://two.example/update' },
+      ],
+    }),
+    candidate(JSON.stringify({ summary: 'Completed grounded fallback.' })),
+  ]);
+  const provider = new GeminiProvider(TEST_CONFIG, { client });
+
+  const result = await provider.research({ topic: 'Recent official updates' });
+
+  assert.equal(result.summary, 'Completed grounded fallback.');
+  assert.equal(result.researchDiagnostics.groundingFallbackUsed, true);
+  assert.equal(result.sourceReferences.length, 2);
+  assert.equal(client.calls.length, 3);
+  assert.match(client.calls[1].config.systemInstruction, /grounding fallback/i);
+  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
+  assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'LOW' });
 });
 
 test('timeout and rate-limit failures map to stable safe codes', () => {
@@ -1435,9 +1538,9 @@ test('503 followed by success uses one fallback grounded-research profile', asyn
   assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
   assert.deepEqual(client.calls[1].config.tools, [{ googleSearch: {} }]);
   assert.equal(client.calls[2].config.tools, undefined);
-  assert.equal(client.calls[0].config.maxOutputTokens, 512);
-  assert.equal(client.calls[1].config.maxOutputTokens, 256);
-  assert.match(client.calls[1].config.systemInstruction, /at most 2 one-line records/i);
+  assert.equal(client.calls[0].config.maxOutputTokens, 2_048);
+  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
+  assert.match(client.calls[1].config.systemInstruction, /exactly 2 one-line records/i);
   assert.doesNotMatch(client.calls[1].config.systemInstruction, /grounding fallback/i);
   assert.equal(client.calls[1].contents.length < client.calls[0].contents.length, true);
   const researchAttempts = logger.entries.filter(

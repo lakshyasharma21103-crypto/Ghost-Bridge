@@ -161,6 +161,12 @@ function baseResponseShape(context, apiMode) {
     operation: 'grounded_research',
     model: context.model,
     apiMode,
+    ...(nonNegativeInteger(context.configuredMaxOutputTokens) !== undefined
+      ? { configuredMaxOutputTokens: nonNegativeInteger(context.configuredMaxOutputTokens) }
+      : {}),
+    ...(nonNegativeInteger(context.promptCharacterCount) !== undefined
+      ? { promptCharacterCount: nonNegativeInteger(context.promptCharacterCount) }
+      : {}),
   };
 }
 
@@ -187,6 +193,18 @@ function inspectGenerateContentResponseShape(response, context = {}) {
   const billedToolCallCount = nonNegativeInteger(
     aliasedValue(usageMetadata, 'billedToolCallCount', 'billed_tool_call_count') ??
       aliasedValue(usageMetadata, 'toolCallCount', 'tool_call_count'),
+  );
+  const promptTokenCount = nonNegativeInteger(
+    aliasedValue(usageMetadata, 'promptTokenCount', 'prompt_token_count'),
+  );
+  const candidatesTokenCount = nonNegativeInteger(
+    aliasedValue(usageMetadata, 'candidatesTokenCount', 'candidates_token_count'),
+  );
+  const thoughtsTokenCount = nonNegativeInteger(
+    aliasedValue(usageMetadata, 'thoughtsTokenCount', 'thoughts_token_count'),
+  );
+  const totalTokenCount = nonNegativeInteger(
+    aliasedValue(usageMetadata, 'totalTokenCount', 'total_token_count'),
   );
   const candidateFinishReasons = candidates.map((candidate) =>
     safeFinishReason(candidate?.finishReason ?? candidate?.finish_reason),
@@ -216,6 +234,10 @@ function inspectGenerateContentResponseShape(response, context = {}) {
       (item) => aliasedValue(item, 'searchEntryPoint', 'search_entry_point') != null,
     ),
     usageMetadataKeys,
+    ...(promptTokenCount !== undefined ? { promptTokenCount } : {}),
+    ...(candidatesTokenCount !== undefined ? { candidatesTokenCount } : {}),
+    ...(thoughtsTokenCount !== undefined ? { thoughtsTokenCount } : {}),
+    ...(totalTokenCount !== undefined ? { totalTokenCount } : {}),
     ...(billedToolCallCount !== undefined ? { billedToolCallCount } : {}),
   };
 }

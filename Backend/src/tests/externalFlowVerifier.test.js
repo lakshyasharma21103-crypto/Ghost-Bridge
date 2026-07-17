@@ -117,14 +117,12 @@ test('verifier-local request failures retain safe outbound correlation identifie
 test('external-flow verifier uses a current topic that requires official web research', () => {
   const topic = verificationResearchTopic(new Date('2026-07-14T12:00:00.000Z'));
 
-  assert.match(topic, /current official web sources/i);
   assert.match(topic, /Google Search/i);
-  assert.match(topic, /at least two genuine/i);
+  assert.match(topic, /exactly 2/i);
+  assert.match(topic, /2026-07-08/);
+  assert.match(topic, /at least 2 genuine/i);
   assert.match(topic, /source-backed factual findings/i);
-  assert.match(topic, /concise/i);
-  assert.match(topic, /latest published/i);
-  assert.match(topic, /Model Context Protocol/);
-  assert.match(topic, /Agent2Agent Protocol/);
+  assert.match(topic, /no introduction or long explanations/i);
   assert.match(topic, /2026-07-14/);
   assert.doesNotMatch(topic, /^external authenticated agent interoperability$/i);
 });
@@ -413,6 +411,12 @@ test('source-extraction failures report only correlated allowlisted Gemini shape
       internalCode: 'GEMINI_GROUNDING_METADATA_MISSING',
       apiMode: 'models.generateContent',
       candidateCount: 1,
+      configuredMaxOutputTokens: 2048,
+      promptCharacterCount: 731,
+      promptTokenCount: 182,
+      candidatesTokenCount: 73,
+      thoughtsTokenCount: 12,
+      totalTokenCount: 267,
       responseStepTypes: [],
       googleSearchCallCount: 0,
       googleSearchResultCount: 0,
@@ -444,6 +448,12 @@ test('source-extraction failures report only correlated allowlisted Gemini shape
       sourceExtractionCode: 'GEMINI_GROUNDING_METADATA_MISSING',
       apiMode: 'models.generateContent',
       candidateCount: 1,
+      configuredMaxOutputTokens: 2048,
+      promptCharacterCount: 731,
+      promptTokenCount: 182,
+      candidatesTokenCount: 73,
+      thoughtsTokenCount: 12,
+      totalTokenCount: 267,
       responseStepTypes: [],
       googleSearchCallCount: 0,
       googleSearchResultCount: 0,

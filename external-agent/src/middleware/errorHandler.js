@@ -83,6 +83,10 @@ function safeAttemptDurations(value) {
     : undefined;
 }
 
+function safeUsageCount(value, maximum = 10_000_000) {
+  return Number.isInteger(value) && value >= 0 && value <= maximum ? value : undefined;
+}
+
 function normalizeError(error) {
   if (error instanceof RuntimeError) return error;
   if (error?.type === 'entity.too.large') {
@@ -133,6 +137,24 @@ function errorHandler(logger) {
               : {}),
             ...(Number.isInteger(normalized.candidateCount) && normalized.candidateCount >= 0
               ? { candidateCount: normalized.candidateCount }
+              : {}),
+            ...(safeUsageCount(normalized.configuredMaxOutputTokens, 8_192) !== undefined
+              ? { configuredMaxOutputTokens: normalized.configuredMaxOutputTokens }
+              : {}),
+            ...(safeUsageCount(normalized.promptCharacterCount, 100_000) !== undefined
+              ? { promptCharacterCount: normalized.promptCharacterCount }
+              : {}),
+            ...(safeUsageCount(normalized.promptTokenCount) !== undefined
+              ? { promptTokenCount: normalized.promptTokenCount }
+              : {}),
+            ...(safeUsageCount(normalized.candidatesTokenCount) !== undefined
+              ? { candidatesTokenCount: normalized.candidatesTokenCount }
+              : {}),
+            ...(safeUsageCount(normalized.thoughtsTokenCount) !== undefined
+              ? { thoughtsTokenCount: normalized.thoughtsTokenCount }
+              : {}),
+            ...(safeUsageCount(normalized.totalTokenCount) !== undefined
+              ? { totalTokenCount: normalized.totalTokenCount }
               : {}),
             ...(Array.isArray(normalized.responseStepTypes) &&
             normalized.responseStepTypes.every((type) => SAFE_GEMINI_STEP_TYPES.has(type))

@@ -93,11 +93,15 @@ function report(detail) {
 
 function verificationResearchTopic(now = new Date()) {
   const currentDate = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
-  const date = currentDate.toISOString().slice(0, 10);
+  const startDate = new Date(currentDate);
+  startDate.setUTCDate(startDate.getUTCDate() - 6);
+  const start = startDate.toISOString().slice(0, 10);
+  const end = currentDate.toISOString().slice(0, 10);
   return (
-    'Use Google Search to report the current latest stable release version and official release ' +
-    `date for both Node.js and Python as of ${date}. Use at least two genuine web sources, ` +
-    'give only source-backed factual findings, and keep the output concise.'
+    'Using Google Search, find exactly 2 official software security advisories or release updates ' +
+    `published or updated from ${start} through ${end} UTC (inclusive). ` +
+    'Use at least 2 genuine web sources. Return only brief, source-backed factual findings with ' +
+    'no introduction or long explanations.'
   );
 }
 
@@ -158,6 +162,30 @@ async function verify() {
         `API mode: ${error.apiMode || '[unavailable]'}`,
         `Response candidate count: ${
           Number.isInteger(error.candidateCount) ? error.candidateCount : '[unavailable]'
+        }`,
+        `Configured max output tokens: ${
+          Number.isInteger(error.configuredMaxOutputTokens)
+            ? error.configuredMaxOutputTokens
+            : '[unavailable]'
+        }`,
+        `Prompt character count: ${
+          Number.isInteger(error.promptCharacterCount)
+            ? error.promptCharacterCount
+            : '[unavailable]'
+        }`,
+        `Prompt token count: ${
+          Number.isInteger(error.promptTokenCount) ? error.promptTokenCount : '[unavailable]'
+        }`,
+        `Candidate token count: ${
+          Number.isInteger(error.candidatesTokenCount)
+            ? error.candidatesTokenCount
+            : '[unavailable]'
+        }`,
+        `Thought token count: ${
+          Number.isInteger(error.thoughtsTokenCount) ? error.thoughtsTokenCount : '[unavailable]'
+        }`,
+        `Total token count: ${
+          Number.isInteger(error.totalTokenCount) ? error.totalTokenCount : '[unavailable]'
         }`,
         `Response step types: ${
           Array.isArray(error.responseStepTypes)
