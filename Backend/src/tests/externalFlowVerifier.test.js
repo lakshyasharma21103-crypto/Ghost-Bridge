@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
@@ -63,6 +64,60 @@ function jsonFetchResponse(body, status = 200) {
   });
 }
 
+function createVerifierLaunchFixture() {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'external-flow-env-'));
+  const fixtureBackend = path.join(fixtureRoot, 'backend');
+  const fixtureScripts = path.join(fixtureBackend, 'scripts');
+  const backendPackage = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8'),
+  );
+  fs.mkdirSync(fixtureScripts, { recursive: true });
+  fs.copyFileSync(
+    path.resolve(__dirname, '../../scripts/verifyExternalFlow.js'),
+    path.join(fixtureScripts, 'verifyExternalFlow.js'),
+  );
+  fs.writeFileSync(
+    path.join(fixtureBackend, '.env'),
+    'EXTERNAL_TEST_AGENT_BASE_URL=https://fixture-agent.example.test\n',
+  );
+  fs.writeFileSync(
+    path.join(fixtureRoot, 'package.json'),
+    `${JSON.stringify({ private: true, workspaces: ['backend'] }, null, 2)}\n`,
+  );
+  fs.writeFileSync(
+    path.join(fixtureBackend, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: backendPackage.name,
+        private: true,
+        scripts: {
+          'verify:external-flow': backendPackage.scripts['verify:external-flow'],
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  const env = { ...process.env, NODE_PATH: path.resolve(__dirname, '../../../node_modules') };
+  delete env.EXTERNAL_TEST_AGENT_BASE_URL;
+
+  return { env, fixtureBackend, fixtureRoot };
+}
+
+function assertEnvironmentLaunch(command, args, options) {
+  const result = spawnSync(command, args, {
+    ...options,
+    encoding: 'utf8',
+    timeout: 30_000,
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+  assert.equal(result.stdout.split('External-flow verifier environment loaded.').length - 1, 1);
+  assert.equal(result.stdout.includes('fixture-agent.example.test'), false);
+  assert.equal(result.stderr, '');
+}
+
 test('runtime invocation timeout accepts at least 360000 milliseconds and rejects non-positive values', () => {
   const valid = spawnSync(
     process.execPath,
@@ -105,10 +160,45 @@ test('external-flow verifier preserves the provider, request, client, and gatewa
   assert.doesNotMatch(source, /RUNTIME_REQUEST_TIMEOUT_MS\s*=.*70000/);
   assert.ok(source.indexOf('dotenv.config') < source.indexOf('const externalAgentPort'));
   assert.ok(source.indexOf('dotenv.config') < source.indexOf('requestedVerificationTimeoutMs'));
+  assert.ok(source.indexOf('dotenv.config') < source.search(/process\.env(?:\.|\[)/));
   assert.doesNotMatch(
     source,
     /process\.env\.EXTERNAL_TEST_AGENT_BASE_URL\s*=\s*`http:\/\/127\.0\.0\.1/,
   );
+});
+
+test('external-flow verifier loads backend/.env from every supported launch directory', async (t) => {
+  const { env, fixtureBackend, fixtureRoot } = createVerifierLaunchFixture();
+  t.after(() => fs.rmSync(fixtureRoot, { force: true, recursive: true }));
+
+  await t.test('from the repository root', () => {
+    assertEnvironmentLaunch(
+      process.execPath,
+      ['backend/scripts/verifyExternalFlow.js', '--check-env-load'],
+      { cwd: fixtureRoot, env },
+    );
+  });
+
+  await t.test('from the backend directory', () => {
+    assertEnvironmentLaunch(
+      process.execPath,
+      ['scripts/verifyExternalFlow.js', '--check-env-load'],
+      { cwd: fixtureBackend, env },
+    );
+  });
+
+  await t.test('through npm --workspace backend', () => {
+    const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    assertEnvironmentLaunch(
+      npmCommand,
+      ['--workspace', 'backend', 'run', 'verify:external-flow', '--', '--check-env-load'],
+      {
+        cwd: fixtureRoot,
+        env,
+        shell: process.platform === 'win32',
+      },
+    );
+  });
 });
 
 test('external-agent base URL without a trailing slash is preserved safely', () => {

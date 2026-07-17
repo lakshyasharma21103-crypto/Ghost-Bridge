@@ -9,6 +9,17 @@ const BACKEND_ENV_PATH = path.resolve(__dirname, '../.env');
 dotenv.config({ path: BACKEND_ENV_PATH });
 
 const EXTERNAL_AGENT_BASE_URL_ENV = 'EXTERNAL_TEST_AGENT_BASE_URL';
+const ENV_LOAD_CHECK_ARGUMENT = '--check-env-load';
+
+if (require.main === module && process.argv.includes(ENV_LOAD_CHECK_ARGUMENT)) {
+  const configured = Boolean(process.env[EXTERNAL_AGENT_BASE_URL_ENV]?.trim());
+  const output = configured
+    ? 'External-flow verifier environment loaded.\n'
+    : `${EXTERNAL_AGENT_BASE_URL_ENV} is missing from the backend environment.\n`;
+  fs.writeSync(configured ? process.stdout.fd : process.stderr.fd, output);
+  process.exit(configured ? 0 : 1);
+}
+
 const EXTERNAL_STARTUP_PROBE_TIMEOUT_MS = 30_000;
 const externalAgentPort = Number(process.env.EXTERNAL_FLOW_AGENT_PORT || 5002);
 const gatewayPort = Number(process.env.EXTERNAL_FLOW_GATEWAY_PORT || 5014);
