@@ -1,10 +1,54 @@
 const { logger } = require('./utils/logger');
 const { createDurableWorker, safeWorkerError } = require('./services/durableWorker.service');
+const { createOrchestrationWorker } = require('./services/orchestrationScheduler.service');
+const { env } = require('./config/env');
 
 async function startWorker(options = {}) {
-  const worker = createDurableWorker(options);
-  await worker.start();
-  return worker;
+  const durableWorker = createDurableWorker(options.durable || options);
+  await durableWorker.start();
+  const orchestrationWorker = env.ORCHESTRATION_WORKER_ENABLED
+    ? createOrchestrationWorker({
+        ...(options.orchestration || {}),
+        manageDatabase: false,
+      })
+    : null;
+  try {
+    if (orchestrationWorker) await orchestrationWorker.start();
+  } catch (error) {
+    await durableWorker.shutdown('ORCHESTRATION_WORKER_START_FAILED');
+    throw error;
+  }
+  return {
+    abortActive(reasonCode) {
+      return (
+        durableWorker.abortActive(reasonCode) +
+        (orchestrationWorker?.abortActive(reasonCode) || 0)
+      );
+    },
+    snapshot() {
+      return {
+        durable: durableWorker.snapshot(),
+        orchestration: orchestrationWorker?.snapshot() || {
+          status: 'disabled',
+          ready: true,
+          acceptingClaims: false,
+          activeNodeCount: 0,
+        },
+      };
+    },
+    async shutdown(signal) {
+      const orchestration = orchestrationWorker
+        ? await orchestrationWorker.shutdown(signal)
+        : { drained: true, forced: false };
+      const durable = await durableWorker.shutdown(signal);
+      return {
+        drained: orchestration.drained && durable.drained,
+        forced: orchestration.forced || durable.forced,
+        orchestration,
+        durable,
+      };
+    },
+  };
 }
 
 if (require.main === module) {

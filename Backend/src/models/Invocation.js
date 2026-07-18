@@ -58,6 +58,21 @@ const encryptedExecutionPayloadSchema = new mongoose.Schema(
   { _id: false, strict: 'throw' },
 );
 
+const orchestrationContextSchema = new mongoose.Schema(
+  {
+    orchestrationRunId: { type: String, required: true, trim: true, maxlength: 128 },
+    nodeRunId: { type: String, required: true, trim: true, maxlength: 128 },
+    nodeKey: { type: String, required: true, trim: true, maxlength: 100 },
+    parentTraceId: { type: String, required: true, trim: true, maxlength: 128 },
+    traceId: { type: String, required: true, trim: true, maxlength: 128 },
+    requestId: { type: String, required: true, trim: true, maxlength: 128 },
+    attempt: { type: Number, required: true, min: 1, max: 5 },
+    capability: { type: String, required: true, trim: true, maxlength: 200 },
+    operation: { type: String, required: true, trim: true, maxlength: 200 },
+  },
+  { _id: false, strict: 'throw' },
+);
+
 const authorizationEvidenceSchema = new mongoose.Schema(
   {
     permission: { type: String, required: true, trim: true, maxlength: 200 },
@@ -109,6 +124,7 @@ const invocationSchema = new mongoose.Schema(
     authorizationEvidence: { type: authorizationEvidenceSchema },
     approvalRequestIds: { type: [String], default: undefined, select: false },
     approvalRequired: { type: Boolean, default: false },
+    orchestrationContext: { type: orchestrationContextSchema, select: false },
     credentialBindingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'CredentialBinding',

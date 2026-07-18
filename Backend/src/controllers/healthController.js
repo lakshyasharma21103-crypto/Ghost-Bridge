@@ -39,6 +39,10 @@ function getReadiness(_request, response) {
       database: { status: database },
       runtimeConfiguration: { status: runtimeConfiguration },
       lifecycle: { status: lifecycle.phase },
+      orchestrationWorker: {
+        status: env.ORCHESTRATION_WORKER_ENABLED ? 'external_worker_required' : 'disabled',
+        enabled: env.ORCHESTRATION_WORKER_ENABLED,
+      },
       timestamp: new Date().toISOString(),
     },
   });

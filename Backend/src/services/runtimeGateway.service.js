@@ -902,6 +902,21 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
             ].filter(Boolean),
           }
         : {}),
+      ...(actor.orchestrationContext
+        ? {
+            orchestrationContext: {
+              orchestrationRunId: actor.orchestrationContext.orchestrationRunId,
+              nodeRunId: actor.orchestrationContext.nodeRunId,
+              nodeKey: actor.orchestrationContext.nodeKey,
+              parentTraceId: actor.orchestrationContext.parentTraceId,
+              traceId: actor.orchestrationContext.traceId,
+              requestId: actor.orchestrationContext.requestId,
+              attempt: actor.orchestrationContext.attempt,
+              capability: actor.orchestrationContext.capability,
+              operation: actor.orchestrationContext.operation,
+            },
+          }
+        : {}),
       ...(actor.recoveryParentInvocationId
         ? { recoveryParentInvocationId: actor.recoveryParentInvocationId }
         : {}),

@@ -1455,6 +1455,15 @@ async function decideApprovalRequest(approvalRequestId, decision, input = {}, ca
           : 'Approval decision recorded',
     safeSummary: `${normalizedDecision} recorded for ${request.permission}`,
   });
+  if (updated.orchestrationRunId) {
+    try {
+      const { handleApprovalResolution } = require('./orchestrationScheduler.service');
+      await handleApprovalResolution(updated.approvalRequestId);
+    } catch {
+      // Orchestration approval resumption is durable: the orchestration worker also reconciles
+      // approval state, so a transient cross-subsystem notification failure cannot lose work.
+    }
+  }
   return serializeApprovalRequest(updated, decisions, grant);
 }
 
@@ -1904,6 +1913,7 @@ module.exports = {
   decideApprovalRequest,
   enforceApproval,
   evaluateApprovalRequirement,
+  expireIfNeeded,
   getApprovalRequest,
   getWorkflow,
   invalidateApprovalRequest,

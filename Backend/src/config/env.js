@@ -168,6 +168,18 @@ const durableWorkDeadLetterAfterAttempts = integerInRangeFromEnv(
   1,
   20,
 );
+const orchestrationNodeLeaseMs = integerInRangeFromEnv(
+  'ORCHESTRATION_NODE_LEASE_MS',
+  120_000,
+  5_000,
+  3_600_000,
+);
+const orchestrationNodeHeartbeatMs = integerInRangeFromEnv(
+  'ORCHESTRATION_NODE_HEARTBEAT_MS',
+  30_000,
+  1_000,
+  300_000,
+);
 
 if (runtimeRetryMaxDelayMs < runtimeRetryBaseDelayMs) {
   throw new Error(
@@ -203,6 +215,10 @@ if (durableWorkDeadLetterAfterAttempts < durableWorkMaxAttempts) {
   throw new Error(
     'DURABLE_WORK_DEAD_LETTER_AFTER_ATTEMPTS must be greater than or equal to DURABLE_WORK_MAX_ATTEMPTS',
   );
+}
+
+if (orchestrationNodeHeartbeatMs * 3 > orchestrationNodeLeaseMs) {
+  throw new Error('ORCHESTRATION_NODE_HEARTBEAT_MS must be at most one third of ORCHESTRATION_NODE_LEASE_MS');
 }
 
 const env = {
@@ -270,6 +286,27 @@ const env = {
     1_000,
     300_000,
   ),
+  ORCHESTRATION_WORKER_ENABLED: booleanFromEnv('ORCHESTRATION_WORKER_ENABLED', true),
+  ORCHESTRATION_WORKER_POLL_INTERVAL_MS: integerInRangeFromEnv(
+    'ORCHESTRATION_WORKER_POLL_INTERVAL_MS',
+    1_000,
+    100,
+    60_000,
+  ),
+  ORCHESTRATION_WORKER_BATCH_SIZE: integerInRangeFromEnv(
+    'ORCHESTRATION_WORKER_BATCH_SIZE',
+    5,
+    1,
+    100,
+  ),
+  ORCHESTRATION_WORKER_CONCURRENCY: integerInRangeFromEnv(
+    'ORCHESTRATION_WORKER_CONCURRENCY',
+    3,
+    1,
+    50,
+  ),
+  ORCHESTRATION_NODE_LEASE_MS: orchestrationNodeLeaseMs,
+  ORCHESTRATION_NODE_HEARTBEAT_MS: orchestrationNodeHeartbeatMs,
   INVOCATION_STUCK_SCAN_LIMIT: integerInRangeFromEnv('INVOCATION_STUCK_SCAN_LIMIT', 100, 1, 100),
   INVOCATION_STUCK_GRACE_MS: integerInRangeFromEnv(
     'INVOCATION_STUCK_GRACE_MS',

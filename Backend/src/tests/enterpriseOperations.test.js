@@ -296,9 +296,9 @@ test('metrics contain no high-cardinality tenant identifiers', () => {
 });
 test('administrative audit events redact secret-like metadata', () =>
   assert.match(enterprise, /\.\.\.redactSecrets\(metadata\)/));
-test('permission registry v5 includes enterprise operations permissions', () => {
+test('permission registry v6 includes enterprise operations permissions', () => {
   const registry = getPermissionRegistry();
-  assert.equal(registry.version, 5);
+  assert.equal(registry.version, 6);
   for (const id of [
     'organization.suspend',
     'workspace.reactivate',

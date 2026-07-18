@@ -3,6 +3,7 @@ const Organization = require('../models/Organization');
 const Workspace = require('../models/Workspace');
 const MaintenanceWindow = require('../models/MaintenanceWindow');
 const RuntimeWorkItem = require('../models/RuntimeWorkItem');
+const OrchestrationNodeRun = require('../models/OrchestrationNodeRun');
 const { env } = require('../config/env');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
@@ -273,6 +274,7 @@ async function assertOperationalAccess(input = {}, options = {}) {
 async function pauseQueuedWork(input = {}) {
   const organizationId = idOf(input.organizationId);
   const partnerId = idOf(input.partnerId || organizationId);
+  const orchestrationOrganizationId = organizationId || partnerId;
   const workspaceId = idOf(input.workspaceId);
   if (!organizationId && !partnerId)
     throw new TypeError('Tenant scope is required to pause durable work.');
@@ -284,20 +286,59 @@ async function pauseQueuedWork(input = {}) {
     ...(workspaceId ? { receivingWorkspaceId: workspaceId } : {}),
     status: { $in: ['pending', 'retry_scheduled'] },
   };
-  const result = await RuntimeWorkItem.updateMany(filter, {
-    $set: {
-      status: 'blocked',
-      blockedAt: new Date(),
-      blockedReasonCode: input.reasonCode || 'ORGANIZATION_SUSPENDED',
-    },
-    $inc: { version: 1 },
-  });
-  return { blocked: result.modifiedCount };
+  const [result, readyResult, retryResult] = await Promise.all([
+    RuntimeWorkItem.updateMany(filter, {
+      $set: {
+        status: 'blocked',
+        blockedAt: new Date(),
+        blockedReasonCode: input.reasonCode || 'ORGANIZATION_SUSPENDED',
+      },
+      $inc: { version: 1 },
+    }),
+    OrchestrationNodeRun.updateMany(
+      {
+        organizationId: orchestrationOrganizationId,
+        ...(workspaceId ? { workspaceId } : {}),
+        status: 'ready',
+      },
+      {
+        $set: {
+          status: 'blocked',
+          operationallyBlocked: true,
+          operationalBlockReasonCode: input.reasonCode || 'ORGANIZATION_SUSPENDED',
+          operationalResumeStatus: 'ready',
+        },
+      },
+    ),
+    OrchestrationNodeRun.updateMany(
+      {
+        organizationId: orchestrationOrganizationId,
+        ...(workspaceId ? { workspaceId } : {}),
+        status: 'retry_wait',
+      },
+      {
+        $set: {
+          status: 'blocked',
+          operationallyBlocked: true,
+          operationalBlockReasonCode: input.reasonCode || 'ORGANIZATION_SUSPENDED',
+          operationalResumeStatus: 'retry_wait',
+        },
+        $unset: { nextAttemptAt: 1 },
+      },
+    ),
+  ]);
+  const orchestrationBlocked = readyResult.modifiedCount + retryResult.modifiedCount;
+  return {
+    blocked: result.modifiedCount + orchestrationBlocked,
+    runtimeWorkBlocked: result.modifiedCount,
+    orchestrationNodesBlocked: orchestrationBlocked,
+  };
 }
 
 async function resumeBlockedWork(input = {}) {
   const organizationId = idOf(input.organizationId);
   const partnerId = idOf(input.partnerId || organizationId);
+  const orchestrationOrganizationId = organizationId || partnerId;
   const workspaceId = idOf(input.workspaceId);
   await assertOperationalAccess({
     organizationId,
@@ -308,19 +349,53 @@ async function resumeBlockedWork(input = {}) {
   const tenantScope = organizationId
     ? { $or: [{ organizationId }, ...(mongoose.isValidObjectId(partnerId) ? [{ partnerId }] : [])] }
     : { partnerId };
-  const result = await RuntimeWorkItem.updateMany(
-    {
-      ...tenantScope,
-      ...(workspaceId ? { receivingWorkspaceId: workspaceId } : {}),
-      status: 'blocked',
-    },
-    {
-      $set: { status: 'pending', availableAt: new Date() },
-      $unset: { blockedAt: 1, blockedReasonCode: 1 },
-      $inc: { version: 1 },
-    },
-  );
-  return { resumed: result.modifiedCount, automatic: false };
+  const [result, readyResult, retryResult] = await Promise.all([
+    RuntimeWorkItem.updateMany(
+      {
+        ...tenantScope,
+        ...(workspaceId ? { receivingWorkspaceId: workspaceId } : {}),
+        status: 'blocked',
+      },
+      {
+        $set: { status: 'pending', availableAt: new Date() },
+        $unset: { blockedAt: 1, blockedReasonCode: 1 },
+        $inc: { version: 1 },
+      },
+    ),
+    OrchestrationNodeRun.updateMany(
+      {
+        organizationId: orchestrationOrganizationId,
+        ...(workspaceId ? { workspaceId } : {}),
+        status: 'blocked',
+        operationallyBlocked: true,
+        operationalResumeStatus: 'ready',
+      },
+      {
+        $set: { status: 'ready', operationallyBlocked: false },
+        $unset: { operationalBlockReasonCode: 1, operationalResumeStatus: 1 },
+      },
+    ),
+    OrchestrationNodeRun.updateMany(
+      {
+        organizationId: orchestrationOrganizationId,
+        ...(workspaceId ? { workspaceId } : {}),
+        status: 'blocked',
+        operationallyBlocked: true,
+        operationalResumeStatus: 'retry_wait',
+      },
+      {
+        $set: { status: 'retry_wait', nextAttemptAt: new Date(), operationallyBlocked: false },
+        $unset: { operationalBlockReasonCode: 1, operationalResumeStatus: 1 },
+      },
+    ),
+  ]);
+  const orchestrationResumed = readyResult.modifiedCount + retryResult.modifiedCount;
+  return {
+    resumed: result.modifiedCount + orchestrationResumed,
+    runtimeWorkResumed: result.modifiedCount,
+    orchestrationNodesResumed: orchestrationResumed,
+    automatic: false,
+  };
 }
 
 module.exports = {

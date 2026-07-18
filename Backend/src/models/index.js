@@ -50,6 +50,9 @@ const TenantDeletionJob = require('./TenantDeletionJob');
 const TenantDeletionTombstone = require('./TenantDeletionTombstone');
 const OperationalRecovery = require('./OperationalRecovery');
 const DisasterRecoveryStatus = require('./DisasterRecoveryStatus');
+const OrchestrationDefinition = require('./OrchestrationDefinition');
+const OrchestrationRun = require('./OrchestrationRun');
+const OrchestrationNodeRun = require('./OrchestrationNodeRun');
 
 module.exports = {
   Partner,
@@ -104,4 +107,7 @@ module.exports = {
   TenantDeletionTombstone,
   OperationalRecovery,
   DisasterRecoveryStatus,
+  OrchestrationDefinition,
+  OrchestrationRun,
+  OrchestrationNodeRun,
 };

@@ -1,4 +1,4 @@
-const PERMISSION_REGISTRY_VERSION = 5;
+const PERMISSION_REGISTRY_VERSION = 6;
 const PERMISSION_REGISTRY_ID = `permission-registry.v${PERMISSION_REGISTRY_VERSION}`;
 
 const RiskLevels = Object.freeze({
@@ -228,6 +228,99 @@ const permissionDefinitions = [
     defaultRoles: ['organization_owner', 'organization_admin', 'workspace_admin'],
     auditRequired: true,
   },
+  ...[
+    [
+      'orchestration.definition.read',
+      'Read tenant-scoped orchestration definitions and safe graph metadata.',
+      'LOW',
+      [
+        'organization_owner',
+        'organization_admin',
+        'security_admin',
+        'workspace_admin',
+        'operator',
+        'developer',
+        'auditor',
+        'viewer',
+      ],
+    ],
+    [
+      'orchestration.definition.create',
+      'Create a tenant-scoped orchestration definition draft.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'workspace_admin', 'developer'],
+    ],
+    [
+      'orchestration.definition.update',
+      'Update an orchestration draft or create a successor version.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'workspace_admin', 'developer'],
+    ],
+    [
+      'orchestration.definition.validate',
+      'Validate orchestration graph, schema, connection, and capability references.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'developer'],
+    ],
+    [
+      'orchestration.definition.activate',
+      'Activate an immutable validated orchestration version.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
+    ],
+    [
+      'orchestration.definition.archive',
+      'Archive an orchestration version without changing existing runs.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'workspace_admin'],
+    ],
+    [
+      'orchestration.run.create',
+      'Start a durable orchestration run.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'workspace_admin', 'operator', 'developer'],
+    ],
+    [
+      'orchestration.run.read',
+      'Read orchestration run state and safe node metadata.',
+      'LOW',
+      [
+        'organization_owner',
+        'organization_admin',
+        'security_admin',
+        'workspace_admin',
+        'operator',
+        'developer',
+        'auditor',
+        'viewer',
+      ],
+    ],
+    [
+      'orchestration.run.cancel',
+      'Request durable cancellation of an orchestration run.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'workspace_admin', 'operator', 'developer'],
+    ],
+    [
+      'orchestration.node.execute',
+      'Execute a claimed orchestration node through the Runtime Gateway.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestration.node.retry',
+      'Retry a platform-classified retryable orchestration node failure.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'workspace_admin', 'operator'],
+    ],
+  ].map(([id, description, riskLevel, defaultRoles]) => ({
+    id,
+    description,
+    category: 'Orchestration',
+    riskLevel: RiskLevels[riskLevel],
+    defaultRoles,
+    auditRequired: true,
+  })),
   {
     id: 'credential.read',
     description: 'Read credential metadata without exposing secrets.',

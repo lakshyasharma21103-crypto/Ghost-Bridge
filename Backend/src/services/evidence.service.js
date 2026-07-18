@@ -97,6 +97,12 @@ const SAFE_METADATA_KEYS = new Set([
   'evidenceExportId',
   'checkpointId',
   'simulation',
+  'definitionId',
+  'orchestrationRunId',
+  'nodeKey',
+  'nodeCount',
+  'attempt',
+  'approvalRequestId',
 ]);
 
 const CONTROL_CATALOG = Object.freeze(
@@ -200,6 +206,26 @@ const CONTROL_CATALOG = Object.freeze(
       'durable-worker',
       ['Backend/src/tests/durableWork.test.js'],
       'Multi-instance recovery requires deployment-specific validation.',
+    ],
+    [
+      'ORC-001',
+      'Orchestration data minimization',
+      'Orchestration',
+      'IMPLEMENTED',
+      ['orchestration.node.succeeded', 'orchestration.run.succeeded'],
+      'orchestration-control-plane',
+      ['Backend/src/tests/orchestration.test.js'],
+      'Phase 13D1 stores only schema-validated outputs selected for downstream mappings.',
+    ],
+    [
+      'ORC-002',
+      'Durable orchestration recovery',
+      'Orchestration',
+      'IMPLEMENTED',
+      ['orchestration.node.started', 'orchestration.node.retried'],
+      'orchestration-worker',
+      ['Backend/src/tests/orchestration.test.js'],
+      'Compensation transactions are reserved for a later phase.',
     ],
   ].map(
     ([
@@ -326,6 +352,7 @@ function sourceSubsystemFor(action = '') {
   if (action.startsWith('policy.') || action === 'authorization.decision')
     return 'authorization-policy';
   if (action.startsWith('invocation.') || action.startsWith('work.')) return 'runtime';
+  if (action.startsWith('orchestration.')) return 'orchestration-control-plane';
   if (action.startsWith('evidence.') || action.startsWith('audit.')) return 'evidence';
   return 'control-plane';
 }

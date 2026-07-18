@@ -19,6 +19,10 @@ import { Policies } from './pages/Policies.jsx';
 import { Secrets } from './pages/Secrets.jsx';
 import { Compliance } from './pages/Compliance.jsx';
 import { EnterpriseOperations } from './pages/EnterpriseOperations.jsx';
+import { Orchestrations } from './pages/Orchestrations.jsx';
+import { OrchestrationDefinition } from './pages/OrchestrationDefinition.jsx';
+import { OrchestrationRuns } from './pages/OrchestrationRuns.jsx';
+import { OrchestrationRunDetail } from './pages/OrchestrationRunDetail.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -34,6 +38,10 @@ export default function App() {
         <Route path="/secrets" element={<Secrets />} />
         <Route path="/compliance" element={<Compliance />} />
         <Route path="/enterprise-operations" element={<EnterpriseOperations />} />
+        <Route path="/orchestrations" element={<Orchestrations />} />
+        <Route path="/orchestrations/definitions/:definitionId" element={<OrchestrationDefinition />} />
+        <Route path="/orchestrations/runs" element={<OrchestrationRuns />} />
+        <Route path="/orchestrations/runs/:runId" element={<OrchestrationRunDetail />} />
         <Route path="/passports/new" element={<CreatePassport />} />
         <Route path="/passports" element={<PassportsList />} />
         <Route path="/passports/:passportId" element={<PassportDetail />} />

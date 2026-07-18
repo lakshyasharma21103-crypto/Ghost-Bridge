@@ -8,6 +8,7 @@ const { serviceLifecycle } = require('./services/serviceLifecycle.service');
 const { markActiveInvocationRecovery } = require('./services/invocationLifecycle.service');
 const { createAuditLog } = require('./services/auditService');
 const { ensureDurableIndexes } = require('./services/durableWork.service');
+const { ensureOrchestrationIndexes } = require('./services/orchestration.service');
 
 async function start(options = {}) {
   const activeLogger = options.logger || logger;
@@ -145,6 +146,7 @@ async function start(options = {}) {
     await connect();
     if (currentDatabaseStatus() === 'connected') {
       await ensureIndexes();
+      await ensureOrchestrationIndexes();
       lifecycle.markReady();
       if (!options.connectDatabase) {
         const { resumePendingEvidenceExports } = require('./services/evidence.service');

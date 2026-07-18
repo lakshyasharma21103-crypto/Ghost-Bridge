@@ -4,6 +4,7 @@ Phase 13C2 conditional governance is documented in [POLICY_ENGINE.md](./POLICY_E
 Phase 13C3 secret inventory, encryption-key versioning, bindings, leases, rotation, expiry, revocation, brokered runtime access, and legacy migration are documented in [SECRET_GOVERNANCE.md](./SECRET_GOVERNANCE.md).
 Phase 13C4 approval workflows, separation of duties, normalized evidence, tamper-evident chains, retention, legal holds, and evidence packages are documented in [COMPLIANCE_GOVERNANCE.md](./COMPLIANCE_GOVERNANCE.md).
 Phase 13C5 organization and workspace lifecycle, maintenance, enterprise identity administration, access reviews, configuration, incidents, tenant export/deletion, recovery, and DR status are documented in [ENTERPRISE_OPERATIONS.md](./ENTERPRISE_OPERATIONS.md).
+Phase 13D1 tenant-scoped DAG definitions, secure data mapping, durable multi-agent scheduling, approval resumption, cancellation, and restart recovery are documented in [ORCHESTRATION.md](./ORCHESTRATION.md).
 
 One key to discover, connect, and invoke any compatible AI agent.
 
@@ -62,3 +63,8 @@ injected deterministic worker runtime, simulates reconnect and lease recovery, c
 fixture records, and blocks unexpected HTTP requests. It makes no external-agent or Gemini request.
 Run `verify:gemini-agent` and `verify:external-flow` manually only when billed live verification is
 intended.
+
+## Orchestration verification
+
+`npm run verify:orchestration` runs the deterministic non-billed two-agent scenario. Use
+`npm run migrate:orchestration` to create the restart-safe orchestration indexes.

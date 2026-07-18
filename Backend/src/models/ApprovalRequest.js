@@ -17,6 +17,9 @@ const approvalRequestSchema = new mongoose.Schema(
     capabilityId: { type: String, trim: true },
     connectionId: { type: String, trim: true },
     invocationId: { type: String, trim: true, index: true },
+    orchestrationRunId: { type: String, trim: true, index: true },
+    orchestrationNodeRunId: { type: String, trim: true, index: true },
+    orchestrationNodeKey: { type: String, trim: true, maxlength: 100 },
     environment: { type: String, trim: true },
     requestFingerprint: { type: String, required: true, trim: true, index: true },
     fingerprintSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -47,6 +50,7 @@ approvalRequestSchema.index({ organizationId: 1, workspaceId: 1, status: 1, requ
 approvalRequestSchema.index({ organizationId: 1, requesterActorId: 1, status: 1, requestedAt: -1 });
 approvalRequestSchema.index({ organizationId: 1, resourceType: 1, resourceId: 1, status: 1 });
 approvalRequestSchema.index({ organizationId: 1, expiresAt: 1, status: 1 });
+approvalRequestSchema.index({ organizationId: 1, orchestrationRunId: 1, status: 1 });
 approvalRequestSchema.index(
   { organizationId: 1, idempotencyKeyHash: 1 },
   {

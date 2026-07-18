@@ -34,10 +34,12 @@
     "verify:secret-governance": "npm run verify:secret-governance --workspace backend",
     "verify:compliance-governance": "npm run verify:compliance-governance --workspace backend",
     "verify:enterprise-operations": "npm run verify:enterprise-operations --workspace backend",
+    "verify:orchestration": "npm run verify:orchestration --workspace backend",
     "migrate:policy-engine": "npm run migrate:policy-engine --workspace backend",
     "migrate:secret-governance": "npm run migrate:secret-governance --workspace backend",
     "migrate:compliance-governance": "npm run migrate:compliance-governance --workspace backend",
     "migrate:enterprise-operations": "npm run migrate:enterprise-operations --workspace backend",
+    "migrate:orchestration": "npm run migrate:orchestration --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"

@@ -47,6 +47,9 @@ const TenantDeletionJob = require('../models/TenantDeletionJob');
 const TenantDeletionTombstone = require('../models/TenantDeletionTombstone');
 const OperationalRecovery = require('../models/OperationalRecovery');
 const DisasterRecoveryStatus = require('../models/DisasterRecoveryStatus');
+const OrchestrationDefinition = require('../models/OrchestrationDefinition');
+const OrchestrationRun = require('../models/OrchestrationRun');
+const OrchestrationNodeRun = require('../models/OrchestrationNodeRun');
 const { createAuditLog } = require('./auditService');
 const { actorFromPartner, assertAuthorized } = require('./authorization.service');
 const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
@@ -429,6 +432,7 @@ async function validateReactivation(scope) {
     activeBindingSecretIds,
     readyWorkers,
     recoverableWork,
+    recoverableOrchestrationWork,
     policyRevision,
   ] = await Promise.all([
     TenantDeletionJob.countDocuments({
@@ -453,6 +457,11 @@ async function validateReactivation(scope) {
       partnerId: scope.partnerId,
       ...(scope.workspaceId ? { receivingWorkspaceId: scope.workspaceId } : {}),
       status: { $in: ['pending', 'retry_scheduled', 'blocked', 'waiting_for_approval'] },
+    }),
+    OrchestrationNodeRun.countDocuments({
+      organizationId: scope.organizationId,
+      ...(scope.workspaceId ? { workspaceId: scope.workspaceId } : {}),
+      status: { $in: ['ready', 'retry_wait', 'blocked', 'waiting_approval'] },
     }),
     PolicyRevision.findOne({ organizationId: scope.organizationId }).lean(),
   ]);
@@ -485,8 +494,11 @@ async function validateReactivation(scope) {
     blockers.push({ reasonCode: 'CRITICAL_BINDING_NOT_READY', count: invalidBindings });
   if (!policyGenerationValidated)
     blockers.push({ reasonCode: 'POLICY_GENERATION_CHANGED', count: 1 });
-  if (recoverableWork && !readyWorkers)
-    blockers.push({ reasonCode: 'WORKER_READINESS_UNCONFIRMED', count: recoverableWork });
+  if ((recoverableWork || recoverableOrchestrationWork) && !readyWorkers)
+    blockers.push({
+      reasonCode: 'WORKER_READINESS_UNCONFIRMED',
+      count: recoverableWork + recoverableOrchestrationWork,
+    });
   return {
     ready: blockers.length === 0,
     blockers,
@@ -1148,7 +1160,7 @@ async function drainStatus(input = {}, caller = {}) {
     partnerId: scope.partnerId,
     ...(scope.workspaceId ? { receivingWorkspaceId: scope.workspaceId } : {}),
   };
-  const [workStatuses, workers, expiredLeases] = await Promise.all([
+  const [workStatuses, workers, expiredLeases, orchestrationStatuses, orchestrationExpiredLeases] = await Promise.all([
     RuntimeWorkItem.aggregate([
       { $match: filter },
       { $group: { _id: '$status', count: { $sum: 1 } } },
@@ -1159,17 +1171,53 @@ async function drainStatus(input = {}, caller = {}) {
       status: { $in: ['claimed', 'running', 'cancellation_requested'] },
       leaseExpiresAt: { $lte: new Date() },
     }),
+    OrchestrationNodeRun.aggregate([
+      {
+        $match: {
+          organizationId: scope.organizationId,
+          ...(scope.workspaceId ? { workspaceId: scope.workspaceId } : {}),
+        },
+      },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
+    OrchestrationNodeRun.countDocuments({
+      organizationId: scope.organizationId,
+      ...(scope.workspaceId ? { workspaceId: scope.workspaceId } : {}),
+      status: 'running',
+      leaseExpiresAt: { $lte: new Date() },
+    }),
   ]);
   const counts = Object.fromEntries(workStatuses.map((item) => [item._id, item.count]));
+  const orchestrationCounts = Object.fromEntries(
+    orchestrationStatuses.map((item) => [item._id, item.count]),
+  );
   return {
     activeJobs:
-      (counts.claimed || 0) + (counts.running || 0) + (counts.cancellation_requested || 0),
-    queuedJobs: (counts.pending || 0) + (counts.retry_scheduled || 0),
-    blockedJobs: (counts.blocked || 0) + (counts.waiting_for_approval || 0),
+      (counts.claimed || 0) +
+      (counts.running || 0) +
+      (counts.cancellation_requested || 0) +
+      (orchestrationCounts.running || 0),
+    queuedJobs:
+      (counts.pending || 0) +
+      (counts.retry_scheduled || 0) +
+      (orchestrationCounts.ready || 0) +
+      (orchestrationCounts.retry_wait || 0),
+    blockedJobs:
+      (counts.blocked || 0) +
+      (counts.waiting_for_approval || 0) +
+      (orchestrationCounts.blocked || 0) +
+      (orchestrationCounts.waiting_approval || 0),
     drainingWorkers: workers.filter((worker) => worker.draining).length,
     readyWorkers: workers.filter((worker) => worker.status === 'ready').length,
-    expiredLeases,
-    unresolvedInFlightOperations: (counts.recovery_required || 0) + expiredLeases,
+    expiredLeases: expiredLeases + orchestrationExpiredLeases,
+    orchestration: {
+      activeNodes: orchestrationCounts.running || 0,
+      queuedNodes: (orchestrationCounts.ready || 0) + (orchestrationCounts.retry_wait || 0),
+      waitingApprovalNodes: orchestrationCounts.waiting_approval || 0,
+      expiredLeases: orchestrationExpiredLeases,
+    },
+    unresolvedInFlightOperations:
+      (counts.recovery_required || 0) + expiredLeases + orchestrationExpiredLeases,
   };
 }
 
@@ -3595,6 +3643,7 @@ async function tenantDeletionPreview(input = {}, caller = {}) {
     legalHolds,
     retentionPolicies,
     activeWork,
+    activeOrchestrationRuns,
     activeEvidenceExports,
     activeTenantExports,
     unresolvedIncidents,
@@ -3619,6 +3668,10 @@ async function tenantDeletionPreview(input = {}, caller = {}) {
       partnerId: scope.partnerId,
       status: { $in: ACTIVE_WORK_STATUSES },
     }),
+    OrchestrationRun.countDocuments({
+      organizationId: scope.organizationId,
+      status: { $in: ['queued', 'running', 'waiting_approval', 'cancel_requested'] },
+    }),
     EvidenceExport.countDocuments({
       organizationId: scope.organizationId,
       status: { $in: ['PENDING', 'RUNNING', 'FINALIZING', 'COMPLETED'] },
@@ -3642,6 +3695,7 @@ async function tenantDeletionPreview(input = {}, caller = {}) {
     }),
   ]);
   const activeExports = activeEvidenceExports + activeTenantExports;
+  const allActiveWork = activeWork + activeOrchestrationRuns;
   const blockers = [
     ...(legalHolds
       ? [{ reasonCode: ErrorCodes.TENANT_DELETION_LEGAL_HOLD_BLOCK, count: legalHolds }]
@@ -3649,8 +3703,8 @@ async function tenantDeletionPreview(input = {}, caller = {}) {
     ...(retentionPolicies
       ? [{ reasonCode: ErrorCodes.TENANT_DELETION_RETENTION_BLOCK, count: retentionPolicies }]
       : []),
-    ...(activeWork
-      ? [{ reasonCode: ErrorCodes.TENANT_DELETION_ACTIVE_WORK_BLOCK, count: activeWork }]
+    ...(allActiveWork
+      ? [{ reasonCode: ErrorCodes.TENANT_DELETION_ACTIVE_WORK_BLOCK, count: allActiveWork }]
       : []),
     ...(activeExports
       ? [{ reasonCode: 'TENANT_DELETION_ACTIVE_EXPORT_BLOCK', count: activeExports }]
@@ -3671,7 +3725,8 @@ async function tenantDeletionPreview(input = {}, caller = {}) {
       serviceAccounts: accounts,
       connections,
       invocations,
-      activeWork,
+      activeWork: allActiveWork,
+      activeOrchestrationRuns,
     },
     legalHoldsPreserved: true,
     evidencePreserved: true,
@@ -3970,6 +4025,21 @@ const DELETION_COLLECTIONS = Object.freeze([
     name: 'runtimeWorkItems',
     model: RuntimeWorkItem,
     filter: (scope) => ({ partnerId: scope.partnerId }),
+  },
+  {
+    name: 'orchestrationNodeRuns',
+    model: OrchestrationNodeRun,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationRuns',
+    model: OrchestrationRun,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationDefinitions',
+    model: OrchestrationDefinition,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
   },
   {
     name: 'invocations',
