@@ -1,8 +1,8 @@
-const DEFAULT_EXTERNAL_REQUEST_TIMEOUT_MS = 390_000;
+const DEFAULT_EXTERNAL_REQUEST_TIMEOUT_MS = 500_000;
 const DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS = 120_000;
 const DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS = 60_000;
-const DEFAULT_LIVE_VERIFIER_TIMEOUT_MS = 410_000;
-const DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS = 430_000;
+const DEFAULT_LIVE_VERIFIER_TIMEOUT_MS = 520_000;
+const DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS = 540_000;
 const GEMINI_PROCESSING_OVERHEAD_MS = 10_000;
 const GEMINI_RETRY_BASE_DELAY_MS = 1_000;
 const GEMINI_RETRY_JITTER_MS = 500;
@@ -51,9 +51,7 @@ function providerRequestBudget(configuration = {}) {
       retryDelayBudgetMs(configuration.researchMaxAttempts) +
       retryDelayBudgetMs(configuration.formattingMaxAttempts),
     totalTimeoutMs:
-      researchOperationTimeoutMs +
-      formattingOperationTimeoutMs +
-      GEMINI_PROCESSING_OVERHEAD_MS,
+      researchOperationTimeoutMs + formattingOperationTimeoutMs + GEMINI_PROCESSING_OVERHEAD_MS,
   });
 }
 

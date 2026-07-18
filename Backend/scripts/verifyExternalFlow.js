@@ -20,7 +20,29 @@ if (require.main === module && process.argv.includes(ENV_LOAD_CHECK_ARGUMENT)) {
   process.exit(configured ? 0 : 1);
 }
 
+function configuredTimeoutMs(environment, name, fallback) {
+  const rawValue = environment?.[name];
+  return rawValue == null || rawValue === '' ? fallback : Number(rawValue);
+}
+
+const {
+  DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS,
+  DEFAULT_EXTERNAL_REQUEST_TIMEOUT_MS: EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
+  DEFAULT_LIVE_VERIFIER_TIMEOUT_MS,
+  providerRequestBudget,
+} = require('../../external-agent/src/config/timeoutBudget');
+
 const EXTERNAL_STARTUP_PROBE_TIMEOUT_MS = 30_000;
+const VERIFICATION_REQUEST_TIMEOUT_MS = configuredTimeoutMs(
+  process.env,
+  'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS',
+  DEFAULT_LIVE_VERIFIER_TIMEOUT_MS,
+);
+const RUNTIME_INVOCATION_TIMEOUT_MS = configuredTimeoutMs(
+  process.env,
+  'RUNTIME_INVOCATION_TIMEOUT_MS',
+  DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS,
+);
 const externalAgentPort = Number(process.env.EXTERNAL_FLOW_AGENT_PORT || 5002);
 const gatewayPort = Number(process.env.EXTERNAL_FLOW_GATEWAY_PORT || 5014);
 const runtimeToken = crypto.randomBytes(32).toString('base64url');
@@ -29,20 +51,11 @@ process.env.NODE_ENV = 'development';
 process.env.PORT = String(gatewayPort);
 process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN = runtimeToken;
 process.env.ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV = 'true';
-process.env.RUNTIME_INVOCATION_TIMEOUT_MS = '430000';
-
-const requestedVerificationTimeoutMs = Number(process.env.EXTERNAL_FLOW_REQUEST_TIMEOUT_MS);
-const VERIFICATION_REQUEST_TIMEOUT_MS = Number.isInteger(requestedVerificationTimeoutMs)
-  ? requestedVerificationTimeoutMs
-  : 410_000;
-if (
-  VERIFICATION_REQUEST_TIMEOUT_MS <= 390_000 ||
-  VERIFICATION_REQUEST_TIMEOUT_MS >= Number(process.env.RUNTIME_INVOCATION_TIMEOUT_MS)
-) {
-  throw new Error(
-    'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must exceed 390000 and be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
-  );
-}
+process.env.RUNTIME_INVOCATION_TIMEOUT_MS = String(
+  Number.isInteger(RUNTIME_INVOCATION_TIMEOUT_MS) && RUNTIME_INVOCATION_TIMEOUT_MS > 0
+    ? RUNTIME_INVOCATION_TIMEOUT_MS
+    : DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS,
+);
 
 const { createApp } = require('../src/app');
 const { connectDatabase, databaseStatus, disconnectDatabase } = require('../src/config/db');
@@ -117,6 +130,18 @@ const SAFE_SOURCE_EXTRACTION_CODES = new Set([
   'GEMINI_SOURCE_PARSING_FAILED',
 ]);
 const SAFE_STARTUP_PROBE_STAGES = new Set(['external_health', 'external_readiness']);
+const SAFE_RUNTIME_STARTUP_STAGES = new Set([
+  'environment_validation',
+  'external_runtime_start',
+  'gateway_start',
+]);
+const SAFE_TIMEOUT_BUDGET_VALIDATION_MESSAGES = new Set([
+  'Timeout values must be positive integers.',
+  'Calculated Gemini retry budget must be less than EXTERNAL_AGENT_REQUEST_TIMEOUT_MS.',
+  'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
+  'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
+  'REQUEST_TIMEOUT_MS must exceed the calculated Gemini retry budget.',
+]);
 const SAFE_NETWORK_ERROR_NAMES = new Set(['AbortError', 'Error', 'TimeoutError', 'TypeError']);
 const SAFE_NETWORK_CAUSE_CODES = new Set([
   'CERT_HAS_EXPIRED',
@@ -205,6 +230,9 @@ function verificationResearchTopic(now = new Date()) {
 const TOPIC = verificationResearchTopic();
 
 const VERIFICATION_STAGES = Object.freeze([
+  'environment_validation',
+  'external_runtime_start',
+  'gateway_start',
   'external_health',
   'external_readiness',
   'sandbox_partner',
@@ -265,6 +293,8 @@ class ExternalFlowVerificationError extends Error {
       'networkErrorName',
       'networkCauseCode',
       'probeStage',
+      'processExitCode',
+      'timeoutBudgetValidationMessage',
       'connectionId',
     ]) {
       if (options[field] !== undefined) this[field] = options[field];
@@ -316,6 +346,35 @@ function safeNetworkCauseCode(error) {
 
 function safeProbeStage(value) {
   return SAFE_STARTUP_PROBE_STAGES.has(value) ? value : undefined;
+}
+
+function safeRuntimeStartupStage(value) {
+  return SAFE_RUNTIME_STARTUP_STAGES.has(value) ? value : undefined;
+}
+
+function safeProcessExitCode(value) {
+  const exitCode = Number(value);
+  return Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255 ? exitCode : undefined;
+}
+
+function safeTimeoutBudgetValidationMessage(value) {
+  return SAFE_TIMEOUT_BUDGET_VALIDATION_MESSAGES.has(value) ? value : undefined;
+}
+
+function timeoutBudgetValidationMessageFromError(error) {
+  let current = error;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    if (
+      typeof current.message === 'string' &&
+      /REQUEST_TIMEOUT_MS must be greater than \d+ milliseconds \(all configured Gemini attempts, maximum retry delays, and processing overhead\)/.test(
+        current.message,
+      )
+    ) {
+      return 'REQUEST_TIMEOUT_MS must exceed the calculated Gemini retry budget.';
+    }
+    current = current.cause;
+  }
+  return undefined;
 }
 
 function probeDiagnostics(result) {
@@ -517,6 +576,12 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
         ? errorField(error, 'networkCauseCode')
         : undefined,
       probeStage: safeProbeStage(errorField(error, 'probeStage')),
+      processExitCode: safeProcessExitCode(
+        errorField(error, 'exitCode') ?? errorField(error, 'status'),
+      ),
+      timeoutBudgetValidationMessage:
+        safeTimeoutBudgetValidationMessage(errorField(error, 'timeoutBudgetValidationMessage')) ??
+        timeoutBudgetValidationMessageFromError(error),
       connectionId:
         safeIdentifier(errorField(error, 'connectionId')) ?? safeIdentifier(state.connectionId),
     },
@@ -527,6 +592,11 @@ function formatVerificationFailure(error) {
   return [
     'FAIL external flow verification',
     `Failed stage: ${VERIFICATION_STAGES.includes(error.stage) ? error.stage : '[unavailable]'}`,
+    `Startup stage: ${safeRuntimeStartupStage(error.stage) || '[unavailable]'}`,
+    `Process exit code: ${safeProcessExitCode(error.processExitCode) ?? '[unavailable]'}`,
+    `Timeout-budget validation: ${
+      safeTimeoutBudgetValidationMessage(error.timeoutBudgetValidationMessage) || '[unavailable]'
+    }`,
     `HTTP status: ${Number.isInteger(error.httpStatus) ? error.httpStatus : '[unavailable]'}`,
     `Application error code: ${safeCode(error.applicationErrorCode) || '[unavailable]'}`,
     `Readiness status: ${safeReadinessStatus(error.readinessStatus) || '[unavailable]'}`,
@@ -607,6 +677,64 @@ function beginStage(state, stage) {
   state.stageStartedAt = Date.now();
 }
 
+function calculatedGeminiRetryBudgetMs(agentConfig) {
+  return providerRequestBudget({
+    researchTimeoutMs: agentConfig?.gemini?.researchTimeoutMs,
+    formattingTimeoutMs: agentConfig?.gemini?.formattingTimeoutMs,
+    researchMaxAttempts: agentConfig?.gemini?.researchMaxAttempts,
+    formattingMaxAttempts: agentConfig?.gemini?.formattingMaxAttempts,
+  }).totalTimeoutMs;
+}
+
+function validateTimeoutHierarchy(options = {}) {
+  const hierarchy = {
+    calculatedGeminiRetryBudgetMs: options.calculatedGeminiRetryBudgetMs,
+    externalAgentRequestTimeoutMs:
+      options.externalAgentRequestTimeoutMs ?? EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
+    verificationRequestTimeoutMs:
+      options.verificationRequestTimeoutMs ?? VERIFICATION_REQUEST_TIMEOUT_MS,
+    runtimeInvocationTimeoutMs: options.runtimeInvocationTimeoutMs ?? RUNTIME_INVOCATION_TIMEOUT_MS,
+  };
+  const fail = (timeoutBudgetValidationMessage) => {
+    throw new ExternalFlowVerificationError('External-flow timeout budget validation failed.', {
+      applicationErrorCode: 'EXTERNAL_FLOW_TIMEOUT_HIERARCHY_INVALID',
+      timeoutBudgetValidationMessage,
+    });
+  };
+
+  if (
+    !Object.values(hierarchy).every((timeoutMs) => Number.isInteger(timeoutMs) && timeoutMs > 0)
+  ) {
+    fail('Timeout values must be positive integers.');
+  }
+  if (hierarchy.calculatedGeminiRetryBudgetMs >= hierarchy.externalAgentRequestTimeoutMs) {
+    fail('Calculated Gemini retry budget must be less than EXTERNAL_AGENT_REQUEST_TIMEOUT_MS.');
+  }
+  if (hierarchy.externalAgentRequestTimeoutMs >= hierarchy.verificationRequestTimeoutMs) {
+    fail('EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.');
+  }
+  if (hierarchy.verificationRequestTimeoutMs >= hierarchy.runtimeInvocationTimeoutMs) {
+    fail('EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.');
+  }
+  return Object.freeze(hierarchy);
+}
+
+function validateExternalFlowTimeoutHierarchy(agentConfig, options = {}) {
+  return validateTimeoutHierarchy({
+    calculatedGeminiRetryBudgetMs: calculatedGeminiRetryBudgetMs(agentConfig),
+    externalAgentRequestTimeoutMs: agentConfig?.requestTimeoutMs,
+    verificationRequestTimeoutMs:
+      options.verificationRequestTimeoutMs ?? VERIFICATION_REQUEST_TIMEOUT_MS,
+    runtimeInvocationTimeoutMs: options.runtimeInvocationTimeoutMs ?? RUNTIME_INVOCATION_TIMEOUT_MS,
+  });
+}
+
+async function runStartupStage(state, stage, operation) {
+  if (!SAFE_RUNTIME_STARTUP_STAGES.has(stage)) throw new Error('Unknown runtime startup stage.');
+  beginStage(state, stage);
+  return operation();
+}
+
 function report(label, detail) {
   console.log(`PASS ${label}: ${detail}`);
 }
@@ -656,9 +784,12 @@ function externalLogger() {
   return createExternalLogger({ destination, base: null });
 }
 
-function externalAgentConfig() {
+function externalAgentEnvironment(options = {}) {
   const envPath = path.resolve(__dirname, '../../external-agent/.env');
-  const local = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath)) : {};
+  const local =
+    options.localEnvironment ??
+    (fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath)) : {});
+  const environment = options.environment || process.env;
   const overrides = {};
   for (const name of [
     'GEMINI_API_KEY',
@@ -676,25 +807,37 @@ function externalAgentConfig() {
     'GEMINI_MAX_SOURCES',
     'GEMINI_THINKING_LEVEL',
   ]) {
-    if (process.env[name] !== undefined) overrides[name] = process.env[name];
+    if (environment[name] !== undefined) overrides[name] = environment[name];
   }
 
-  return readExternalEnvironment({
+  return {
     ...local,
     ...overrides,
     // This command is an explicitly billed live gate. Grounded research permits exactly one
     // application retry for the narrow transient policy enforced by GeminiProvider.
     GEMINI_RESEARCH_MAX_ATTEMPTS:
-      process.env.EXTERNAL_FLOW_GEMINI_RESEARCH_MAX_ATTEMPTS ||
+      environment.EXTERNAL_FLOW_GEMINI_RESEARCH_MAX_ATTEMPTS ||
       overrides.GEMINI_RESEARCH_MAX_ATTEMPTS ||
       '2',
     PORT: String(externalAgentPort),
     NODE_ENV: 'development',
     EXTERNAL_AGENT_RUNTIME_TOKEN: runtimeToken,
     ALLOWED_GATEWAY_ORIGINS: '',
-    REQUEST_TIMEOUT_MS: '390000',
+    REQUEST_TIMEOUT_MS: String(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS),
     AI_PROVIDER: 'gemini',
-  });
+  };
+}
+
+function externalAgentConfig(options = {}) {
+  try {
+    return readExternalEnvironment(externalAgentEnvironment(options));
+  } catch (error) {
+    throw new ExternalFlowVerificationError('External agent environment validation failed.', {
+      cause: error,
+      applicationErrorCode: 'EXTERNAL_AGENT_ENVIRONMENT_INVALID',
+      timeoutBudgetValidationMessage: timeoutBudgetValidationMessageFromError(error),
+    });
+  }
 }
 
 async function request(baseUrl, path, options = {}) {
@@ -953,7 +1096,7 @@ async function verifyExternalStartup(externalBaseUrl, state, options = {}) {
 async function verify() {
   const restoreGatewayLogger = captureGatewayLogger();
   const state = {
-    stage: 'external_health',
+    stage: 'environment_validation',
     stageStartedAt: Date.now(),
     connectionId: undefined,
   };
@@ -964,7 +1107,11 @@ async function verify() {
   let externalBaseUrl;
 
   try {
+    beginStage(state, 'environment_validation');
     externalBaseUrl = resolveExternalAgentBaseUrl();
+    const agentConfig = externalAgentConfig();
+    validateExternalFlowTimeoutHierarchy(agentConfig);
+
     await connectDatabase();
     if (databaseStatus() !== 'connected') {
       throw new ExternalFlowVerificationError(
@@ -972,15 +1119,18 @@ async function verify() {
       );
     }
 
-    const agentConfig = externalAgentConfig();
     geminiApiKey = agentConfig.gemini.apiKey;
-    externalRuntime = await startExternalAgent({
-      config: agentConfig,
-      host: '127.0.0.1',
-      logger: externalLogger(),
+    externalRuntime = await runStartupStage(state, 'external_runtime_start', () =>
+      startExternalAgent({
+        config: agentConfig,
+        host: '127.0.0.1',
+        logger: externalLogger(),
+      }),
+    );
+    await runStartupStage(state, 'gateway_start', async () => {
+      gatewayServer = http.createServer(createApp());
+      await listen(gatewayServer, gatewayPort);
     });
-    gatewayServer = http.createServer(createApp());
-    await listen(gatewayServer, gatewayPort);
 
     const gatewayBaseUrl = `http://127.0.0.1:${gatewayPort}/api/v1`;
 
@@ -1345,7 +1495,7 @@ if (require.main === module) {
       error instanceof ExternalFlowVerificationError
         ? error
         : wrapVerificationFailure(error, {
-            stage: 'external_health',
+            stage: 'environment_validation',
             stageStartedAt: Date.now(),
           });
     console.error(formatVerificationFailure(diagnosticError));
@@ -1355,21 +1505,29 @@ if (require.main === module) {
 
 module.exports = {
   EXTERNAL_AGENT_BASE_URL_ENV,
+  EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
   EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
   ExternalFlowVerificationError,
+  RUNTIME_INVOCATION_TIMEOUT_MS,
   VERIFICATION_REQUEST_TIMEOUT_MS,
   VERIFICATION_STAGES,
   beginStage,
+  calculatedGeminiRetryBudgetMs,
+  configuredTimeoutMs,
+  externalAgentEnvironment,
   externalAgentProbeUrl,
   formatVerificationFailure,
   normalizeExternalAgentBaseUrl,
   request,
   readinessDiagnostics,
   resolveExternalAgentBaseUrl,
+  runStartupStage,
   sourceExtractionDiagnostics,
   success,
   validateExternalHealth,
   validateExternalReadiness,
+  validateExternalFlowTimeoutHierarchy,
+  validateTimeoutHierarchy,
   verify,
   verifyExternalStartup,
   verificationResearchTopic,

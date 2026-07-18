@@ -29,7 +29,7 @@ Copy `.env.example` to `.env` only for local use and replace the placeholder tok
 | `NODE_ENV`                                   | No       | `development` | `development`, `test`, or `production`.                                                                                                                   |
 | `EXTERNAL_AGENT_RUNTIME_TOKEN`               | Yes      | None          | Random bearer secret of at least 32 characters.                                                                                                           |
 | `ALLOWED_GATEWAY_ORIGINS`                    | No       | Empty         | Comma-separated HTTP(S) browser origins. Requests without an Origin header remain allowed for server-to-server invocation. CORS is not authentication.    |
-| `REQUEST_TIMEOUT_MS`                         | No       | `390000`      | Overall external-agent request deadline. It must exceed every configured Gemini attempt, the maximum retry delays, and 10 seconds of processing overhead. |
+| `REQUEST_TIMEOUT_MS`                         | No       | `500000`      | Overall external-agent request deadline. It must exceed every configured Gemini attempt, the maximum retry delays, and 10 seconds of processing overhead. |
 | `SHUTDOWN_DRAIN_TIMEOUT_MS`                  | No       | `30000`       | Bounded time for active research to finish after readiness is disabled; provider work is aborted at the deadline.                                         |
 | `AI_PROVIDER`                                | No       | `gemini`      | `gemini`, or explicit `mock` use during tests/local development. Mock is rejected in production.                                                          |
 | `GEMINI_API_KEY`                             | Gemini   | None          | Gemini credential stored only in this deployment's secret manager.                                                                                        |
@@ -47,7 +47,7 @@ Copy `.env.example` to `.env` only for local use and replace the placeholder tok
 | `GEMINI_MAX_SOURCES`                         | No       | `8`           | Maximum safe, deduplicated grounding URLs returned.                                                                                                       |
 | `GEMINI_THINKING_LEVEL`                      | No       | None          | Gemini 3 formatting-stage thinking level. Grounded research explicitly uses the SDK's `LOW` level.                                                        |
 | `GEMINI_THINKING_BUDGET`                     | No       | None          | Gemini 2.5-compatible thinking budget; the current Gemini 3 grounded-research gate uses `LOW` instead.                                                    |
-| `EXTERNAL_AGENT_VERIFY_TIMEOUT_MS`           | No       | `410000`      | Live verifier/client deadline. It must exceed `REQUEST_TIMEOUT_MS` and remain below the Backend Runtime Gateway deadline.                                 |
+| `EXTERNAL_AGENT_VERIFY_TIMEOUT_MS`           | No       | `520000`      | Live verifier/client deadline. It must exceed `REQUEST_TIMEOUT_MS` and remain below the Backend Runtime Gateway deadline.                                 |
 
 Each Gemini attempt receives a fresh attempt ID, abort signal, and SDK HTTP timeout. SDK-internal retries are disabled. Grounded research retries exactly once only for provider `503 UNAVAILABLE`, provider `504 DEADLINE_EXCEEDED`, an allowlisted transient transport error, or a local provider-attempt deadline. Authentication, quota/resource exhaustion, validation, configuration, blocked responses, and invalid grounding metadata are not retried. Backoff is cancellation-aware and bounded to 1,000–1,499 ms.
 
@@ -64,7 +64,7 @@ Startup validates the full worst-case budget:
 < Backend RUNTIME_INVOCATION_TIMEOUT_MS
 ```
 
-With defaults, the provider budget is 372,998 ms: 241,499 ms for grounded research, 121,499 ms for formatting, and 10,000 ms for processing overhead. This remains below the unchanged 390,000 ms external request deadline, which remains below the 410,000 ms verifier and 430,000 ms gateway deadlines.
+With the live-verification defaults, the provider budget is 372,998 ms: 241,499 ms for grounded research, 121,499 ms for formatting, and 10,000 ms for processing overhead. This remains below the 500,000 ms external request deadline, which remains below the 520,000 ms verifier and integrated 540,000 ms gateway deadlines.
 
 Generate a development secret without printing or committing a production credential through your platform's secret manager. The service never prints the configured token.
 

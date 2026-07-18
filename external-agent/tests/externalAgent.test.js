@@ -163,7 +163,7 @@ test('Gemini attempt defaults leave room for every retry and request-level overh
   assert.equal(parsed.gemini.researchMaxOutputTokens, 2_048);
   assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 2_048);
   assert.equal(parsed.gemini.formattingMaxOutputTokens, 1_500);
-  assert.equal(parsed.requestTimeoutMs, 390_000);
+  assert.equal(parsed.requestTimeoutMs, 500_000);
   assert.ok(parsed.requestTimeoutMs > 241_499 + 121_499 + GEMINI_PROCESSING_OVERHEAD_MS);
 });
 
@@ -218,6 +218,28 @@ test('stale legacy 115000 stage fallback is rejected when its retry budget excee
   );
 });
 
+test('calculated legacy retry budget fits inside the revised external request timeout', () => {
+  const parsed = readEnvironment({
+    NODE_ENV: 'test',
+    AI_PROVIDER: 'gemini',
+    GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
+    GEMINI_MODEL: 'gemini-2.5-flash',
+    GEMINI_REQUEST_TIMEOUT_MS: '115000',
+    REQUEST_TIMEOUT_MS: '500000',
+    EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
+  });
+  const budget = providerRequestBudget({
+    researchTimeoutMs: parsed.gemini.researchTimeoutMs,
+    formattingTimeoutMs: parsed.gemini.formattingTimeoutMs,
+    researchMaxAttempts: parsed.gemini.researchMaxAttempts,
+    formattingMaxAttempts: parsed.gemini.formattingMaxAttempts,
+  });
+
+  assert.equal(budget.totalTimeoutMs, 472_998);
+  assert.equal(parsed.requestTimeoutMs, 500_000);
+  assert.ok(budget.totalTimeoutMs < parsed.requestTimeoutMs);
+});
+
 test('stage-specific deadlines override a stale 115000 legacy fallback', () => {
   const parsed = readEnvironment({
     NODE_ENV: 'test',
@@ -227,7 +249,7 @@ test('stage-specific deadlines override a stale 115000 legacy fallback', () => {
     GEMINI_REQUEST_TIMEOUT_MS: '115000',
     GEMINI_RESEARCH_TIMEOUT_MS: '120000',
     GEMINI_FORMATTING_TIMEOUT_MS: '60000',
-    REQUEST_TIMEOUT_MS: '390000',
+    REQUEST_TIMEOUT_MS: '500000',
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
 
@@ -235,7 +257,7 @@ test('stage-specific deadlines override a stale 115000 legacy fallback', () => {
   assert.equal(parsed.gemini.formattingTimeoutMs, 60_000);
   assert.notEqual(parsed.gemini.researchTimeoutMs, 115_000);
   assert.notEqual(parsed.gemini.formattingTimeoutMs, 115_000);
-  assert.equal(parsed.requestTimeoutMs, 390_000);
+  assert.equal(parsed.requestTimeoutMs, 500_000);
 });
 
 test('maximum two-attempt retry budget fits beneath the default request deadline', () => {
@@ -251,27 +273,27 @@ test('maximum two-attempt retry budget fits beneath the default request deadline
     retryDelayBudgetMs: 2_998,
     totalTimeoutMs: 372_998,
   });
-  assert.ok(budget.totalTimeoutMs < 390_000);
+  assert.ok(budget.totalTimeoutMs < 500_000);
 });
 
 test('live verifier timeout is above the external request and remains explicitly bounded', () => {
-  assert.equal(resolveVerifierTimeoutMs({ REQUEST_TIMEOUT_MS: '390000' }), 410_000);
-  assert.equal(DEFAULT_LIVE_VERIFIER_TIMEOUT_MS, 410_000);
-  assert.equal(DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS, 430_000);
+  assert.equal(resolveVerifierTimeoutMs({ REQUEST_TIMEOUT_MS: '500000' }), 520_000);
+  assert.equal(DEFAULT_LIVE_VERIFIER_TIMEOUT_MS, 520_000);
+  assert.equal(DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS, 540_000);
   assert.throws(
     () =>
       resolveVerifierTimeoutMs({
-        REQUEST_TIMEOUT_MS: '390000',
-        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '390000',
+        REQUEST_TIMEOUT_MS: '500000',
+        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '500000',
       }),
     /must exceed REQUEST_TIMEOUT_MS/,
   );
   assert.throws(
     () =>
       resolveVerifierTimeoutMs({
-        REQUEST_TIMEOUT_MS: '390000',
-        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '430000',
-        RUNTIME_INVOCATION_TIMEOUT_MS: '430000',
+        REQUEST_TIMEOUT_MS: '500000',
+        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '540000',
+        RUNTIME_INVOCATION_TIMEOUT_MS: '540000',
       }),
     /must be less than RUNTIME_INVOCATION_TIMEOUT_MS/,
   );

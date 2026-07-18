@@ -6,19 +6,26 @@ const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 const {
   EXTERNAL_AGENT_BASE_URL_ENV,
+  EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
   EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
   ExternalFlowVerificationError,
+  RUNTIME_INVOCATION_TIMEOUT_MS,
   VERIFICATION_REQUEST_TIMEOUT_MS,
   VERIFICATION_STAGES,
+  calculatedGeminiRetryBudgetMs,
+  configuredTimeoutMs,
+  externalAgentEnvironment,
   externalAgentProbeUrl,
   formatVerificationFailure,
   normalizeExternalAgentBaseUrl,
   request,
   resolveExternalAgentBaseUrl,
+  runStartupStage,
   sourceExtractionDiagnostics,
   success,
   validateExternalHealth,
   validateExternalReadiness,
+  validateTimeoutHierarchy,
   verifyExternalStartup,
   verificationResearchTopic,
   wrapVerificationFailure,
@@ -181,23 +188,124 @@ test('external-flow verifier preserves the provider, request, client, and gatewa
     path.resolve(__dirname, '../../scripts/verifyExternalFlow.js'),
     'utf8',
   );
+  const calculatedRetryBudgetMs = calculatedGeminiRetryBudgetMs({
+    gemini: {
+      researchTimeoutMs: 115_000,
+      formattingTimeoutMs: 115_000,
+      researchMaxAttempts: 2,
+      formattingMaxAttempts: 2,
+    },
+  });
+  const childEnvironment = externalAgentEnvironment({ localEnvironment: {}, environment: {} });
 
-  assert.equal(VERIFICATION_REQUEST_TIMEOUT_MS, 410_000);
+  assert.equal(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS, 500_000);
+  assert.equal(childEnvironment.REQUEST_TIMEOUT_MS, '500000');
+  assert.equal(VERIFICATION_REQUEST_TIMEOUT_MS, 520_000);
+  assert.equal(RUNTIME_INVOCATION_TIMEOUT_MS, 540_000);
   assert.equal(EXTERNAL_STARTUP_PROBE_TIMEOUT_MS, 30_000);
-  assert.match(source, /RUNTIME_INVOCATION_TIMEOUT_MS\s*=\s*'430000'/);
-  assert.match(source, /REQUEST_TIMEOUT_MS:\s*'390000'/);
-  assert.ok(120_000 < 390_000);
-  assert.ok(60_000 < 390_000);
-  assert.ok(390_000 < VERIFICATION_REQUEST_TIMEOUT_MS);
-  assert.ok(VERIFICATION_REQUEST_TIMEOUT_MS < 430_000);
+  assert.equal(calculatedRetryBudgetMs, 472_998);
+  assert.ok(calculatedRetryBudgetMs < EXTERNAL_AGENT_REQUEST_TIMEOUT_MS);
+  assert.ok(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS < VERIFICATION_REQUEST_TIMEOUT_MS);
+  assert.ok(VERIFICATION_REQUEST_TIMEOUT_MS < RUNTIME_INVOCATION_TIMEOUT_MS);
+  assert.equal(
+    configuredTimeoutMs(
+      { RUNTIME_INVOCATION_TIMEOUT_MS: '540000' },
+      'RUNTIME_INVOCATION_TIMEOUT_MS',
+      1,
+    ),
+    540_000,
+  );
+  assert.match(source, /REQUEST_TIMEOUT_MS:\s*String\(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS\)/);
+  assert.match(source, /process\.env\.RUNTIME_INVOCATION_TIMEOUT_MS\s*=\s*String\(/);
+  assert.equal(
+    configuredTimeoutMs(
+      { EXTERNAL_FLOW_REQUEST_TIMEOUT_MS: '0' },
+      'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS',
+      520_000,
+    ),
+    0,
+  );
+  assert.doesNotMatch(source, /VERIFICATION_REQUEST_TIMEOUT_MS\s*<=\s*390_000/);
+  assert.doesNotMatch(source, /must exceed 390000/);
   assert.doesNotMatch(source, /RUNTIME_REQUEST_TIMEOUT_MS\s*=.*70000/);
   assert.ok(source.indexOf('dotenv.config') < source.indexOf('const externalAgentPort'));
-  assert.ok(source.indexOf('dotenv.config') < source.indexOf('requestedVerificationTimeoutMs'));
+  assert.ok(source.indexOf('dotenv.config') < source.indexOf('VERIFICATION_REQUEST_TIMEOUT_MS'));
   assert.ok(source.indexOf('dotenv.config') < source.search(/process\.env(?:\.|\[)/));
   assert.doesNotMatch(
     source,
     /process\.env\.EXTERNAL_TEST_AGENT_BASE_URL\s*=\s*`http:\/\/127\.0\.0\.1/,
   );
+});
+
+test('invalid timeout hierarchy fails before runtime startup with a safe validation message', () => {
+  let startupCalled = false;
+  let failure;
+  const state = { stage: 'environment_validation', stageStartedAt: 1_000 };
+
+  try {
+    validateTimeoutHierarchy({
+      calculatedGeminiRetryBudgetMs: 472_998,
+      externalAgentRequestTimeoutMs: 500_000,
+      verificationRequestTimeoutMs: 500_000,
+      runtimeInvocationTimeoutMs: 540_000,
+    });
+    startupCalled = true;
+  } catch (error) {
+    failure = wrapVerificationFailure(error, state, 1_010);
+  }
+
+  assert.equal(startupCalled, false);
+  assert.equal(failure.stage, 'environment_validation');
+  assert.equal(failure.applicationErrorCode, 'EXTERNAL_FLOW_TIMEOUT_HIERARCHY_INVALID');
+  assert.equal(
+    failure.timeoutBudgetValidationMessage,
+    'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
+  );
+  const output = formatVerificationFailure(failure);
+  assert.match(output, /Failed stage: environment_validation/);
+  assert.match(output, /Startup stage: environment_validation/);
+  assert.match(output, /Application error code: EXTERNAL_FLOW_TIMEOUT_HIERARCHY_INVALID/);
+  assert.match(
+    output,
+    /Timeout-budget validation: EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS\./,
+  );
+});
+
+test('external child startup failure reports external_runtime_start with safe diagnostics', async () => {
+  const secret = 'runtime-token-secret-value-0123456789';
+  const childError = Object.assign(new Error(`child failed with ${secret}`), {
+    applicationErrorCode: 'EXTERNAL_AGENT_STARTUP_FAILED',
+    exitCode: 17,
+  });
+  const state = { stage: 'environment_validation', stageStartedAt: 2_000 };
+  let failure;
+
+  try {
+    await runStartupStage(state, 'external_runtime_start', async () => {
+      throw childError;
+    });
+  } catch (error) {
+    failure = wrapVerificationFailure(error, state, state.stageStartedAt + 25);
+  }
+
+  assert.equal(failure.stage, 'external_runtime_start');
+  assert.equal(failure.applicationErrorCode, 'EXTERNAL_AGENT_STARTUP_FAILED');
+  assert.equal(failure.processExitCode, 17);
+  const output = formatVerificationFailure(failure);
+  assert.match(output, /Failed stage: external_runtime_start/);
+  assert.match(output, /Startup stage: external_runtime_start/);
+  assert.match(output, /Process exit code: 17/);
+  assert.equal(output.includes(secret), false);
+});
+
+test('verifier startup stages precede health and readiness in execution order', () => {
+  assert.deepEqual(VERIFICATION_STAGES.slice(0, 5), [
+    'environment_validation',
+    'external_runtime_start',
+    'gateway_start',
+    'external_health',
+    'external_readiness',
+  ]);
 });
 
 test('external-flow verifier loads backend/.env from every supported launch directory', async (t) => {
