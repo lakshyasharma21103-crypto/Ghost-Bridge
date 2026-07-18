@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -6,12 +7,16 @@ const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 const {
   EXTERNAL_AGENT_BASE_URL_ENV,
+  EXTERNAL_AGENT_RUNTIME_TOKEN_ENV,
   EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
   EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
   ExternalFlowVerificationError,
+  LOCAL_SPAWNED_AGENT_MODE,
+  REMOTE_LIVE_AGENT_MODE,
   RUNTIME_INVOCATION_TIMEOUT_MS,
   VERIFICATION_REQUEST_TIMEOUT_MS,
   VERIFICATION_STAGES,
+  applyExternalRuntimeEnvironment,
   calculatedGeminiRetryBudgetMs,
   configuredTimeoutMs,
   externalAgentEnvironment,
@@ -19,7 +24,9 @@ const {
   formatVerificationFailure,
   normalizeExternalAgentBaseUrl,
   request,
+  requireExternalRuntimeConfiguration,
   resolveExternalAgentBaseUrl,
+  resolveExternalRuntime,
   runStartupStage,
   sourceExtractionDiagnostics,
   success,
@@ -306,6 +313,162 @@ test('verifier startup stages precede health and readiness in execution order', 
     'external_health',
     'external_readiness',
   ]);
+});
+
+test('remote mode preserves the configured runtime token without generating a replacement', () => {
+  const configuredToken = 'remote-runtime-token-value-0123456789-abcdefgh';
+  let randomCalls = 0;
+  const configuration = resolveExternalRuntime(
+    {
+      [EXTERNAL_AGENT_BASE_URL_ENV]: '  https://agent.example.test  ',
+      [EXTERNAL_AGENT_RUNTIME_TOKEN_ENV]: `  ${configuredToken}  `,
+    },
+    {
+      randomBytes() {
+        randomCalls += 1;
+        throw new Error('remote mode must not generate a token');
+      },
+    },
+  );
+
+  assert.equal(configuration.mode, REMOTE_LIVE_AGENT_MODE);
+  assert.equal(configuration.baseUrl, 'https://agent.example.test');
+  assert.equal(configuration.runtimeToken, configuredToken);
+  assert.equal(configuration.startLocalRuntime, false);
+  assert.equal(randomCalls, 0);
+});
+
+test('remote mode without a token fails safely before connection creation', () => {
+  let bootstrap;
+  let connectionCreated = false;
+  try {
+    resolveExternalRuntime({
+      [EXTERNAL_AGENT_BASE_URL_ENV]: 'https://agent.example.test',
+    });
+  } catch (error) {
+    bootstrap = { error };
+  }
+
+  assert.throws(
+    () => {
+      requireExternalRuntimeConfiguration(bootstrap);
+      connectionCreated = true;
+    },
+    (error) => {
+      assert.equal(error.applicationErrorCode, 'EXTERNAL_TEST_AGENT_RUNTIME_TOKEN_MISSING');
+      assert.equal(error.runtimeMode, REMOTE_LIVE_AGENT_MODE);
+      assert.equal(error.authenticationStage, 'environment_validation');
+      const output = formatVerificationFailure(
+        wrapVerificationFailure(
+          error,
+          {
+            stage: 'environment_validation',
+            stageStartedAt: 1_000,
+            runtimeMode: REMOTE_LIVE_AGENT_MODE,
+          },
+          1_010,
+        ),
+      );
+      assert.match(output, /Application error code: EXTERNAL_TEST_AGENT_RUNTIME_TOKEN_MISSING/);
+      assert.match(output, /Runtime mode: remote/);
+      assert.match(output, /Authentication stage: environment_validation/);
+      return true;
+    },
+  );
+  assert.equal(connectionCreated, false);
+});
+
+test('local mode generates one random token shared by the local runtime and delegated credential', () => {
+  const generatedBytes = Buffer.alloc(32, 0xa7);
+  let randomCalls = 0;
+  const configuration = resolveExternalRuntime(
+    {},
+    {
+      localPort: 5002,
+      randomBytes(size) {
+        randomCalls += 1;
+        assert.equal(size, 32);
+        return generatedBytes;
+      },
+    },
+  );
+  const backendEnvironment = {};
+  applyExternalRuntimeEnvironment(configuration, backendEnvironment);
+  const childEnvironment = externalAgentEnvironment({
+    localEnvironment: {},
+    environment: {},
+    runtimeToken: configuration.runtimeToken,
+  });
+  const backendToken = Buffer.from(backendEnvironment[EXTERNAL_AGENT_RUNTIME_TOKEN_ENV], 'utf8');
+  const childToken = Buffer.from(childEnvironment.EXTERNAL_AGENT_RUNTIME_TOKEN, 'utf8');
+
+  assert.equal(configuration.mode, LOCAL_SPAWNED_AGENT_MODE);
+  assert.equal(configuration.startLocalRuntime, true);
+  assert.equal(configuration.baseUrl, 'http://127.0.0.1:5002');
+  assert.equal(randomCalls, 1);
+  assert.equal(crypto.timingSafeEqual(backendToken, childToken), true);
+});
+
+test('local mode uses a cryptographically generated 32-byte runtime token', () => {
+  const configuration = resolveExternalRuntime({}, { localPort: 5002 });
+
+  assert.equal(configuration.mode, LOCAL_SPAWNED_AGENT_MODE);
+  assert.match(configuration.runtimeToken, /^[A-Za-z0-9_-]+$/);
+  assert.equal(Buffer.from(configuration.runtimeToken, 'base64url').length, 32);
+});
+
+test('runtime authentication failures retain only safe mode and downstream diagnostics', () => {
+  const runtimeToken = 'wrong-runtime-token-value-0123456789';
+  const installKey = generateInstallKey();
+  const result = endpointResult(undefined, {
+    status: 502,
+    success: false,
+    error: {
+      code: 'RUNTIME_AUTHENTICATION_FAILED',
+      message: `Authorization: Bearer ${runtimeToken}`,
+      details: [
+        {
+          path: 'runtime',
+          remoteStatus: 401,
+          message: `encrypted credential ${runtimeToken} install=${installKey}`,
+        },
+      ],
+    },
+  });
+  let failure;
+
+  try {
+    success(result, 'gateway invocation', {
+      connectionId: 'connection_123',
+      runtimeMode: REMOTE_LIVE_AGENT_MODE,
+    });
+  } catch (error) {
+    failure = wrapVerificationFailure(
+      error,
+      {
+        stage: 'gateway_invocation',
+        stageStartedAt: 2_000,
+        connectionId: 'connection_123',
+        runtimeMode: REMOTE_LIVE_AGENT_MODE,
+      },
+      2_025,
+    );
+  }
+
+  assert.equal(failure.applicationErrorCode, 'RUNTIME_AUTHENTICATION_FAILED');
+  assert.equal(failure.runtimeMode, REMOTE_LIVE_AGENT_MODE);
+  assert.equal(failure.downstreamHttpStatusCategory, '4xx');
+  assert.equal(failure.authenticationStage, 'runtime_authentication');
+  assert.equal(failure.connectionId, 'connection_123');
+  assert.equal(failure.requestId, 'req_endpoint-test');
+  assert.equal(failure.traceId, 'trace_endpoint-test');
+  const output = formatVerificationFailure(failure);
+  assert.match(output, /Runtime mode: remote/);
+  assert.match(output, /Downstream HTTP status category: 4xx/);
+  assert.match(output, /Authentication stage: runtime_authentication/);
+  assert.equal(output.includes(runtimeToken), false);
+  assert.equal(output.includes(installKey), false);
+  assert.doesNotMatch(output, /Authorization|Bearer|encrypted credential/i);
 });
 
 test('external-flow verifier loads backend/.env from every supported launch directory', async (t) => {

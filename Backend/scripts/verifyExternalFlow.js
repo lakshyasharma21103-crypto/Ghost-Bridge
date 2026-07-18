@@ -9,7 +9,10 @@ const BACKEND_ENV_PATH = path.resolve(__dirname, '../.env');
 dotenv.config({ path: BACKEND_ENV_PATH });
 
 const EXTERNAL_AGENT_BASE_URL_ENV = 'EXTERNAL_TEST_AGENT_BASE_URL';
+const EXTERNAL_AGENT_RUNTIME_TOKEN_ENV = 'EXTERNAL_TEST_AGENT_RUNTIME_TOKEN';
 const ENV_LOAD_CHECK_ARGUMENT = '--check-env-load';
+const REMOTE_LIVE_AGENT_MODE = 'remote';
+const LOCAL_SPAWNED_AGENT_MODE = 'local';
 
 if (require.main === module && process.argv.includes(ENV_LOAD_CHECK_ARGUMENT)) {
   const configured = Boolean(process.env[EXTERNAL_AGENT_BASE_URL_ENV]?.trim());
@@ -23,6 +26,42 @@ if (require.main === module && process.argv.includes(ENV_LOAD_CHECK_ARGUMENT)) {
 function configuredTimeoutMs(environment, name, fallback) {
   const rawValue = environment?.[name];
   return rawValue == null || rawValue === '' ? fallback : Number(rawValue);
+}
+
+function resolveExternalRuntime(environment = process.env, options = {}) {
+  const remoteBaseUrl = environment?.[EXTERNAL_AGENT_BASE_URL_ENV]?.trim();
+  const configuredRuntimeToken = environment?.[EXTERNAL_AGENT_RUNTIME_TOKEN_ENV]?.trim();
+
+  if (remoteBaseUrl) {
+    if (!configuredRuntimeToken) {
+      const error = new Error('Remote external runtime token is required.');
+      error.applicationErrorCode = 'EXTERNAL_TEST_AGENT_RUNTIME_TOKEN_MISSING';
+      error.runtimeMode = REMOTE_LIVE_AGENT_MODE;
+      error.authenticationStage = 'environment_validation';
+      throw error;
+    }
+    return Object.freeze({
+      mode: REMOTE_LIVE_AGENT_MODE,
+      baseUrl: remoteBaseUrl,
+      runtimeToken: configuredRuntimeToken,
+      startLocalRuntime: false,
+    });
+  }
+
+  const randomBytes = options.randomBytes || crypto.randomBytes;
+  const localPort = Number(options.localPort || 5002);
+  return Object.freeze({
+    mode: LOCAL_SPAWNED_AGENT_MODE,
+    baseUrl: `http://127.0.0.1:${localPort}`,
+    runtimeToken: randomBytes(32).toString('base64url'),
+    startLocalRuntime: true,
+  });
+}
+
+function applyExternalRuntimeEnvironment(configuration, environment = process.env) {
+  environment[EXTERNAL_AGENT_BASE_URL_ENV] = configuration.baseUrl;
+  environment[EXTERNAL_AGENT_RUNTIME_TOKEN_ENV] = configuration.runtimeToken;
+  return environment;
 }
 
 const {
@@ -45,11 +84,17 @@ const RUNTIME_INVOCATION_TIMEOUT_MS = configuredTimeoutMs(
 );
 const externalAgentPort = Number(process.env.EXTERNAL_FLOW_AGENT_PORT || 5002);
 const gatewayPort = Number(process.env.EXTERNAL_FLOW_GATEWAY_PORT || 5014);
-const runtimeToken = crypto.randomBytes(32).toString('base64url');
+let externalRuntimeBootstrap;
+try {
+  const configuration = resolveExternalRuntime(process.env, { localPort: externalAgentPort });
+  applyExternalRuntimeEnvironment(configuration);
+  externalRuntimeBootstrap = Object.freeze({ configuration });
+} catch (error) {
+  externalRuntimeBootstrap = Object.freeze({ error });
+}
 
 process.env.NODE_ENV = 'development';
 process.env.PORT = String(gatewayPort);
-process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN = runtimeToken;
 process.env.ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV = 'true';
 process.env.RUNTIME_INVOCATION_TIMEOUT_MS = String(
   Number.isInteger(RUNTIME_INVOCATION_TIMEOUT_MS) && RUNTIME_INVOCATION_TIMEOUT_MS > 0
@@ -63,8 +108,10 @@ const AgentPassport = require('../src/models/AgentPassport');
 const AuditLog = require('../src/models/AuditLog');
 const Credential = require('../src/models/Credential');
 const Invocation = require('../src/models/Invocation');
+const InvocationAttempt = require('../src/models/InvocationAttempt');
 const PassportConnection = require('../src/models/PassportConnection');
 const PassportInstallKey = require('../src/models/PassportInstallKey');
+const RuntimeWorkItem = require('../src/models/RuntimeWorkItem');
 const { decryptPayload, hashKey } = require('../src/utils/crypto');
 const { logger: gatewayLogger } = require('../src/utils/logger');
 const { redactString } = require('../src/utils/redact');
@@ -135,6 +182,9 @@ const SAFE_RUNTIME_STARTUP_STAGES = new Set([
   'external_runtime_start',
   'gateway_start',
 ]);
+const SAFE_RUNTIME_MODES = new Set([REMOTE_LIVE_AGENT_MODE, LOCAL_SPAWNED_AGENT_MODE]);
+const SAFE_DOWNSTREAM_HTTP_STATUS_CATEGORIES = new Set(['1xx', '2xx', '3xx', '4xx', '5xx']);
+const SAFE_AUTHENTICATION_STAGES = new Set(['environment_validation', 'runtime_authentication']);
 const SAFE_TIMEOUT_BUDGET_VALIDATION_MESSAGES = new Set([
   'Timeout values must be positive integers.',
   'Calculated Gemini retry budget must be less than EXTERNAL_AGENT_REQUEST_TIMEOUT_MS.',
@@ -295,6 +345,9 @@ class ExternalFlowVerificationError extends Error {
       'probeStage',
       'processExitCode',
       'timeoutBudgetValidationMessage',
+      'runtimeMode',
+      'downstreamHttpStatusCategory',
+      'authenticationStage',
       'connectionId',
     ]) {
       if (options[field] !== undefined) this[field] = options[field];
@@ -350,6 +403,30 @@ function safeProbeStage(value) {
 
 function safeRuntimeStartupStage(value) {
   return SAFE_RUNTIME_STARTUP_STAGES.has(value) ? value : undefined;
+}
+
+function safeRuntimeMode(value) {
+  return SAFE_RUNTIME_MODES.has(value) ? value : undefined;
+}
+
+function safeDownstreamHttpStatusCategory(value) {
+  return SAFE_DOWNSTREAM_HTTP_STATUS_CATEGORIES.has(value) ? value : undefined;
+}
+
+function safeAuthenticationStage(value) {
+  return SAFE_AUTHENTICATION_STAGES.has(value) ? value : undefined;
+}
+
+function downstreamHttpStatusCategory(result) {
+  const details = result?.body?.error?.details;
+  if (!Array.isArray(details)) return undefined;
+  for (const detail of details.slice(0, 16)) {
+    const status = Number(detail?.remoteStatus);
+    if (detail?.path === 'runtime' && Number.isInteger(status) && status >= 100 && status <= 599) {
+      return `${Math.floor(status / 100)}xx`;
+    }
+  }
+  return undefined;
 }
 
 function safeProcessExitCode(value) {
@@ -582,6 +659,12 @@ function wrapVerificationFailure(error, state, now = Date.now()) {
       timeoutBudgetValidationMessage:
         safeTimeoutBudgetValidationMessage(errorField(error, 'timeoutBudgetValidationMessage')) ??
         timeoutBudgetValidationMessageFromError(error),
+      runtimeMode:
+        safeRuntimeMode(errorField(error, 'runtimeMode')) ?? safeRuntimeMode(state.runtimeMode),
+      downstreamHttpStatusCategory: safeDownstreamHttpStatusCategory(
+        errorField(error, 'downstreamHttpStatusCategory'),
+      ),
+      authenticationStage: safeAuthenticationStage(errorField(error, 'authenticationStage')),
       connectionId:
         safeIdentifier(errorField(error, 'connectionId')) ?? safeIdentifier(state.connectionId),
     },
@@ -596,6 +679,13 @@ function formatVerificationFailure(error) {
     `Process exit code: ${safeProcessExitCode(error.processExitCode) ?? '[unavailable]'}`,
     `Timeout-budget validation: ${
       safeTimeoutBudgetValidationMessage(error.timeoutBudgetValidationMessage) || '[unavailable]'
+    }`,
+    `Runtime mode: ${safeRuntimeMode(error.runtimeMode) || '[unavailable]'}`,
+    `Downstream HTTP status category: ${
+      safeDownstreamHttpStatusCategory(error.downstreamHttpStatusCategory) || '[unavailable]'
+    }`,
+    `Authentication stage: ${
+      safeAuthenticationStage(error.authenticationStage) || '[unavailable]'
     }`,
     `HTTP status: ${Number.isInteger(error.httpStatus) ? error.httpStatus : '[unavailable]'}`,
     `Application error code: ${safeCode(error.applicationErrorCode) || '[unavailable]'}`,
@@ -677,6 +767,19 @@ function beginStage(state, stage) {
   state.stageStartedAt = Date.now();
 }
 
+function requireExternalRuntimeConfiguration(bootstrap = externalRuntimeBootstrap) {
+  if (bootstrap?.configuration) return bootstrap.configuration;
+  const error = bootstrap?.error;
+  throw new ExternalFlowVerificationError('Remote external runtime token is required.', {
+    cause: error,
+    applicationErrorCode:
+      safeCode(error?.applicationErrorCode) || 'EXTERNAL_TEST_AGENT_RUNTIME_TOKEN_MISSING',
+    runtimeMode: safeRuntimeMode(error?.runtimeMode) || REMOTE_LIVE_AGENT_MODE,
+    authenticationStage:
+      safeAuthenticationStage(error?.authenticationStage) || 'environment_validation',
+  });
+}
+
 function calculatedGeminiRetryBudgetMs(agentConfig) {
   return providerRequestBudget({
     researchTimeoutMs: agentConfig?.gemini?.researchTimeoutMs,
@@ -686,37 +789,54 @@ function calculatedGeminiRetryBudgetMs(agentConfig) {
   }).totalTimeoutMs;
 }
 
-function validateTimeoutHierarchy(options = {}) {
+function timeoutHierarchyFailure(timeoutBudgetValidationMessage) {
+  throw new ExternalFlowVerificationError('External-flow timeout budget validation failed.', {
+    applicationErrorCode: 'EXTERNAL_FLOW_TIMEOUT_HIERARCHY_INVALID',
+    timeoutBudgetValidationMessage,
+  });
+}
+
+function validateVerifierTimeoutHierarchy(options = {}) {
   const hierarchy = {
-    calculatedGeminiRetryBudgetMs: options.calculatedGeminiRetryBudgetMs,
     externalAgentRequestTimeoutMs:
       options.externalAgentRequestTimeoutMs ?? EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
     verificationRequestTimeoutMs:
       options.verificationRequestTimeoutMs ?? VERIFICATION_REQUEST_TIMEOUT_MS,
     runtimeInvocationTimeoutMs: options.runtimeInvocationTimeoutMs ?? RUNTIME_INVOCATION_TIMEOUT_MS,
   };
-  const fail = (timeoutBudgetValidationMessage) => {
-    throw new ExternalFlowVerificationError('External-flow timeout budget validation failed.', {
-      applicationErrorCode: 'EXTERNAL_FLOW_TIMEOUT_HIERARCHY_INVALID',
-      timeoutBudgetValidationMessage,
-    });
-  };
-
   if (
     !Object.values(hierarchy).every((timeoutMs) => Number.isInteger(timeoutMs) && timeoutMs > 0)
   ) {
-    fail('Timeout values must be positive integers.');
-  }
-  if (hierarchy.calculatedGeminiRetryBudgetMs >= hierarchy.externalAgentRequestTimeoutMs) {
-    fail('Calculated Gemini retry budget must be less than EXTERNAL_AGENT_REQUEST_TIMEOUT_MS.');
+    timeoutHierarchyFailure('Timeout values must be positive integers.');
   }
   if (hierarchy.externalAgentRequestTimeoutMs >= hierarchy.verificationRequestTimeoutMs) {
-    fail('EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.');
+    timeoutHierarchyFailure(
+      'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
+    );
   }
   if (hierarchy.verificationRequestTimeoutMs >= hierarchy.runtimeInvocationTimeoutMs) {
-    fail('EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.');
+    timeoutHierarchyFailure(
+      'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
+    );
   }
   return Object.freeze(hierarchy);
+}
+
+function validateTimeoutHierarchy(options = {}) {
+  const verifierHierarchy = validateVerifierTimeoutHierarchy(options);
+  const calculatedRetryBudgetMs = options.calculatedGeminiRetryBudgetMs;
+  if (!Number.isInteger(calculatedRetryBudgetMs) || calculatedRetryBudgetMs <= 0) {
+    timeoutHierarchyFailure('Timeout values must be positive integers.');
+  }
+  if (calculatedRetryBudgetMs >= verifierHierarchy.externalAgentRequestTimeoutMs) {
+    timeoutHierarchyFailure(
+      'Calculated Gemini retry budget must be less than EXTERNAL_AGENT_REQUEST_TIMEOUT_MS.',
+    );
+  }
+  return Object.freeze({
+    calculatedGeminiRetryBudgetMs: calculatedRetryBudgetMs,
+    ...verifierHierarchy,
+  });
 }
 
 function validateExternalFlowTimeoutHierarchy(agentConfig, options = {}) {
@@ -821,7 +941,7 @@ function externalAgentEnvironment(options = {}) {
       '2',
     PORT: String(externalAgentPort),
     NODE_ENV: 'development',
-    EXTERNAL_AGENT_RUNTIME_TOKEN: runtimeToken,
+    EXTERNAL_AGENT_RUNTIME_TOKEN: options.runtimeToken,
     ALLOWED_GATEWAY_ORIGINS: '',
     REQUEST_TIMEOUT_MS: String(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS),
     AI_PROVIDER: 'gemini',
@@ -954,6 +1074,16 @@ function success(result, label, options = {}) {
             configuredTimeoutMs: safeConfiguredTimeoutMs(result.body?.error?.configuredTimeoutMs),
           }
         : {};
+    const authenticationDiagnostics =
+      code === 'RUNTIME_AUTHENTICATION_FAILED'
+        ? {
+            runtimeMode: safeRuntimeMode(options.runtimeMode),
+            downstreamHttpStatusCategory: safeDownstreamHttpStatusCategory(
+              downstreamHttpStatusCategory(result),
+            ),
+            authenticationStage: 'runtime_authentication',
+          }
+        : {};
     throw new ExternalFlowVerificationError(`${label} failed.`, {
       httpStatus: result.response.status,
       applicationErrorCode: safeCode(code),
@@ -975,6 +1105,7 @@ function success(result, label, options = {}) {
       finalProviderStatus: safeFinalProviderStatus(result.body?.error?.finalProviderStatus),
       groundingMetadataCount: safeDiagnosticCount(result.body?.error?.groundingMetadataCount),
       ...timeoutDiagnostics,
+      ...authenticationDiagnostics,
       connectionId: options.connectionId,
     });
   }
@@ -1108,9 +1239,19 @@ async function verify() {
 
   try {
     beginStage(state, 'environment_validation');
-    externalBaseUrl = resolveExternalAgentBaseUrl();
-    const agentConfig = externalAgentConfig();
-    validateExternalFlowTimeoutHierarchy(agentConfig);
+    state.runtimeMode = safeRuntimeMode(
+      externalRuntimeBootstrap.configuration?.mode || externalRuntimeBootstrap.error?.runtimeMode,
+    );
+    const runtimeConfiguration = requireExternalRuntimeConfiguration();
+    const runtimeToken = runtimeConfiguration.runtimeToken;
+    externalBaseUrl = normalizeExternalAgentBaseUrl(runtimeConfiguration.baseUrl);
+    let agentConfig;
+    if (runtimeConfiguration.startLocalRuntime) {
+      agentConfig = externalAgentConfig({ runtimeToken });
+      validateExternalFlowTimeoutHierarchy(agentConfig);
+    } else {
+      validateVerifierTimeoutHierarchy();
+    }
 
     await connectDatabase();
     if (databaseStatus() !== 'connected') {
@@ -1119,14 +1260,19 @@ async function verify() {
       );
     }
 
-    geminiApiKey = agentConfig.gemini.apiKey;
-    externalRuntime = await runStartupStage(state, 'external_runtime_start', () =>
-      startExternalAgent({
-        config: agentConfig,
-        host: '127.0.0.1',
-        logger: externalLogger(),
-      }),
-    );
+    if (runtimeConfiguration.startLocalRuntime) {
+      geminiApiKey = agentConfig.gemini.apiKey;
+      externalRuntime = await runStartupStage(state, 'external_runtime_start', () =>
+        startExternalAgent({
+          config: agentConfig,
+          host: '127.0.0.1',
+          logger: externalLogger(),
+        }),
+      );
+    } else {
+      beginStage(state, 'external_runtime_start');
+      report('external runtime', 'using configured remote live agent without local startup');
+    }
     await runStartupStage(state, 'gateway_start', async () => {
       gatewayServer = http.createServer(createApp());
       await listen(gatewayServer, gatewayPort);
@@ -1261,6 +1407,7 @@ async function verify() {
     );
     const invocation = success(invocationResult, 'gateway invocation', {
       connectionId: resolved.connectionId,
+      runtimeMode: runtimeConfiguration.mode,
     });
     assert(
       invocationResult.response.headers.get('x-trace-id') === traceId,
@@ -1348,6 +1495,12 @@ async function verify() {
 
     beginStage(state, 'invocation_persistence');
     const storedInvocation = await Invocation.findById(invocation.invocationId).lean();
+    const invocationAttempts = await InvocationAttempt.find({
+      invocationId: invocation.invocationId,
+    }).lean();
+    const durableWorkItems = await RuntimeWorkItem.find({
+      invocationId: invocation.invocationId,
+    }).lean();
     assert(storedInvocation?.status === 'completed', 'Completed invocation was not persisted.');
     assert(storedInvocation.traceId === traceId, 'Persisted invocation trace ID does not match.');
     assert(
@@ -1358,6 +1511,10 @@ async function verify() {
       !JSON.stringify(storedInvocation).includes(runtimeToken),
       'Invocation contains runtime token.',
     );
+    assert(
+      !JSON.stringify({ invocationAttempts, durableWorkItems }).includes(runtimeToken),
+      'Runtime token appeared in durable invocation records.',
+    );
     report(
       'runtime gateway invocation',
       'bearer-authenticated external response completed and persisted',
@@ -1366,17 +1523,21 @@ async function verify() {
       capturedGatewayLogs.join('').includes(traceId),
       'Gateway diagnostics do not contain the invocation trace ID.',
     );
-    assert(
-      capturedExternalLogs.join('').includes(traceId),
-      'External-agent diagnostics do not contain the gateway trace ID.',
-    );
-    assert(
-      capturedExternalLogs.join('').includes(invocation.invocationId),
-      'External-agent diagnostics do not contain the invocation ID.',
-    );
+    if (runtimeConfiguration.startLocalRuntime) {
+      assert(
+        capturedExternalLogs.join('').includes(traceId),
+        'External-agent diagnostics do not contain the gateway trace ID.',
+      );
+      assert(
+        capturedExternalLogs.join('').includes(invocation.invocationId),
+        'External-agent diagnostics do not contain the invocation ID.',
+      );
+    }
     report(
       'trace propagation',
-      'traceId, requestId, and invocationId correlated across both services',
+      runtimeConfiguration.startLocalRuntime
+        ? 'traceId, requestId, and invocationId correlated across both services'
+        : 'traceId, requestId, and invocationId correlated through the gateway response',
     );
 
     beginStage(state, 'audit_persistence');
@@ -1432,6 +1593,8 @@ async function verify() {
       connection,
       credential,
       invocation: storedInvocation,
+      invocationAttempts,
+      durableWorkItems,
       audits: auditLogs,
     };
     assert(
@@ -1505,12 +1668,16 @@ if (require.main === module) {
 
 module.exports = {
   EXTERNAL_AGENT_BASE_URL_ENV,
+  EXTERNAL_AGENT_RUNTIME_TOKEN_ENV,
   EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
   EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
   ExternalFlowVerificationError,
+  LOCAL_SPAWNED_AGENT_MODE,
+  REMOTE_LIVE_AGENT_MODE,
   RUNTIME_INVOCATION_TIMEOUT_MS,
   VERIFICATION_REQUEST_TIMEOUT_MS,
   VERIFICATION_STAGES,
+  applyExternalRuntimeEnvironment,
   beginStage,
   calculatedGeminiRetryBudgetMs,
   configuredTimeoutMs,
@@ -1520,7 +1687,9 @@ module.exports = {
   normalizeExternalAgentBaseUrl,
   request,
   readinessDiagnostics,
+  requireExternalRuntimeConfiguration,
   resolveExternalAgentBaseUrl,
+  resolveExternalRuntime,
   runStartupStage,
   sourceExtractionDiagnostics,
   success,
@@ -1528,6 +1697,7 @@ module.exports = {
   validateExternalReadiness,
   validateExternalFlowTimeoutHierarchy,
   validateTimeoutHierarchy,
+  validateVerifierTimeoutHierarchy,
   verify,
   verifyExternalStartup,
   verificationResearchTopic,

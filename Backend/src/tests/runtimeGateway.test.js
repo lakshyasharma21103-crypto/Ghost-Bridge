@@ -996,6 +996,102 @@ test('REST invocation applies the passport auth header and never persists its cr
   }
 });
 
+test('delegated runtime token reaches the external invocation only as its Bearer header', async () => {
+  const patches = [];
+  const audits = [];
+  const diagnostics = [];
+  let createdInvocation;
+  let outbound;
+  const runtimeToken = 'delegated-runtime-token-value-0123456789-abcdefgh';
+  const diagnosticLogger = {
+    info(fields) {
+      diagnostics.push(fields);
+    },
+    warn(fields) {
+      diagnostics.push(fields);
+    },
+    error(fields) {
+      diagnostics.push(fields);
+    },
+  };
+  patchInvocationContext(patches, {
+    connection: connection({
+      credentialId: 'credential_123',
+      resolvedPassportSnapshot: {
+        auth: { type: 'bearer_token', header: 'Authorization', scheme: 'Bearer' },
+      },
+    }),
+    passport: passport({ type: 'bearer_token', header: 'Authorization', scheme: 'Bearer' }),
+  });
+  patch(
+    Credential,
+    'findOne',
+    () => ({
+      lean: async () => ({
+        _id: 'credential_123',
+        type: 'delegated_runtime_access',
+        status: 'active',
+        encryptedPayload: encryptPayload({
+          accessToken: runtimeToken,
+          header: 'Authorization',
+          scheme: 'Bearer',
+        }),
+      }),
+    }),
+    patches,
+  );
+  patch(
+    Invocation,
+    'create',
+    async (doc) => {
+      createdInvocation = invocationDocument(doc);
+      return createdInvocation;
+    },
+    patches,
+  );
+  patch(
+    AuditLog,
+    'create',
+    async (payload) => {
+      audits.push(payload);
+      return payload;
+    },
+    patches,
+  );
+  patch(
+    safeFetchUtility,
+    'safeFetch',
+    async (_url, options) => {
+      await beginTransmission(options);
+      outbound = options;
+      return { ok: true, status: 200, bodyText: JSON.stringify({ response: { summary: 'ok' } }) };
+    },
+    patches,
+  );
+
+  try {
+    const result = await invoke(
+      'connection_123',
+      'research_topic',
+      { topic: 'FIFA' },
+      { logger: diagnosticLogger },
+    );
+    assert.equal(outbound.headers.Authorization, `Bearer ${runtimeToken}`);
+    assert.equal(
+      JSON.stringify({
+        result,
+        invocation: createdInvocation,
+        attempt: latestAttemptDocument,
+        audits,
+        diagnostics,
+      }).includes(runtimeToken),
+      false,
+    );
+  } finally {
+    restore(patches);
+  }
+});
+
 test('same idempotency key and request replays one stored invocation without another execution', async () => {
   const patches = [];
   const rawKey = 'client-replay-key-123456789';
