@@ -50,6 +50,13 @@ const DisasterRecoveryStatus = require('../models/DisasterRecoveryStatus');
 const OrchestrationDefinition = require('../models/OrchestrationDefinition');
 const OrchestrationRun = require('../models/OrchestrationRun');
 const OrchestrationNodeRun = require('../models/OrchestrationNodeRun');
+const CapabilityCatalogEntry = require('../models/CapabilityCatalogEntry');
+const AgentSelectionPolicy = require('../models/AgentSelectionPolicy');
+const AgentSelectionDecision = require('../models/AgentSelectionDecision');
+const InterAgentDataContract = require('../models/InterAgentDataContract');
+const InterAgentDelegationGrant = require('../models/InterAgentDelegationGrant');
+const InterAgentDelegationInvocation = require('../models/InterAgentDelegationInvocation');
+const InterAgentDelegationReference = require('../models/InterAgentDelegationReference');
 const { createAuditLog } = require('./auditService');
 const { actorFromPartner, assertAuthorized } = require('./authorization.service');
 const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
@@ -3194,6 +3201,9 @@ async function collectTenantExportData(record) {
     configurations,
     incidents,
     evidenceExports,
+    interAgentContracts,
+    interAgentGrants,
+    interAgentInvocations,
   ] = await Promise.all([
     Organization.findOne(partnerFilter).lean(),
     Workspace.find({ ...partnerFilter, ...workspaceFilter })
@@ -3252,6 +3262,24 @@ async function collectTenantExportData(record) {
       .limit(MAX_EXPORT_RECORDS_PER_CATEGORY)
       .lean(),
     EvidenceExport.find({
+      organizationId,
+      ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
+    })
+      .limit(MAX_EXPORT_RECORDS_PER_CATEGORY)
+      .lean(),
+    InterAgentDataContract.find({
+      organizationId,
+      ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
+    })
+      .limit(MAX_EXPORT_RECORDS_PER_CATEGORY)
+      .lean(),
+    InterAgentDelegationGrant.find({
+      organizationId,
+      ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
+    })
+      .limit(MAX_EXPORT_RECORDS_PER_CATEGORY)
+      .lean(),
+    InterAgentDelegationInvocation.find({
       organizationId,
       ...(record.workspaceId ? { workspaceId: record.workspaceId } : {}),
     })
@@ -3419,6 +3447,32 @@ async function collectTenantExportData(record) {
         'eventCount',
         'packageDigest',
         'completedAt',
+      ]),
+    ),
+    interAgentContracts: interAgentContracts.map((item) =>
+      safeTenantExportDocument(item, [
+        '_id', 'name', 'version', 'status', 'sourceCapability', 'sourceOperation',
+        'targetCapability', 'targetOperation', 'purposeCode', 'allowedInputFields',
+        'allowedOutputFields', 'maximumDataClassification', 'validFrom', 'expiresAt',
+        'createdAt', 'updatedAt',
+      ]),
+    ),
+    interAgentGrants: interAgentGrants.map((item) =>
+      safeTenantExportDocument(item, [
+        '_id', 'contractId', 'contractVersion', 'orchestrationRunId', 'sourcePassportId',
+        'targetPassportId', 'sourceCapability', 'targetCapability', 'purposeCode', 'status',
+        'maximumDataClassification', 'invocationLimit', 'invocationCount', 'delegationDepth',
+        'validFrom', 'expiresAt', 'createdAt', 'updatedAt',
+      ]),
+    ),
+    interAgentInvocations: interAgentInvocations.map((item) =>
+      safeTenantExportDocument(item, [
+        '_id', 'delegationGrantId', 'contractId', 'contractVersion', 'orchestrationRunId',
+        'sourcePassportId', 'targetPassportId', 'capability', 'operation', 'purposeCode',
+        'status', 'invocationOrdinal', 'effectiveDataClassification', 'delegatedFieldCount',
+        'removedFieldCount', 'redactedFieldCount', 'transformedFieldCount',
+        'approximateInputBytes', 'approximateOutputBytes', 'requestId', 'traceId',
+        'safeFailureCode', 'startedAt', 'completedAt', 'createdAt',
       ]),
     ),
   };
@@ -4025,6 +4079,41 @@ const DELETION_COLLECTIONS = Object.freeze([
     name: 'runtimeWorkItems',
     model: RuntimeWorkItem,
     filter: (scope) => ({ partnerId: scope.partnerId }),
+  },
+  {
+    name: 'interAgentDelegationReferences',
+    model: InterAgentDelegationReference,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'interAgentDelegationInvocations',
+    model: InterAgentDelegationInvocation,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'interAgentDelegationGrants',
+    model: InterAgentDelegationGrant,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'interAgentDataContracts',
+    model: InterAgentDataContract,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'agentSelectionDecisions',
+    model: AgentSelectionDecision,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'agentSelectionPolicies',
+    model: AgentSelectionPolicy,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'capabilityCatalogEntries',
+    model: CapabilityCatalogEntry,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
   },
   {
     name: 'orchestrationNodeRuns',

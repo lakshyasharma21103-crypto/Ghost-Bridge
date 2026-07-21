@@ -73,6 +73,52 @@ const orchestrationContextSchema = new mongoose.Schema(
   { _id: false, strict: 'throw' },
 );
 
+const delegationContextSchema = new mongoose.Schema(
+  {
+    delegationGrantId: { type: String, required: true, trim: true, maxlength: 128 },
+    delegationInvocationId: { type: String, required: true, trim: true, maxlength: 128 },
+    contractId: { type: String, required: true, trim: true, maxlength: 128 },
+    contractVersion: { type: Number, required: true, min: 1 },
+    sourcePassportId: { type: String, required: true, trim: true, maxlength: 128 },
+    targetPassportId: { type: String, required: true, trim: true, maxlength: 128 },
+    orchestrationRunId: { type: String, trim: true, maxlength: 128 },
+    sourceNodeRunId: { type: String, trim: true, maxlength: 128 },
+    targetNodeRunId: { type: String, trim: true, maxlength: 128 },
+    delegationDepth: { type: Number, required: true, min: 1, max: 5 },
+    effectiveDataClassification: {
+      type: String,
+      enum: ['public', 'internal', 'confidential', 'restricted'],
+      required: true,
+    },
+    purposeCode: { type: String, required: true, trim: true, match: SAFE_CODE_PATTERN },
+    traceId: { type: String, required: true, trim: true, maxlength: 128 },
+    parentTraceId: { type: String, trim: true, maxlength: 128 },
+    requestId: { type: String, required: true, trim: true, maxlength: 128 },
+  },
+  { _id: false, strict: 'throw' },
+);
+
+const compensationContextSchema = new mongoose.Schema(
+  {
+    orchestrationRunId: { type: String, required: true, trim: true, maxlength: 128 },
+    originalNodeRunId: { type: String, required: true, trim: true, maxlength: 128 },
+    compensationPlanId: { type: String, required: true, trim: true, maxlength: 128 },
+    compensationRunId: { type: String, required: true, trim: true, maxlength: 128 },
+    recoveryDecisionId: { type: String, trim: true, maxlength: 128 },
+    compensationStepOrdinal: { type: Number, required: true, min: 1, max: 1_000 },
+    logicalCompensationAttempt: { type: Number, required: true, min: 1, max: 10 },
+    expectedIdempotencyBehavior: {
+      type: String,
+      enum: ['provider_supported', 'ghost_bridge_keyed', 'non_idempotent'],
+      required: true,
+    },
+    traceId: { type: String, required: true, trim: true, maxlength: 128 },
+    parentTraceId: { type: String, trim: true, maxlength: 128 },
+    requestId: { type: String, required: true, trim: true, maxlength: 128 },
+  },
+  { _id: false, strict: 'throw' },
+);
+
 const authorizationEvidenceSchema = new mongoose.Schema(
   {
     permission: { type: String, required: true, trim: true, maxlength: 200 },
@@ -125,6 +171,8 @@ const invocationSchema = new mongoose.Schema(
     approvalRequestIds: { type: [String], default: undefined, select: false },
     approvalRequired: { type: Boolean, default: false },
     orchestrationContext: { type: orchestrationContextSchema, select: false },
+    delegationContext: { type: delegationContextSchema, select: false },
+    compensationContext: { type: compensationContextSchema, select: false },
     credentialBindingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'CredentialBinding',

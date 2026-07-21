@@ -6,6 +6,9 @@ const PassportConnection = require('../models/PassportConnection');
 const AgentPassport = require('../models/AgentPassport');
 const Capability = require('../models/Capability');
 const ApprovalRequest = require('../models/ApprovalRequest');
+const AgentSelectionPolicy = require('../models/AgentSelectionPolicy');
+const InterAgentDelegationGrant = require('../models/InterAgentDelegationGrant');
+const OrchestrationCorrectedInput = require('../models/OrchestrationCorrectedInput');
 const { env } = require('../config/env');
 const { connectDatabase, databaseStatus, disconnectDatabase } = require('../config/db');
 const { invoke: invokeThroughRuntimeGateway } = require('./runtimeGateway.service');
@@ -17,6 +20,11 @@ const {
 const { assertAuthorized } = require('./authorization.service');
 const { assertOperationalAccess } = require('./operationalState.service');
 const { ensureOrchestrationIndexes } = require('./orchestration.service');
+const { reconcileSelectionApprovals } = require('./agentSelection.service');
+const {
+  closeRunGrants,
+  executeDelegatedInvocation,
+} = require('./interAgentDelegation.service');
 const { createAuditLog } = require('./auditService');
 const { isRetryableError } = require('../utils/retryability');
 const { AppError } = require('../utils/AppError');
@@ -37,6 +45,8 @@ const {
   safeFailure,
   validateAgainstSchema,
 } = require('./orchestrationValidation.service');
+const { safeClone: safeDelegationClone } = require('./interAgentData.service');
+const { decryptCorrectedInput } = require('./orchestrationRecoveryValidation.service');
 
 const NON_RETRYABLE_ORCHESTRATION_CODES = new Set([
   ErrorCodes.AUTHENTICATION_REQUIRED,
@@ -139,6 +149,9 @@ function schedulerDependencies(overrides = {}) {
     AgentPassport,
     Capability,
     ApprovalRequest,
+    AgentSelectionPolicy,
+    InterAgentDelegationGrant,
+    OrchestrationCorrectedInput,
     invokeThroughRuntimeGateway,
     createApprovalRequest,
     evaluateApprovalRequirement,
@@ -147,6 +160,9 @@ function schedulerDependencies(overrides = {}) {
     assertOperationalAccess,
     createAuditLog,
     ensureOrchestrationIndexes,
+    reconcileSelectionApprovals,
+    closeRunGrants,
+    executeDelegatedInvocation,
     connectDatabase,
     disconnectDatabase,
     databaseStatus,
@@ -160,8 +176,12 @@ function nodeDefinition(run, nodeKey) {
   return (run.definitionSnapshot?.nodes || []).find((item) => item.nodeKey === nodeKey);
 }
 
+function effectiveNodeTarget(node) {
+  return node.recoveryTargetSnapshot || node;
+}
+
 async function privateRun(Model, runId) {
-  return Model.findOne({ _id: runId }).select('+input +finalOutput +definitionSnapshot');
+  return Model.findOne({ _id: runId }).select('+input +finalOutput +definitionSnapshot +recoveryPolicySnapshot');
 }
 
 async function transitionNode(node, toState, update = {}, dependencies = {}) {
@@ -260,11 +280,11 @@ async function claimNextNode(options = {}) {
       { status: 'retry_wait', nextAttemptAt: { $lte: now } },
     ],
   })
-    .select('+resumeAttempt')
+    .select('+resumeAttempt +recoveryTargetSnapshot')
     .sort({ nextAttemptAt: 1, createdAt: 1, nodeKey: 1 });
   if (!candidate) return null;
   const run = await privateRun(dependencies.OrchestrationRun, candidate.orchestrationRunId);
-  if (!run || !['queued', 'running', 'waiting_approval'].includes(run.status)) return null;
+  if (!run || !['queued', 'running', 'waiting_approval', 'recovering', 'recovered'].includes(run.status)) return null;
   if (run.cancelRequestedAt || run.status === 'cancel_requested') return null;
   if (run.startedAt && Date.now() - new Date(run.startedAt).getTime() >= run.maxRunDurationMs) {
     if (Number(run.activeNodeCount || 0) === 0) {
@@ -290,7 +310,7 @@ async function claimNextNode(options = {}) {
   const slot = await dependencies.OrchestrationRun.findOneAndUpdate(
     {
       _id: run._id,
-      status: { $in: ['queued', 'running', 'waiting_approval'] },
+      status: { $in: ['queued', 'running', 'waiting_approval', 'recovering', 'recovered'] },
       cancelRequestedAt: { $exists: false },
       nodeExecutionCount: { $lt: run.maxNodeExecutions },
       $expr: { $lt: ['$activeNodeCount', '$concurrencyLimit'] },
@@ -300,7 +320,7 @@ async function claimNextNode(options = {}) {
       $inc: { activeNodeCount: 1, ...(resuming ? {} : { nodeExecutionCount: 1 }) },
     },
     { new: true, runValidators: true },
-  ).select('+input +definitionSnapshot');
+  ).select('+input +definitionSnapshot +recoveryPolicySnapshot');
   if (!slot) {
     const exhausted = await dependencies.OrchestrationRun.findOne({ _id: run._id })
       .select('status nodeExecutionCount maxNodeExecutions activeNodeCount requestId traceId')
@@ -339,7 +359,7 @@ async function claimNextNode(options = {}) {
       $unset: { nextAttemptAt: 1 },
     },
     { new: true, runValidators: true },
-  ).select('+leaseToken +resumeAttempt +resolvedInput +validatedOutput');
+  ).select('+leaseToken +resumeAttempt +resolvedInput +validatedOutput +recoveryTargetSnapshot');
   if (!claimed) {
     await releaseRunSlot(run._id, dependencies);
     if (!resuming) await dependencies.OrchestrationRun.updateOne({ _id: run._id, nodeExecutionCount: { $gt: 0 } }, { $inc: { nodeExecutionCount: -1 } });
@@ -386,17 +406,18 @@ async function renewNodeLease(node, options = {}) {
 }
 
 async function executionContext(run, node, definition, dependencies) {
+  const target = effectiveNodeTarget(node);
   const [connection, passport, capability] = await Promise.all([
     dependencies.PassportConnection.findOne({
-      _id: node.connectionId,
+      _id: target.connectionId,
       receivingWorkspaceId: run.workspaceId,
       status: 'connected',
       installScope: 'invoke',
       $or: [{ organizationId: run.organizationId }, { partnerId: run.organizationId }],
     }).lean(),
-    dependencies.AgentPassport.findOne({ _id: node.passportId, status: 'valid' }).lean(),
+    dependencies.AgentPassport.findOne({ _id: target.passportId, status: 'valid' }).lean(),
     dependencies.Capability.findOne({
-      passportId: node.passportId,
+      passportId: target.passportId,
       name: node.capability,
       enabled: true,
     }).lean(),
@@ -405,8 +426,25 @@ async function executionContext(run, node, definition, dependencies) {
   if (!passport || idOf(passport) !== idOf(connection.passportId))
     throw new AppError(409, ErrorCodes.PASSPORT_UNAVAILABLE, 'Node passport is unavailable.');
   if (!capability) throw new AppError(404, ErrorCodes.CAPABILITY_NOT_FOUND, 'Node capability is unavailable.');
-  if (String(passport.agent?.version || '') !== String(node.passportVersion || '')) {
+  if (String(passport.agent?.version || '') !== String(target.passportVersion || '')) {
     throw new AppError(409, ErrorCodes.PASSPORT_UNAVAILABLE, 'Node passport version no longer matches its run snapshot.');
+  }
+  if (definition.targetingMode === 'governed_selection') {
+    const selectionPolicyFilter = {
+      _id: definition.selectionPolicyId,
+      organizationId: run.organizationId,
+      workspaceId: run.workspaceId,
+      version: definition.selectionPolicyVersion,
+      status: 'active',
+    };
+    if (node.recoveryTargetSnapshot) {
+      selectionPolicyFilter._id = target.selectionPolicyId || definition.selectionPolicyId;
+      selectionPolicyFilter.version = target.selectionPolicyVersion || definition.selectionPolicyVersion;
+    }
+    const activeSelectionPolicy = await dependencies.AgentSelectionPolicy.findOne(selectionPolicyFilter).lean();
+    if (!activeSelectionPolicy) {
+      throw new AppError(409, 'AGENT_SELECTION_POLICY_INACTIVE', 'The frozen agent selection policy no longer permits execution.');
+    }
   }
   const actor = {
     type: 'system',
@@ -439,11 +477,11 @@ async function executionContext(run, node, definition, dependencies) {
   await dependencies.assertOperationalAccess({
     organizationId: run.organizationId,
     workspaceId: run.workspaceId,
-    connectionId: node.connectionId,
+    connectionId: target.connectionId,
     operation: 'EXECUTION',
     existingClaim: true,
   });
-  return { connection, passport, capability, actor, resource, policyContext, definition };
+  return { connection, passport, capability, actor, resource, policyContext, definition, target };
 }
 
 async function mappedInput(run, node, definition, context, dependencies) {
@@ -463,7 +501,85 @@ async function mappedInput(run, node, definition, context, dependencies) {
   const outputs = Object.fromEntries(
     dependencyRuns.map((dependency) => [dependency.nodeKey, dependency.validatedOutput]),
   );
-  return resolveNodeInput(
+  const contractEdge = (run.definitionSnapshot.edges || []).find(
+    (edge) => edge.to === node.nodeKey && edge.mappingMode === 'contract',
+  );
+  if (node.correctedInputId) {
+    const record = await dependencies.OrchestrationCorrectedInput.findOne({
+      _id: node.correctedInputId,
+      organizationId: run.organizationId,
+      workspaceId: run.workspaceId,
+      orchestrationRunId: run._id,
+      nodeRunId: node._id,
+      version: node.correctedInputVersion,
+    }).select('+encryptedPayload +payloadHash');
+    if (!record) {
+      throw new AppError(
+        409,
+        'ORCHESTRATION_CORRECTED_INPUT_PAYLOAD_UNAVAILABLE',
+        'The immutable corrected input is unavailable.',
+      );
+    }
+    const corrected = decryptCorrectedInput(record);
+    const validatedCorrection = validateAgainstSchema(definition.inputSchema, corrected, {
+      path: '$node.correctedInput',
+      code: 'ORCHESTRATION_CORRECTED_INPUT_SCHEMA_INVALID',
+      message: 'Corrected input no longer matches the frozen node schema.',
+    });
+    if (contractEdge) {
+      const source = dependencyRuns.find((dependency) => dependency.nodeKey === contractEdge.from);
+      if (!source || !node.delegationGrantId) {
+        throw new AppError(409, 'INTER_AGENT_GRANT_NOT_FOUND', 'Corrected contract retry grant is unavailable.');
+      }
+      return {
+        input: undefined,
+        contractEdge,
+        sourceNodeRunId: source._id,
+        sourceOutput: validatedCorrection,
+        correctedInputVersion: record.version,
+        metadata: {
+          runId: idOf(run),
+          definitionId: idOf(run.definitionId),
+          definitionVersion: run.definitionVersion,
+          sourceNodeKey: contractEdge.from,
+          targetNodeKey: node.nodeKey,
+          correctedInputVersion: record.version,
+          traceId: node.traceId,
+          requestId: node.requestId,
+        },
+      };
+    }
+    return {
+      input: validatedCorrection,
+      correctedInputVersion: record.version,
+    };
+  }
+  if (contractEdge) {
+    const source = dependencyRuns.find((dependency) => dependency.nodeKey === contractEdge.from);
+    if (!source || !node.delegationGrantId) {
+      throw new AppError(
+        409,
+        'INTER_AGENT_GRANT_NOT_FOUND',
+        'Contract edge delegation grant is unavailable.',
+      );
+    }
+    return {
+      input: undefined,
+      contractEdge,
+      sourceNodeRunId: source._id,
+      sourceOutput: source.validatedOutput,
+      metadata: {
+        runId: idOf(run),
+        definitionId: idOf(run.definitionId),
+        definitionVersion: run.definitionVersion,
+        sourceNodeKey: contractEdge.from,
+        targetNodeKey: node.nodeKey,
+        traceId: node.traceId,
+        requestId: node.requestId,
+      },
+    };
+  }
+  return { input: resolveNodeInput(
     definition.inputMapping,
     {
       runInput: run.input,
@@ -480,7 +596,7 @@ async function mappedInput(run, node, definition, context, dependencies) {
       },
     },
     definition.inputSchema,
-  );
+  ) };
 }
 
 function approvalAction(run, node, context, input) {
@@ -652,12 +768,17 @@ async function processClaimedNode(claim, options = {}) {
       throw new AppError(409, ErrorCodes.INVOCATION_CANCELLED, 'Run cancellation was requested.');
     }
     const context = await executionContext(run, node, definition, dependencies);
-    const input = await mappedInput(run, node, definition, context, dependencies);
-    await dependencies.OrchestrationNodeRun.updateOne(
-      { _id: node._id, status: 'running', leaseOwner: node.leaseOwner, leaseToken: node.leaseToken },
-      { $set: { resolvedInput: input } },
-    );
-    const approval = await approvalState(run, node, definition, context, input, dependencies);
+    const mapped = await mappedInput(run, node, definition, context, dependencies);
+    const input = mapped.input;
+    if (!mapped.contractEdge) {
+      await dependencies.OrchestrationNodeRun.updateOne(
+        { _id: node._id, status: 'running', leaseOwner: node.leaseOwner, leaseToken: node.leaseToken },
+        { $set: { resolvedInput: input } },
+      );
+    }
+    const approval = mapped.contractEdge
+      ? { approved: true }
+      : await approvalState(run, node, definition, context, input, dependencies);
     if (approval.waiting) {
       const waiting = await transitionClaimedNode(
         node,
@@ -682,11 +803,7 @@ async function processClaimedNode(claim, options = {}) {
     if (!preInvocationRun || preInvocationRun.status === 'cancel_requested' || preInvocationRun.cancelRequestedAt) {
       throw new AppError(409, ErrorCodes.INVOCATION_CANCELLED, 'Run cancellation was requested.');
     }
-    const invocation = await dependencies.invokeThroughRuntimeGateway(
-      idOf(node.connectionId),
-      node.capability,
-      input,
-      {
+    const runtimeActor = {
         actorType: 'service_account',
         actorId: run.requestedBy,
         type: 'service_account',
@@ -727,8 +844,40 @@ async function processClaimedNode(claim, options = {}) {
             controller.abort(new AppError(409, ErrorCodes.INVOCATION_CANCELLED, 'Run cancellation was requested.'));
           }
         },
-      },
-    );
+      };
+    const invocation = mapped.contractEdge
+      ? await dependencies.executeDelegatedInvocation({
+          organizationId: run.organizationId,
+          partnerId: run.organizationId,
+          workspaceId: run.workspaceId,
+          grantId: node.delegationGrantId,
+          sourceNodeRunId: mapped.sourceNodeRunId,
+          targetNodeRunId: node._id,
+          sourceOutput: mapped.sourceOutput,
+          runInput: run.input,
+          metadata: mapped.metadata,
+          dataClassification:
+            definition.policyContext?.dataClassification ||
+            definition.inputSchema?.['x-data-classification'] ||
+            definition.outputSchema?.['x-data-classification'],
+          residencyRequirements: definition.policyContext?.residencyRequirements,
+          idempotencyKey: `orchestration-delegation:${idOf(run)}:${mapped.contractEdge.from}:${node.nodeKey}`,
+          requestedBy: run.requestedBy,
+          requestId: node.requestId,
+          traceId: node.traceId,
+          parentTraceId: node.parentTraceId,
+          outputSchema: definition.outputSchema,
+          retry: node.attempt > 1,
+          signal: controller.signal,
+          orchestrationContext: runtimeActor.orchestrationContext,
+          onInvocationCreated: runtimeActor.onInvocationCreated,
+        })
+      : await dependencies.invokeThroughRuntimeGateway(
+          idOf(node.connectionId),
+          node.capability,
+          input,
+          runtimeActor,
+        );
     if (heartbeatError) throw heartbeatError;
     if (!['succeeded', 'completed'].includes(invocation.lifecycleState) && invocation.status !== 'completed') {
       const pending = new AppError(503, 'ORCHESTRATION_INVOCATION_IN_PROGRESS', 'Runtime invocation is still in progress.');
@@ -754,7 +903,13 @@ async function processClaimedNode(claim, options = {}) {
       await reconcileRun(run._id, { dependencies });
       return retrying;
     }
-    const validated = validateAgainstSchema(definition.outputSchema, invocation.output, {
+    const hasOutgoingContract = (run.definitionSnapshot.edges || []).some(
+      (edge) => edge.from === node.nodeKey && edge.mappingMode === 'contract',
+    );
+    const runtimeOutput = hasOutgoingContract
+      ? safeDelegationClone(invocation.output)
+      : invocation.output;
+    const validated = validateAgainstSchema(definition.outputSchema, runtimeOutput, {
       path: '$node.output',
       code: 'ORCHESTRATION_NODE_OUTPUT_INVALID',
       message: 'Runtime output does not match the node output schema.',
@@ -793,11 +948,22 @@ async function markNodeFromApproval(node, request, dependencies) {
   const run = await privateRun(dependencies.OrchestrationRun, node.orchestrationRunId);
   if (!run || TERMINAL_RUN_STATUSES.includes(run.status)) return null;
   if (request.status === 'APPROVED') {
-    const ready = await transitionNode(node, 'ready', {}, dependencies);
-    await audit('orchestration.node.ready', 'OrchestrationNodeRun', node._id, run, ready, {
+    if (node.delegationGrantId) {
+      await dependencies.InterAgentDelegationGrant.updateOne(
+        {
+          _id: node.delegationGrantId,
+          status: 'pending',
+          approvalRequestId: request.approvalRequestId,
+        },
+        { $set: { status: 'active', approvedBy: 'approval-system', approvedAt: new Date() } },
+      );
+    }
+    const nextStatus = node.dependencyNodeKeys?.length ? 'blocked' : 'ready';
+    const ready = await transitionNode(node, nextStatus, {}, dependencies);
+    await audit(`orchestration.node.${nextStatus}`, 'OrchestrationNodeRun', node._id, run, ready, {
       fromState: 'waiting_approval',
-      toState: 'ready',
-      status: 'ready',
+      toState: nextStatus,
+      status: nextStatus,
       approvalRequestId: request.approvalRequestId,
     }, dependencies);
     if (run.status === 'waiting_approval') {
@@ -807,6 +973,16 @@ async function markNodeFromApproval(node, request, dependencies) {
   }
   if (['REJECTED', 'EXPIRED', 'INVALIDATED', 'CANCELLED'].includes(request.status)) {
     const code = request.status === 'EXPIRED' ? ErrorCodes.APPROVAL_EXPIRED : ErrorCodes.APPROVAL_REJECTED;
+    if (node.delegationGrantId) {
+      await dependencies.InterAgentDelegationGrant.updateOne(
+        {
+          _id: node.delegationGrantId,
+          status: 'pending',
+          approvalRequestId: request.approvalRequestId,
+        },
+        { $set: { status: request.status === 'EXPIRED' ? 'expired' : 'rejected' } },
+      );
+    }
     const failed = await transitionNode(
       node,
       'failed',
@@ -838,7 +1014,7 @@ async function handleApprovalResolution(approvalRequestId, options = {}) {
   if (!request) return { updated: 0 };
   request = await dependencies.expireIfNeeded(request);
   const nodes = await dependencies.OrchestrationNodeRun.find({
-    approvalRequestId,
+    $or: [{ approvalRequestId }, { selectionApprovalRequestId: approvalRequestId }],
     organizationId: request.organizationId,
     status: 'waiting_approval',
   });
@@ -855,14 +1031,17 @@ async function reconcileWaitingApprovals(options = {}) {
   const limit = Math.max(1, Math.min(Number(options.limit || 100), 500));
   const nodes = await dependencies.OrchestrationNodeRun.find({
     status: 'waiting_approval',
-    approvalRequestId: { $exists: true, $ne: null },
+    $or: [
+      { approvalRequestId: { $exists: true, $ne: null } },
+      { selectionApprovalRequestId: { $exists: true, $ne: null } },
+    ],
   })
-    .select('approvalRequestId')
+    .select('approvalRequestId selectionApprovalRequestId delegationGrantId')
     .sort({ updatedAt: 1, _id: 1 })
     .limit(limit);
   let updated = 0;
   for (const node of nodes) {
-    const result = await handleApprovalResolution(node.approvalRequestId, { dependencies });
+    const result = await handleApprovalResolution(node.selectionApprovalRequestId || node.approvalRequestId, { dependencies });
     updated += result.updated || 0;
   }
   return { scanned: nodes.length, updated };
@@ -927,8 +1106,18 @@ function finalOutputCandidate(run, nodes) {
   return Object.fromEntries(terminals.sort((a, b) => a.nodeKey.localeCompare(b.nodeKey)).map((node) => [node.nodeKey, node.validatedOutput]));
 }
 
+function hasContractDelegation(run) {
+  return (run.definitionSnapshot?.edges || []).some((edge) => edge.mappingMode === 'contract');
+}
+
+async function closeDelegationGrants(run, status, dependencies) {
+  if (!hasContractDelegation(run)) return { closed: 0 };
+  return dependencies.closeRunGrants(run._id, status, scopeFor(run), { dependencies });
+}
+
 async function failRun(run, failure, dependencies) {
   await cancelPendingNodes(run, dependencies);
+  await closeDelegationGrants(run, 'failed', dependencies);
   const fromState = run.status;
   const failed = await transitionRun(
     run,
@@ -986,6 +1175,7 @@ async function reconcileRun(runId, options = {}) {
   if (run.status === 'cancel_requested' || run.cancelRequestedAt) {
     await cancelPendingNodes(run, dependencies);
     if (running === 0) {
+      await closeDelegationGrants(run, 'cancelled', dependencies);
       run = await transitionRun(run, 'cancelled', { completedAt: new Date(), cancelledAt: new Date(), activeNodeCount: 0 }, dependencies);
       metrics.increment('orchestration_runs_completed', { status: 'cancelled' });
       await audit('orchestration.run.cancelled', 'OrchestrationRun', run._id, run, null, {
@@ -1010,6 +1200,7 @@ async function reconcileRun(runId, options = {}) {
   const requiredFailure = nodes.find((node) => node.status === 'failed' && node.continueOnFailure !== true);
   if (requiredFailure) {
     await cancelPendingNodes(run, dependencies);
+    await closeDelegationGrants(run, 'failed', dependencies);
     const fromState = run.status;
     run = await transitionRun(
       run,
@@ -1055,6 +1246,7 @@ async function reconcileRun(runId, options = {}) {
       }, dependencies);
     }
     const status = partial ? 'partial_failure' : 'succeeded';
+    await closeDelegationGrants(run, status === 'succeeded' ? 'completed' : 'failed', dependencies);
     run = await transitionRun(run, status, { completedAt: new Date(), finalOutput: output, activeNodeCount: 0 }, dependencies);
     metrics.increment('orchestration_runs_completed', { status });
     if (run.startedAt) metrics.observe('orchestration_run_duration', Date.now() - new Date(run.startedAt).getTime());
@@ -1120,6 +1312,7 @@ function createOrchestrationWorker(options = {}) {
   async function pollOnce() {
     if (!acceptingClaims || dependencies.databaseStatus() !== 'connected') return { claimed: 0 };
     await recoverExpiredLeases({ dependencies, limit: batchSize });
+    await dependencies.reconcileSelectionApprovals({ limit: batchSize });
     await reconcileWaitingApprovals({ dependencies, limit: batchSize });
     let claimedCount = 0;
     while (acceptingClaims && active.size < concurrency && claimedCount < batchSize) {

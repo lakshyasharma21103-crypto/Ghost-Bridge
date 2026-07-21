@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
 const { ORCHESTRATION_NODE_STATUSES } = require('../constants/orchestration');
+const { TARGETING_MODES } = require('../constants/agentSelection');
+const {
+  FAILURE_CATEGORIES,
+  RECOVERABILITIES,
+} = require('../constants/orchestrationRecovery');
 
 const safeFailureSchema = new mongoose.Schema(
   {
@@ -27,6 +32,7 @@ const orchestrationNodeRunSchema = new mongoose.Schema(
       index: true,
     },
     nodeKey: { type: String, required: true, trim: true, maxlength: 100 },
+    targetingMode: { type: String, enum: TARGETING_MODES, required: true, default: 'pinned' },
     connectionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'PassportConnection',
@@ -66,6 +72,69 @@ const orchestrationNodeRunSchema = new mongoose.Schema(
     traceId: { type: String, required: true, trim: true, maxlength: 128, index: true },
     parentTraceId: { type: String, required: true, trim: true, maxlength: 128 },
     approvalRequestId: { type: String, trim: true, maxlength: 128, index: true },
+    selectionDecisionId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgentSelectionDecision', index: true },
+    selectionApprovalRequestId: { type: String, trim: true, maxlength: 128, index: true },
+    delegationGrantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InterAgentDelegationGrant',
+      index: true,
+    },
+    dataContractId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InterAgentDataContract',
+      index: true,
+    },
+    dataContractVersion: { type: Number, min: 1 },
+    recoverability: { type: String, enum: RECOVERABILITIES, default: 'retryable', index: true },
+    failureCategory: { type: String, enum: FAILURE_CATEGORIES, index: true },
+    recoveryAttempt: { type: Number, default: 0, min: 0 },
+    maximumRecoveryAttempts: { type: Number, default: 0, min: 0, max: 20 },
+    compensationStatus: {
+      type: String,
+      enum: ['not_required', 'pending', 'running', 'succeeded', 'failed', 'waived', 'non_reversible'],
+      default: 'not_required',
+      index: true,
+    },
+    compensationAttempt: { type: Number, default: 0, min: 0 },
+    maximumCompensationAttempts: { type: Number, default: 0, min: 0, max: 10 },
+    compensationRunId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationCompensationRun',
+      index: true,
+    },
+    originalNodeRunId: { type: mongoose.Schema.Types.ObjectId, ref: 'OrchestrationNodeRun' },
+    recoveryDecisionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationRecoveryDecision',
+      index: true,
+    },
+    interventionRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationInterventionRequest',
+      index: true,
+    },
+    checkpointId: { type: mongoose.Schema.Types.ObjectId, ref: 'OrchestrationCheckpoint', index: true },
+    correctedInputId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationCorrectedInput',
+      index: true,
+    },
+    correctedInputVersion: { type: Number, min: 1 },
+    correctedInputSchemaHash: { type: String, trim: true, maxlength: 128 },
+    recoveryTargetSnapshot: { type: mongoose.Schema.Types.Mixed, select: false },
+    replacementSelectionDecisionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AgentSelectionDecision',
+      index: true,
+    },
+    replacementAppliedAt: { type: Date },
+    lastSafeFailure: { type: safeFailureSchema },
+    completedSideEffectAt: { type: Date },
+    compensatedAt: { type: Date },
+    skippedAt: { type: Date },
+    terminatedAt: { type: Date },
+    compensationWaivedAt: { type: Date },
+    compensationWaiverReasonCode: { type: String, trim: true, maxlength: 128 },
     startedAt: { type: Date },
     completedAt: { type: Date },
   },
@@ -81,6 +150,11 @@ orchestrationNodeRunSchema.index({ status: 1, leaseExpiresAt: 1 });
 orchestrationNodeRunSchema.index({ orchestrationRunId: 1, status: 1, nodeKey: 1 });
 orchestrationNodeRunSchema.index({ organizationId: 1, workspaceId: 1, status: 1, updatedAt: -1 });
 orchestrationNodeRunSchema.index({ approvalRequestId: 1, status: 1 });
+orchestrationNodeRunSchema.index({ selectionApprovalRequestId: 1, status: 1 });
+orchestrationNodeRunSchema.index({ selectionDecisionId: 1, orchestrationRunId: 1 });
+orchestrationNodeRunSchema.index({ delegationGrantId: 1, orchestrationRunId: 1 });
+orchestrationNodeRunSchema.index({ orchestrationRunId: 1, recoveryDecisionId: 1 });
+orchestrationNodeRunSchema.index({ orchestrationRunId: 1, compensationStatus: 1, completedSideEffectAt: -1 });
 
 module.exports =
   mongoose.models.OrchestrationNodeRun ||

@@ -5,6 +5,14 @@ const OrchestrationNodeRun = require('../models/OrchestrationNodeRun');
 const PassportConnection = require('../models/PassportConnection');
 const AgentPassport = require('../models/AgentPassport');
 const Capability = require('../models/Capability');
+const AgentSelectionPolicy = require('../models/AgentSelectionPolicy');
+const CapabilityCatalogEntry = require('../models/CapabilityCatalogEntry');
+const ApprovalRequest = require('../models/ApprovalRequest');
+const AgentSelectionDecision = require('../models/AgentSelectionDecision');
+const InterAgentDataContract = require('../models/InterAgentDataContract');
+const OrchestrationRecoveryPolicy = require('../models/OrchestrationRecoveryPolicy');
+const { evaluateSelection } = require('./agentSelection.service');
+const { createGrantRecord, closeRunGrants } = require('./interAgentDelegation.service');
 const { actorFromPartner, assertAuthorized } = require('./authorization.service');
 const { assertOperationalAccess } = require('./operationalState.service');
 const { createAuditLog } = require('./auditService');
@@ -14,6 +22,7 @@ const {
   DEFAULT_ORCHESTRATION_SETTINGS,
   ORCHESTRATION_DEFINITION_STATUSES,
   ORCHESTRATION_LIMITS,
+  ORCHESTRATION_NODE_STATUSES,
   ORCHESTRATION_RUN_STATUSES,
   TERMINAL_RUN_STATUSES,
 } = require('../constants/orchestration');
@@ -123,11 +132,99 @@ function safeSearch(value) {
   return normalized ? normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
 }
 
+function safeRecoveryPolicySnapshot(policyInput) {
+  if (!policyInput) return undefined;
+  const policy = typeof policyInput?.toObject === 'function' ? policyInput.toObject() : policyInput;
+  const snapshot = {
+    policyId: idOf(policy),
+    version: Number(policy.version),
+    name: String(policy.name),
+    defaultFailureStrategy: policy.defaultFailureStrategy,
+    maximumRecoveryAttempts: Number(policy.maximumRecoveryAttempts || 0),
+    maximumCompensationAttempts: Number(policy.maximumCompensationAttempts || 0),
+    recoveryBackoffPolicy: { ...(policy.recoveryBackoffPolicy || {}) },
+    compensationBackoffPolicy: { ...(policy.compensationBackoffPolicy || {}) },
+    recoveryDeadlineMs: Number(policy.recoveryDeadlineMs),
+    compensationDeadlineMs: Number(policy.compensationDeadlineMs),
+    allowOperatorRetry: policy.allowOperatorRetry === true,
+    allowOperatorSkip: policy.allowOperatorSkip === true,
+    allowOperatorResume: policy.allowOperatorResume === true,
+    allowOperatorCompensate: policy.allowOperatorCompensate === true,
+    allowOperatorTerminate: policy.allowOperatorTerminate === true,
+    allowOperatorAgentReplacement: policy.allowOperatorAgentReplacement === true,
+    allowOperatorInputCorrection: policy.allowOperatorInputCorrection === true,
+    requireApprovalForRetry: policy.requireApprovalForRetry === true,
+    requireApprovalForSkip: policy.requireApprovalForSkip === true,
+    requireApprovalForCompensation: policy.requireApprovalForCompensation === true,
+    requireApprovalForAgentReplacement: policy.requireApprovalForAgentReplacement === true,
+    requireApprovalForInputCorrection: policy.requireApprovalForInputCorrection === true,
+    requireApprovalForForceTermination: policy.requireApprovalForForceTermination === true,
+    permittedFailureCategories: [...(policy.permittedFailureCategories || [])].sort(),
+    nonRecoverableFailureCategories: [...(policy.nonRecoverableFailureCategories || [])].sort(),
+    automaticCompensation: policy.automaticCompensation === true,
+    compensateOnCancellation: policy.compensateOnCancellation === true,
+    compensateOnTimeout: policy.compensateOnTimeout === true,
+    compensateOnPolicyRevocation: policy.compensateOnPolicyRevocation === true,
+    compensateOnConnectionRevocation: policy.compensateOnConnectionRevocation === true,
+    compensationOrdering: policy.compensationOrdering,
+    continueCompensationAfterFailure: policy.continueCompensationAfterFailure === true,
+    maximumParallelCompensations: Number(policy.maximumParallelCompensations || 1),
+    activatedAt: policy.activatedAt,
+  };
+  assertSafePayload(snapshot, '$recoveryPolicySnapshot');
+  return Object.freeze(snapshot);
+}
+
 function normalizeRetryPolicy(input = {}) {
   return {
     maxAttempts: Number(input.maxAttempts || DEFAULT_ORCHESTRATION_SETTINGS.retryPolicy.maxAttempts),
     baseDelayMs: Number(input.baseDelayMs || DEFAULT_ORCHESTRATION_SETTINGS.retryPolicy.baseDelayMs),
     maxDelayMs: Number(input.maxDelayMs || DEFAULT_ORCHESTRATION_SETTINGS.retryPolicy.maxDelayMs),
+  };
+}
+
+function normalizeCompensationDefinition(input, defaultTimeout) {
+  if (!input) return undefined;
+  const targetingMode = String(
+    input.targetingMode || (input.selectionPolicyId ? 'governed_selection' : 'pinned'),
+  );
+  return {
+    targetingMode,
+    ...(targetingMode === 'governed_selection'
+      ? {
+          selectionPolicyId: input.selectionPolicyId,
+          selectionConstraints: input.selectionConstraints || {},
+          preferredPassportIds: [...new Set((input.preferredPassportIds || []).map(idOf))].sort(),
+          excludedPassportIds: [...new Set((input.excludedPassportIds || []).map(idOf))].sort(),
+        }
+      : { connectionId: input.connectionId, passportId: input.passportId }),
+    capability: String(input.capability || '').trim(),
+    operation: String(input.operation || input.capability || '').trim(),
+    inputSchema: input.inputSchema || { type: 'object', properties: {}, additionalProperties: false },
+    outputSchema: input.outputSchema || { type: 'object', properties: {}, additionalProperties: false },
+    inputMapping: input.inputMapping || {},
+    timeoutMs: Number(input.timeoutMs || defaultTimeout),
+    retryPolicy: normalizeRetryPolicy(input.retryPolicy),
+    ...(input.dataContractId ? { dataContractId: input.dataContractId } : {}),
+    ...(input.dataContractVersion != null
+      ? { dataContractVersion: Number(input.dataContractVersion) }
+      : {}),
+    approvalRequirement: {
+      required: input.approvalRequirement?.required === true,
+      ...(input.approvalRequirement?.workflowId
+        ? { workflowId: String(input.approvalRequirement.workflowId).trim() }
+        : {}),
+      ...(input.approvalRequirement?.reason
+        ? { reason: String(input.approvalRequirement.reason).trim() }
+        : {}),
+    },
+    expectedIdempotencyBehavior: String(
+      input.expectedIdempotencyBehavior || 'ghost_bridge_keyed',
+    ),
+    successCriteria: input.successCriteria || {},
+    continueAfterCompensationFailure: input.continueAfterCompensationFailure === true,
+    parallelSafe: input.parallelSafe === true,
+    dependencies: [...new Set((input.dependencies || []).map((value) => String(value).trim()))].sort(),
   };
 }
 
@@ -139,10 +236,22 @@ function normalizeDefinitionInput(input = {}, current = {}) {
       DEFAULT_ORCHESTRATION_SETTINGS.defaultNodeTimeoutMs,
   );
   const nodes = (input.nodes || current.nodes || []).map((node) => ({
+    ...(() => {
+      const targetingMode = String(node.targetingMode || (node.selectionPolicyId ? 'governed_selection' : 'pinned'));
+      return targetingMode === 'governed_selection'
+        ? {
+            targetingMode,
+            selectionPolicyId: node.selectionPolicyId,
+            selectionConstraints: node.selectionConstraints || {},
+            preferredPassportIds: [...new Set((node.preferredPassportIds || []).map(idOf))].sort(),
+            excludedPassportIds: [...new Set((node.excludedPassportIds || []).map(idOf))].sort(),
+            fallbackCandidateCount: Number(node.fallbackCandidateCount ?? 0),
+            selectionTiming: String(node.selectionTiming || 'run_creation'),
+          }
+        : { targetingMode, connectionId: node.connectionId, passportId: node.passportId };
+    })(),
     nodeKey: String(node.nodeKey || '').trim(),
     displayName: String(node.displayName || node.nodeKey || '').trim(),
-    connectionId: node.connectionId,
-    passportId: node.passportId,
     capability: String(node.capability || '').trim(),
     operation: String(node.operation || node.capability || '').trim(),
     inputSchema: node.inputSchema || { type: 'object', additionalProperties: false },
@@ -162,6 +271,40 @@ function normalizeDefinitionInput(input = {}, current = {}) {
     policyContext: node.policyContext || {},
     continueOnFailure: node.continueOnFailure === true,
     dependencies: [...new Set((node.dependencies || []).map((value) => String(value).trim()))],
+    recoverability: String(node.recoverability || (node.compensationDefinition ? 'compensatable' : 'retryable')),
+    ...(node.failureStrategy ? { failureStrategy: String(node.failureStrategy) } : {}),
+    ...(node.compensationDefinition
+      ? { compensationDefinition: normalizeCompensationDefinition(node.compensationDefinition, defaultTimeout) }
+      : {}),
+    recoveryOverrides: {
+      ...(node.recoveryOverrides?.maximumRecoveryAttempts != null
+        ? { maximumRecoveryAttempts: Number(node.recoveryOverrides.maximumRecoveryAttempts) }
+        : {}),
+      ...(node.recoveryOverrides?.maximumCompensationAttempts != null
+        ? { maximumCompensationAttempts: Number(node.recoveryOverrides.maximumCompensationAttempts) }
+        : {}),
+      ...(node.recoveryOverrides?.recoveryDeadlineMs != null
+        ? { recoveryDeadlineMs: Number(node.recoveryOverrides.recoveryDeadlineMs) }
+        : {}),
+      ...(node.recoveryOverrides?.compensationDeadlineMs != null
+        ? { compensationDeadlineMs: Number(node.recoveryOverrides.compensationDeadlineMs) }
+        : {}),
+    },
+    interventionRequirement: {
+      required: node.interventionRequirement?.required === true,
+      mandatoryForSensitiveOperation:
+        node.interventionRequirement?.mandatoryForSensitiveOperation === true,
+      allowedActions: [...new Set((node.interventionRequirement?.allowedActions || []).map(String))].sort(),
+      assignedRoleIds: [...new Set((node.interventionRequirement?.assignedRoleIds || []).map(String))].sort(),
+      ...(node.interventionRequirement?.timeoutMs != null
+        ? { timeoutMs: Number(node.interventionRequirement.timeoutMs) }
+        : {}),
+    },
+    checkpointPolicy: {
+      afterSuccess: node.checkpointPolicy?.afterSuccess !== false,
+      afterFailure: node.checkpointPolicy?.afterFailure !== false,
+      afterRecoveryDecision: node.checkpointPolicy?.afterRecoveryDecision !== false,
+    },
   }));
   return {
     name: String(input.name ?? current.name ?? '').trim(),
@@ -172,6 +315,13 @@ function normalizeDefinitionInput(input = {}, current = {}) {
     edges: (input.edges || current.edges || []).map((edge) => ({
       from: String(edge.from || '').trim(),
       to: String(edge.to || '').trim(),
+      mappingMode: String(edge.mappingMode || (edge.dataContractId ? 'contract' : 'direct')),
+      ...(edge.dataContractId ? { dataContractId: edge.dataContractId } : {}),
+      ...(edge.dataContractVersion != null
+        ? { dataContractVersion: Number(edge.dataContractVersion) }
+        : {}),
+      ...(edge.sourceNodeKey ? { sourceNodeKey: String(edge.sourceNodeKey).trim() } : {}),
+      ...(edge.targetNodeKey ? { targetNodeKey: String(edge.targetNodeKey).trim() } : {}),
     })),
     concurrencyLimit: Number(
       input.concurrencyLimit || current.concurrencyLimit || DEFAULT_ORCHESTRATION_SETTINGS.concurrencyLimit,
@@ -183,6 +333,31 @@ function normalizeDefinitionInput(input = {}, current = {}) {
       input.maxNodeExecutions || current.maxNodeExecutions || DEFAULT_ORCHESTRATION_SETTINGS.maxNodeExecutions,
     ),
     defaultNodeTimeoutMs: defaultTimeout,
+    ...(input.recoveryPolicyId ?? current.recoveryPolicyId
+      ? { recoveryPolicyId: input.recoveryPolicyId ?? current.recoveryPolicyId }
+      : {}),
+    ...(input.recoveryPolicyVersion ?? current.recoveryPolicyVersion
+      ? { recoveryPolicyVersion: Number(input.recoveryPolicyVersion ?? current.recoveryPolicyVersion) }
+      : {}),
+    failureStrategy: String(input.failureStrategy ?? current.failureStrategy ?? 'fail'),
+    compensationEnabled: (input.compensationEnabled ?? current.compensationEnabled) === true,
+    compensateOnCancellation:
+      (input.compensateOnCancellation ?? current.compensateOnCancellation) === true,
+    maximumRecoveryAttempts: Number(
+      input.maximumRecoveryAttempts ?? current.maximumRecoveryAttempts ?? 0,
+    ),
+    maximumCompensationAttempts: Number(
+      input.maximumCompensationAttempts ?? current.maximumCompensationAttempts ?? 0,
+    ),
+    ...(input.recoveryDeadlineMs ?? current.recoveryDeadlineMs
+      ? { recoveryDeadlineMs: Number(input.recoveryDeadlineMs ?? current.recoveryDeadlineMs) }
+      : {}),
+    ...(input.compensationDeadlineMs ?? current.compensationDeadlineMs
+      ? { compensationDeadlineMs: Number(input.compensationDeadlineMs ?? current.compensationDeadlineMs) }
+      : {}),
+    ...(input.interventionTimeoutMs ?? current.interventionTimeoutMs
+      ? { interventionTimeoutMs: Number(input.interventionTimeoutMs ?? current.interventionTimeoutMs) }
+      : {}),
   };
 }
 
@@ -200,25 +375,116 @@ function throwDefinitionValidation(result) {
 async function validateReferences(definition, scope) {
   const result = validateDefinitionDocument(definition);
   if (!result.valid) return result;
-  const connectionIds = [...new Set(definition.nodes.map((node) => idOf(node.connectionId)))];
+  const pinnedNodes = definition.nodes.filter((node) => (node.targetingMode || 'pinned') === 'pinned');
+  const governedNodes = definition.nodes.filter((node) => node.targetingMode === 'governed_selection');
+  const compensationDefinitions = definition.nodes
+    .map((node) => ({ node, compensation: node.compensationDefinition }))
+    .filter((item) => item.compensation);
+  const pinnedCompensations = compensationDefinitions.filter(
+    (item) => (item.compensation.targetingMode || 'pinned') === 'pinned',
+  );
+  const governedCompensations = compensationDefinitions.filter(
+    (item) => item.compensation.targetingMode === 'governed_selection',
+  );
+  const connectionIds = [...new Set([
+    ...pinnedNodes.map((node) => idOf(node.connectionId)),
+    ...pinnedCompensations.map((item) => idOf(item.compensation.connectionId)),
+  ])];
   const connections = await PassportConnection.find({
     _id: { $in: connectionIds },
     receivingWorkspaceId: scope.workspaceId,
     $or: [{ organizationId: scope.organizationId }, { partnerId: scope.partnerId }],
   }).lean();
   const connectionsById = new Map(connections.map((item) => [idOf(item), item]));
-  const passportIds = [...new Set(definition.nodes.map((node) => idOf(node.passportId)))];
-  const [passports, capabilities] = await Promise.all([
+  const passportIds = [...new Set([
+    ...pinnedNodes.map((node) => idOf(node.passportId)),
+    ...pinnedCompensations.map((item) => idOf(item.compensation.passportId)),
+  ])];
+  const policyIds = [...new Set([
+    ...governedNodes.map((node) => idOf(node.selectionPolicyId)),
+    ...governedCompensations.map((item) => idOf(item.compensation.selectionPolicyId)),
+  ])];
+  const referencedSelectionPassports = [...new Set([
+    ...governedNodes.flatMap((node) => [
+      ...(node.preferredPassportIds || []),
+      ...(node.excludedPassportIds || []),
+    ]),
+    ...governedCompensations.flatMap((item) => [
+      ...(item.compensation.preferredPassportIds || []),
+      ...(item.compensation.excludedPassportIds || []),
+    ]),
+  ].map(idOf))];
+  const contractEdges = (definition.edges || []).filter((edge) => edge.mappingMode === 'contract');
+  const contractIds = [...new Set([
+    ...contractEdges.map((edge) => idOf(edge.dataContractId)),
+    ...compensationDefinitions.map((item) => idOf(item.compensation.dataContractId)).filter(Boolean),
+  ])];
+  const [passports, capabilities, selectionPolicies, accessibleSelectionPassports, dataContracts, recoveryPolicies] = await Promise.all([
     AgentPassport.find({ _id: { $in: passportIds } }).lean(),
     Capability.find({ passportId: { $in: passportIds } }).lean(),
+    AgentSelectionPolicy.find({
+      _id: { $in: policyIds },
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+    }).lean(),
+    CapabilityCatalogEntry.distinct('passportId', {
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      passportId: { $in: referencedSelectionPassports },
+    }),
+    InterAgentDataContract.find({
+      _id: { $in: contractIds },
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+    })
+      .select('+inputSchemaHash +outputSchemaHash')
+      .lean(),
+    definition.recoveryPolicyId
+      ? OrchestrationRecoveryPolicy.find({
+          _id: definition.recoveryPolicyId,
+          organizationId: scope.organizationId,
+          workspaceId: scope.workspaceId,
+        })
+          .select('+validationDigest')
+          .lean()
+      : [],
   ]);
   const passportsById = new Map(passports.map((item) => [idOf(item), item]));
   const capabilitiesByKey = new Map(
     capabilities.map((item) => [`${idOf(item.passportId)}:${item.name}`, item]),
   );
+  const selectionPoliciesById = new Map(selectionPolicies.map((item) => [idOf(item), item]));
+  const accessibleSelectionPassportIds = new Set(accessibleSelectionPassports.map(idOf));
+  const contractsById = new Map(dataContracts.map((item) => [idOf(item), item]));
+  const recoveryPoliciesById = new Map(recoveryPolicies.map((item) => [idOf(item), item]));
   const errors = [];
   for (const node of definition.nodes) {
     const path = `nodes.${node.nodeKey}`;
+    if (node.targetingMode === 'governed_selection') {
+      const policy = selectionPoliciesById.get(idOf(node.selectionPolicyId));
+      if (!policy || policy.status !== 'active') {
+        errors.push({
+          path: `${path}.selectionPolicyId`,
+          code: 'AGENT_SELECTION_POLICY_INACTIVE',
+          message: 'An active selection policy is required in this tenant scope.',
+        });
+      } else if (policy.capabilityRequirements?.length && !policy.capabilityRequirements.includes(node.capability)) {
+        errors.push({
+          path: `${path}.capability`,
+          code: ErrorCodes.ORCHESTRATION_CAPABILITY_DENIED,
+          message: 'The selection policy does not permit this capability.',
+        });
+      }
+      const requestedReferences = [...(node.preferredPassportIds || []), ...(node.excludedPassportIds || [])].map(idOf);
+      if (requestedReferences.some((value) => !accessibleSelectionPassportIds.has(value))) {
+        errors.push({
+          path: `${path}.preferredPassportIds`,
+          code: 'AGENT_SELECTION_REFERENCE_UNAVAILABLE',
+          message: 'A selection passport reference is unavailable.',
+        });
+      }
+      continue;
+    }
     const connection = connectionsById.get(idOf(node.connectionId));
     if (!connection) {
       errors.push({
@@ -270,11 +536,194 @@ async function validateReferences(definition, scope) {
       });
     }
   }
+  for (const { node, compensation } of compensationDefinitions) {
+    const path = `nodes.${node.nodeKey}.compensationDefinition`;
+    if ((compensation.targetingMode || 'pinned') === 'governed_selection') {
+      const policy = selectionPoliciesById.get(idOf(compensation.selectionPolicyId));
+      if (!policy || policy.status !== 'active') {
+        errors.push({
+          path: `${path}.selectionPolicyId`,
+          code: 'AGENT_SELECTION_POLICY_INACTIVE',
+          message: 'Compensation requires an active governed selection policy.',
+        });
+      } else if (
+        policy.capabilityRequirements?.length &&
+        !policy.capabilityRequirements.includes(compensation.capability)
+      ) {
+        errors.push({
+          path: `${path}.capability`,
+          code: ErrorCodes.ORCHESTRATION_CAPABILITY_DENIED,
+          message: 'The selection policy does not permit the compensation capability.',
+        });
+      }
+    } else {
+      const connection = connectionsById.get(idOf(compensation.connectionId));
+      const passport = passportsById.get(idOf(compensation.passportId));
+      const capability = capabilitiesByKey.get(
+        `${idOf(compensation.passportId)}:${compensation.capability}`,
+      );
+      const declaredOperation = capability?.runtimeToolName || capability?.name;
+      if (
+        !connection ||
+        connection.status !== 'connected' ||
+        connection.installScope !== 'invoke' ||
+        idOf(connection.passportId) !== idOf(compensation.passportId)
+      ) {
+        errors.push({
+          path: `${path}.connectionId`,
+          code: ErrorCodes.ORCHESTRATION_CONNECTION_SCOPE_DENIED,
+          message: 'Compensation connection is unavailable in this tenant scope.',
+        });
+      }
+      if (!passport || passport.status !== 'valid') {
+        errors.push({
+          path: `${path}.passportId`,
+          code: ErrorCodes.PASSPORT_UNAVAILABLE,
+          message: 'Compensation Agent Passport is unavailable.',
+        });
+      } else {
+        compensation._passportVersion = passport.agent?.version;
+      }
+      if (
+        !capability ||
+        !capability.enabled ||
+        ![capability.name, declaredOperation].includes(compensation.operation)
+      ) {
+        errors.push({
+          path: `${path}.capability`,
+          code: ErrorCodes.ORCHESTRATION_CAPABILITY_DENIED,
+          message: 'Compensation capability or operation is not declared and enabled.',
+        });
+      } else if (
+        canonicalize(capability.inputSchema) !== canonicalize(compensation.inputSchema) ||
+        canonicalize(capability.outputSchema) !== canonicalize(compensation.outputSchema)
+      ) {
+        errors.push({
+          path: `${path}.inputSchema`,
+          code: ErrorCodes.ORCHESTRATION_SCHEMA_INVALID,
+          message: 'Compensation schemas must match the target passport capability schemas.',
+        });
+      }
+    }
+    if (compensation.dataContractId) {
+      const contract = contractsById.get(idOf(compensation.dataContractId));
+      if (
+        !contract ||
+        contract.status !== 'active' ||
+        contract.version !== Number(compensation.dataContractVersion)
+      ) {
+        errors.push({
+          path: `${path}.dataContractId`,
+          code: 'DATA_CONTRACT_INACTIVE',
+          message: 'Compensation requires the declared active data-contract version.',
+        });
+      } else if (
+        contract.targetCapability !== compensation.capability ||
+        contract.targetOperation !== compensation.operation
+      ) {
+        errors.push({
+          path: `${path}.dataContractId`,
+          code: 'INTER_AGENT_CAPABILITY_MISMATCH',
+          message: 'Compensation target does not match its data contract.',
+        });
+      }
+    }
+  }
+  if (definition.recoveryPolicyId) {
+    const policy = recoveryPoliciesById.get(idOf(definition.recoveryPolicyId));
+    if (
+      !policy ||
+      policy.status !== 'active' ||
+      policy.version !== Number(definition.recoveryPolicyVersion)
+    ) {
+      errors.push({
+        path: 'recoveryPolicyId',
+        code: 'ORCHESTRATION_RECOVERY_POLICY_INACTIVE',
+        message: 'An active tenant-scoped recovery-policy version is required.',
+      });
+    }
+  }
+  const nodesByKey = new Map(definition.nodes.map((node) => [node.nodeKey, node]));
+  const now = new Date();
+  for (const edge of contractEdges) {
+    const contract = contractsById.get(idOf(edge.dataContractId));
+    const sourceNode = nodesByKey.get(edge.from);
+    const targetNode = nodesByKey.get(edge.to);
+    if (
+      !contract ||
+      contract.version !== Number(edge.dataContractVersion) ||
+      contract.status !== 'active' ||
+      new Date(contract.validFrom) > now ||
+      new Date(contract.expiresAt) <= now
+    ) {
+      errors.push({
+        path: `edges.${edge.from}.${edge.to}.dataContractId`,
+        code: 'DATA_CONTRACT_INACTIVE',
+        message: 'An active immutable tenant-scoped data contract version is required.',
+      });
+      continue;
+    }
+    if (
+      !sourceNode ||
+      !targetNode ||
+      sourceNode.capability !== contract.sourceCapability ||
+      sourceNode.operation !== contract.sourceOperation ||
+      targetNode.capability !== contract.targetCapability ||
+      targetNode.operation !== contract.targetOperation
+    ) {
+      errors.push({
+        path: `edges.${edge.from}.${edge.to}`,
+        code: 'INTER_AGENT_CAPABILITY_MISMATCH',
+        message: 'Contract capabilities and operations must match both orchestration nodes.',
+      });
+      continue;
+    }
+    edge._inputSchemaHash = contract.inputSchemaHash;
+    edge._outputSchemaHash = contract.outputSchemaHash;
+  }
   return {
     ...result,
     valid: errors.length === 0,
     errors,
-    references: { connectionsById, passportsById, capabilitiesByKey },
+    references: {
+      connectionsById,
+      passportsById,
+      capabilitiesByKey,
+      selectionPoliciesById,
+      contractsById,
+      recoveryPoliciesById,
+    },
+  };
+}
+
+function serializeCompensationDefinition(input) {
+  if (!input) return null;
+  return {
+    targetingMode: input.targetingMode || 'pinned',
+    ...(input.connectionId ? { connectionId: idOf(input.connectionId) } : {}),
+    ...(input.passportId ? { passportId: idOf(input.passportId) } : {}),
+    ...(input.selectionPolicyId ? { selectionPolicyId: idOf(input.selectionPolicyId) } : {}),
+    selectionConstraints: input.selectionConstraints || {},
+    preferredPassportIds: (input.preferredPassportIds || []).map(idOf),
+    excludedPassportIds: (input.excludedPassportIds || []).map(idOf),
+    capability: input.capability,
+    operation: input.operation,
+    inputSchema: input.inputSchema,
+    outputSchema: input.outputSchema,
+    inputMapping: input.inputMapping || {},
+    timeoutMs: input.timeoutMs,
+    retryPolicy: input.retryPolicy,
+    ...(input.dataContractId ? { dataContractId: idOf(input.dataContractId) } : {}),
+    ...(input.dataContractVersion != null
+      ? { dataContractVersion: Number(input.dataContractVersion) }
+      : {}),
+    approvalRequirement: input.approvalRequirement || { required: false },
+    expectedIdempotencyBehavior:
+      input.expectedIdempotencyBehavior || 'ghost_bridge_keyed',
+    successCriteria: input.successCriteria || {},
+    continueAfterCompensationFailure: input.continueAfterCompensationFailure === true,
+    parallelSafe: input.parallelSafe === true,
+    dependencies: input.dependencies || [],
   };
 }
 
@@ -294,8 +743,15 @@ function serializeDefinition(definitionInput) {
     nodes: (definition.nodes || []).map((node) => ({
       nodeKey: node.nodeKey,
       displayName: node.displayName,
-      connectionId: idOf(node.connectionId),
-      passportId: idOf(node.passportId),
+      targetingMode: node.targetingMode || 'pinned',
+      ...(node.connectionId ? { connectionId: idOf(node.connectionId) } : {}),
+      ...(node.passportId ? { passportId: idOf(node.passportId) } : {}),
+      ...(node.selectionPolicyId ? { selectionPolicyId: idOf(node.selectionPolicyId) } : {}),
+      selectionConstraints: node.selectionConstraints || {},
+      preferredPassportIds: (node.preferredPassportIds || []).map(idOf),
+      excludedPassportIds: (node.excludedPassportIds || []).map(idOf),
+      fallbackCandidateCount: Number(node.fallbackCandidateCount ?? 0),
+      selectionTiming: node.selectionTiming || 'run_creation',
       capability: node.capability,
       operation: node.operation,
       inputSchema: node.inputSchema,
@@ -307,13 +763,39 @@ function serializeDefinition(definitionInput) {
       policyContext: node.policyContext,
       continueOnFailure: node.continueOnFailure === true,
       dependencies: node.dependencies || [],
+      recoverability: node.recoverability || 'retryable',
+      failureStrategy: node.failureStrategy || null,
+      compensationDefinition: serializeCompensationDefinition(node.compensationDefinition),
+      recoveryOverrides: node.recoveryOverrides || {},
+      interventionRequirement: node.interventionRequirement || {},
+      checkpointPolicy: node.checkpointPolicy || {},
     })),
-    edges: definition.edges || [],
+    edges: (definition.edges || []).map((edge) => ({
+      from: edge.from,
+      to: edge.to,
+      mappingMode: edge.mappingMode || 'direct',
+      ...(edge.dataContractId ? { dataContractId: idOf(edge.dataContractId) } : {}),
+      ...(edge.dataContractVersion != null
+        ? { dataContractVersion: Number(edge.dataContractVersion) }
+        : {}),
+      sourceNodeKey: edge.sourceNodeKey || edge.from,
+      targetNodeKey: edge.targetNodeKey || edge.to,
+    })),
     nodeCount: definition.nodes?.length || 0,
     concurrencyLimit: definition.concurrencyLimit,
     maxRunDurationMs: definition.maxRunDurationMs,
     maxNodeExecutions: definition.maxNodeExecutions,
     defaultNodeTimeoutMs: definition.defaultNodeTimeoutMs,
+    recoveryPolicyId: idOf(definition.recoveryPolicyId) || null,
+    recoveryPolicyVersion: definition.recoveryPolicyVersion || null,
+    failureStrategy: definition.failureStrategy || 'fail',
+    compensationEnabled: definition.compensationEnabled === true,
+    compensateOnCancellation: definition.compensateOnCancellation === true,
+    maximumRecoveryAttempts: Number(definition.maximumRecoveryAttempts || 0),
+    maximumCompensationAttempts: Number(definition.maximumCompensationAttempts || 0),
+    recoveryDeadlineMs: definition.recoveryDeadlineMs || null,
+    compensationDeadlineMs: definition.compensationDeadlineMs || null,
+    interventionTimeoutMs: definition.interventionTimeoutMs || null,
     createdBy: definition.createdBy,
     updatedBy: definition.updatedBy,
     activatedBy: definition.activatedBy,
@@ -352,6 +834,33 @@ function serializeRun(runInput, progress) {
     completedAt: run.completedAt || null,
     cancelRequestedAt: run.cancelRequestedAt || null,
     cancelledAt: run.cancelledAt || null,
+    recoveryPolicyId: idOf(run.recoveryPolicyId) || null,
+    recoveryPolicyVersion: run.recoveryPolicyVersion || null,
+    recoveryPolicySnapshotHash: run.recoveryPolicySnapshotHash || null,
+    recoveryAttempt: Number(run.recoveryAttempt || 0),
+    maximumRecoveryAttempts: Number(run.maximumRecoveryAttempts || 0),
+    maximumCompensationAttempts: Number(run.maximumCompensationAttempts || 0),
+    recoveryDeadlineAt: run.recoveryDeadlineAt || null,
+    compensationDeadlineAt: run.compensationDeadlineAt || null,
+    interventionDeadlineAt: run.interventionDeadlineAt || null,
+    currentRecoveryDecisionId: idOf(run.currentRecoveryDecisionId) || null,
+    compensationPlanId: idOf(run.compensationPlanId) || null,
+    interventionRequestId: idOf(run.interventionRequestId) || null,
+    checkpointSequence: Number(run.checkpointSequence || 0),
+    unresolvedSideEffects: (run.unresolvedSideEffects || []).map((item) => ({
+      nodeRunId: idOf(item.nodeRunId) || null,
+      nodeKey: item.nodeKey,
+      recoverability: item.recoverability,
+      status: item.status,
+      safeReasonCode: item.safeReasonCode,
+      classification: item.classification,
+      acceptedRisk: item.acceptedRisk === true,
+    })),
+    recoveredAt: run.recoveredAt || null,
+    terminationRequestedAt: run.terminationRequestedAt || null,
+    terminatedAt: run.terminatedAt || null,
+    terminationReasonCode: run.terminationReasonCode || null,
+    recoveryIncidentId: run.recoveryIncidentId || null,
     durationMs: startedAt ? Math.max(0, endAt.getTime() - startedAt.getTime()) : null,
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
@@ -364,6 +873,7 @@ function serializeNodeRun(nodeInput) {
     nodeRunId: idOf(node),
     orchestrationRunId: idOf(node.orchestrationRunId),
     nodeKey: node.nodeKey,
+    targetingMode: node.targetingMode || 'pinned',
     connectionId: idOf(node.connectionId),
     passportId: idOf(node.passportId),
     passportVersion: node.passportVersion,
@@ -380,8 +890,34 @@ function serializeNodeRun(nodeInput) {
     traceId: node.traceId,
     parentTraceId: node.parentTraceId,
     approvalRequestId: node.approvalRequestId || null,
+    selectionDecisionId: idOf(node.selectionDecisionId) || null,
+    selectionApprovalRequestId: node.selectionApprovalRequestId || null,
+    delegationGrantId: idOf(node.delegationGrantId) || null,
+    dataContractId: idOf(node.dataContractId) || null,
+    dataContractVersion: node.dataContractVersion || null,
     approvalStatus: node.status === 'waiting_approval' ? 'pending' : null,
     safeFailure: node.safeFailure || null,
+    recoverability: node.recoverability || 'retryable',
+    failureCategory: node.failureCategory || null,
+    recoveryAttempt: Number(node.recoveryAttempt || 0),
+    maximumRecoveryAttempts: Number(node.maximumRecoveryAttempts || 0),
+    compensationStatus: node.compensationStatus || 'not_required',
+    compensationAttempt: Number(node.compensationAttempt || 0),
+    maximumCompensationAttempts: Number(node.maximumCompensationAttempts || 0),
+    compensationRunId: idOf(node.compensationRunId) || null,
+    recoveryDecisionId: idOf(node.recoveryDecisionId) || null,
+    interventionRequestId: idOf(node.interventionRequestId) || null,
+    checkpointId: idOf(node.checkpointId) || null,
+    correctedInputVersion: node.correctedInputVersion || null,
+    correctedInputSchemaHash: node.correctedInputSchemaHash || null,
+    replacementSelectionDecisionId: idOf(node.replacementSelectionDecisionId) || null,
+    replacementAppliedAt: node.replacementAppliedAt || null,
+    completedSideEffectAt: node.completedSideEffectAt || null,
+    compensatedAt: node.compensatedAt || null,
+    skippedAt: node.skippedAt || null,
+    terminatedAt: node.terminatedAt || null,
+    compensationWaivedAt: node.compensationWaivedAt || null,
+    compensationWaiverReasonCode: node.compensationWaiverReasonCode || null,
     startedAt: node.startedAt || null,
     completedAt: node.completedAt || null,
     createdAt: node.createdAt,
@@ -553,6 +1089,18 @@ async function activateDefinition(definitionId, input = {}, caller = {}) {
   const validation = await validateReferences(plain, scope);
   throwDefinitionValidation(validation);
   for (const node of plain.nodes) {
+    if (node.targetingMode === 'governed_selection') {
+      const selectionPolicy = validation.references.selectionPoliciesById.get(idOf(node.selectionPolicyId));
+      await authorize(
+        'orchestration.definition.activate',
+        'OrchestrationSelectionNodeDefinition',
+        `${definitionId}:${node.nodeKey}`,
+        scope,
+        caller,
+        { selectionPolicyId: idOf(selectionPolicy), capability: node.capability, operation: node.operation },
+      );
+      continue;
+    }
     const connection = validation.references.connectionsById.get(idOf(node.connectionId));
     const passport = validation.references.passportsById.get(idOf(node.passportId));
     const capability = validation.references.capabilitiesByKey.get(`${idOf(node.passportId)}:${node.capability}`);
@@ -616,7 +1164,6 @@ async function startRun(definitionId, input = {}, caller = {}) {
   const plain = definition.toObject();
   const validation = await validateReferences(plain, scope);
   throwDefinitionValidation(validation);
-  const snapshot = safeDefinitionSnapshot(plain);
   const normalizedKey = normalizeClientKey(input.idempotencyKey);
   const idempotencyKeyHash = secureDigest('orchestration-run-key', normalizedKey.value);
   const requestFingerprint = secureDigest(
@@ -634,6 +1181,100 @@ async function startRun(definitionId, input = {}, caller = {}) {
     }
     return { ...serializeRun(existing), idempotencyReplayed: true };
   }
+  const selectionResults = [];
+  for (const node of plain.nodes.filter((item) => item.targetingMode === 'governed_selection')) {
+    const childRequestId = `req_${secureDigest('orchestration-selection-request', `${scope.requestId || normalizedKey.value}:${node.nodeKey}`).slice(-48)}`;
+    const childTraceId = `trace_${secureDigest('orchestration-selection-trace', `${scope.traceId || normalizedKey.value}:${node.nodeKey}`).slice(-48)}`;
+    const decision = await evaluateSelection(
+      {
+        workspaceId: scope.workspaceId,
+        capability: node.capability,
+        operation: node.operation,
+        inputSchema: node.inputSchema,
+        requiredOutputSchema: node.outputSchema,
+        constraints: node.selectionConstraints || {},
+        preferredPassportIds: node.preferredPassportIds || [],
+        excludedPassportIds: node.excludedPassportIds || [],
+        selectionPolicyId: node.selectionPolicyId,
+        fallbackCandidateCount: node.fallbackCandidateCount,
+        orchestrationDefinitionId: definition._id,
+        orchestrationNodeKey: node.nodeKey,
+      },
+      { ...caller, requestId: childRequestId, traceId: childTraceId },
+    );
+    if (!decision.selectedCandidate) {
+      throw new AppError(409, 'AGENT_SELECTION_NO_CANDIDATE', 'No eligible installed agent is available for an orchestration node.', [
+        { path: `nodes.${node.nodeKey}`, code: 'NO_ELIGIBLE_CANDIDATE', message: 'Governed selection produced no eligible candidate.' },
+      ]);
+    }
+    node.connectionId = decision.selectedCandidate.connectionId;
+    node.passportId = decision.selectedCandidate.passportId;
+    node._passportVersion = decision.selectedCandidate.passportVersion;
+    node.selectionDecisionId = decision.decisionId;
+    node.selectionPolicyVersion = decision.selectionPolicyVersion;
+    node.selectionApprovalRequestId = decision.approvalRequestId || undefined;
+    node.fallbackCandidates = decision.fallbackCandidates || [];
+    selectionResults.push({ node, decision });
+  }
+  const compensationSelectionResults = [];
+  for (const node of plain.nodes.filter(
+    (item) => item.compensationDefinition?.targetingMode === 'governed_selection',
+  )) {
+    const compensation = node.compensationDefinition;
+    const childRequestId = `req_${secureDigest(
+      'orchestration-compensation-selection-request',
+      `${scope.requestId || normalizedKey.value}:${node.nodeKey}`,
+    ).slice(-48)}`;
+    const childTraceId = `trace_${secureDigest(
+      'orchestration-compensation-selection-trace',
+      `${scope.traceId || normalizedKey.value}:${node.nodeKey}`,
+    ).slice(-48)}`;
+    const decision = await evaluateSelection(
+      {
+        workspaceId: scope.workspaceId,
+        capability: compensation.capability,
+        operation: compensation.operation,
+        inputSchema: compensation.inputSchema,
+        requiredOutputSchema: compensation.outputSchema,
+        constraints: compensation.selectionConstraints || {},
+        preferredPassportIds: compensation.preferredPassportIds || [],
+        excludedPassportIds: compensation.excludedPassportIds || [],
+        selectionPolicyId: compensation.selectionPolicyId,
+        fallbackCandidateCount: 0,
+        orchestrationDefinitionId: definition._id,
+        orchestrationNodeKey: `${node.nodeKey}:compensation`,
+      },
+      { ...caller, requestId: childRequestId, traceId: childTraceId },
+    );
+    if (!decision.selectedCandidate) {
+      throw new AppError(
+        409,
+        'AGENT_SELECTION_NO_CANDIDATE',
+        'No eligible installed agent is available for an orchestration compensation target.',
+        [
+          {
+            path: `nodes.${node.nodeKey}.compensationDefinition`,
+            code: 'NO_ELIGIBLE_COMPENSATION_CANDIDATE',
+            message: 'Governed selection produced no eligible compensation candidate.',
+          },
+        ],
+      );
+    }
+    compensation.connectionId = decision.selectedCandidate.connectionId;
+    compensation.passportId = decision.selectedCandidate.passportId;
+    compensation._passportVersion = decision.selectedCandidate.passportVersion;
+    compensation.selectionDecisionId = decision.decisionId;
+    compensation.selectionPolicyVersion = decision.selectionPolicyVersion;
+    compensationSelectionResults.push({ node, compensation, decision });
+  }
+  const recoveryPolicy = plain.recoveryPolicyId
+    ? validation.references.recoveryPoliciesById.get(idOf(plain.recoveryPolicyId))
+    : null;
+  const recoveryPolicySnapshot = safeRecoveryPolicySnapshot(recoveryPolicy);
+  const recoveryPolicySnapshotHash = recoveryPolicySnapshot
+    ? secureDigest('orchestration-recovery-policy-snapshot', canonicalize(recoveryPolicySnapshot))
+    : undefined;
+  const snapshot = safeDefinitionSnapshot(plain);
   let run;
   const now = new Date();
   try {
@@ -655,6 +1296,44 @@ async function startRun(definitionId, input = {}, caller = {}) {
       maxRunDurationMs: snapshot.maxRunDurationMs,
       maxNodeExecutions: snapshot.maxNodeExecutions,
       definitionSnapshot: snapshot,
+      ...(recoveryPolicySnapshot
+        ? {
+            recoveryPolicyId: recoveryPolicy._id,
+            recoveryPolicyVersion: recoveryPolicy.version,
+            recoveryPolicySnapshot,
+            recoveryPolicySnapshotHash,
+          }
+        : {}),
+      maximumRecoveryAttempts: Number(
+        snapshot.maximumRecoveryAttempts || recoveryPolicySnapshot?.maximumRecoveryAttempts || 0,
+      ),
+      maximumCompensationAttempts: Number(
+        snapshot.maximumCompensationAttempts ||
+          recoveryPolicySnapshot?.maximumCompensationAttempts ||
+          0,
+      ),
+      ...(snapshot.recoveryDeadlineMs || recoveryPolicySnapshot?.recoveryDeadlineMs
+        ? {
+            recoveryDeadlineAt: new Date(
+              now.getTime() +
+                Number(snapshot.recoveryDeadlineMs || recoveryPolicySnapshot.recoveryDeadlineMs),
+            ),
+          }
+        : {}),
+      ...(snapshot.compensationDeadlineMs || recoveryPolicySnapshot?.compensationDeadlineMs
+        ? {
+            compensationDeadlineAt: new Date(
+              now.getTime() +
+                Number(
+                  snapshot.compensationDeadlineMs ||
+                    recoveryPolicySnapshot.compensationDeadlineMs,
+                ),
+            ),
+          }
+        : {}),
+      ...(snapshot.interventionTimeoutMs
+        ? { interventionDeadlineAt: new Date(now.getTime() + snapshot.interventionTimeoutMs) }
+        : {}),
     });
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
@@ -673,12 +1352,13 @@ async function startRun(definitionId, input = {}, caller = {}) {
     workspaceId: scope.workspaceId,
     orchestrationRunId: run._id,
     nodeKey: node.nodeKey,
+    targetingMode: node.targetingMode,
     connectionId: node.connectionId,
     passportId: node.passportId,
     passportVersion: node.passportVersion,
     capability: node.capability,
     operation: node.operation,
-    status: node.dependencies.length ? 'blocked' : 'ready',
+    status: node.selectionApprovalRequestId ? 'waiting_approval' : node.dependencies.length ? 'blocked' : 'ready',
     dependencyNodeKeys: node.dependencies,
     continueOnFailure: node.continueOnFailure,
     attempt: 0,
@@ -687,9 +1367,31 @@ async function startRun(definitionId, input = {}, caller = {}) {
     requestId: `req_${secureDigest('orchestration-node-request', `${idOf(run)}:${node.nodeKey}`).slice(-48)}`,
     traceId: `trace_${secureDigest('orchestration-node-trace', `${run.traceId}:${node.nodeKey}`).slice(-48)}`,
     parentTraceId: run.traceId,
+    selectionDecisionId: node.selectionDecisionId,
+    selectionApprovalRequestId: node.selectionApprovalRequestId,
+    recoverability: node.recoverability || 'retryable',
+    maximumRecoveryAttempts: Number(
+      node.recoveryOverrides?.maximumRecoveryAttempts ??
+        snapshot.maximumRecoveryAttempts ??
+        recoveryPolicySnapshot?.maximumRecoveryAttempts ??
+        0,
+    ),
+    maximumCompensationAttempts: Number(
+      node.recoveryOverrides?.maximumCompensationAttempts ??
+        snapshot.maximumCompensationAttempts ??
+        recoveryPolicySnapshot?.maximumCompensationAttempts ??
+        0,
+    ),
+    compensationStatus:
+      node.recoverability === 'compensatable' && node.compensationDefinition
+        ? 'pending'
+        : node.recoverability === 'non_reversible'
+          ? 'non_reversible'
+          : 'not_required',
   }));
+  let insertedNodes;
   try {
-    await OrchestrationNodeRun.insertMany(nodeRuns, { ordered: true });
+    insertedNodes = await OrchestrationNodeRun.insertMany(nodeRuns, { ordered: true });
   } catch (error) {
     await OrchestrationRun.updateOne(
       { _id: run._id, status: 'queued' },
@@ -710,6 +1412,145 @@ async function startRun(definitionId, input = {}, caller = {}) {
     );
     throw error;
   }
+  for (const { node, decision } of selectionResults) {
+    const nodeRun = insertedNodes.find((item) => item.nodeKey === node.nodeKey);
+    await Promise.all([
+      AgentSelectionDecision.updateOne(
+        { _id: decision.decisionId, organizationId: scope.organizationId, workspaceId: scope.workspaceId },
+        { $set: { orchestrationRunId: run._id } },
+      ),
+      decision.approvalRequestId
+        ? ApprovalRequest.updateOne(
+            { approvalRequestId: decision.approvalRequestId, organizationId: scope.organizationId },
+            { $set: { orchestrationRunId: idOf(run), orchestrationNodeRunId: idOf(nodeRun), orchestrationNodeKey: node.nodeKey } },
+          )
+        : Promise.resolve(),
+      audit('orchestration.node.agent_selected', 'OrchestrationNodeRun', nodeRun, scope, {
+        orchestrationRunId: idOf(run),
+        nodeKey: node.nodeKey,
+        selectedPassportId: decision.selectedCandidate.passportId,
+        selectedConnectionId: decision.selectedCandidate.connectionId,
+        score: decision.selectedCandidate.score,
+        policyVersion: decision.selectionPolicyVersion,
+        status: decision.decisionStatus,
+      }),
+    ]);
+  }
+  for (const { node, decision } of compensationSelectionResults) {
+    const nodeRun = insertedNodes.find((item) => item.nodeKey === node.nodeKey);
+    await Promise.all([
+      AgentSelectionDecision.updateOne(
+        {
+          _id: decision.decisionId,
+          organizationId: scope.organizationId,
+          workspaceId: scope.workspaceId,
+        },
+        { $set: { orchestrationRunId: run._id } },
+      ),
+      audit(
+        'orchestration.compensation.agent_selected',
+        'OrchestrationNodeRun',
+        nodeRun,
+        scope,
+        {
+          orchestrationRunId: idOf(run),
+          nodeKey: node.nodeKey,
+          selectedPassportId: decision.selectedCandidate.passportId,
+          selectedConnectionId: decision.selectedCandidate.connectionId,
+          policyVersion: decision.selectionPolicyVersion,
+          status: decision.decisionStatus,
+        },
+      ),
+    ]);
+  }
+  const insertedByKey = new Map(insertedNodes.map((item) => [item.nodeKey, item]));
+  const snapshotNodesByKey = new Map(snapshot.nodes.map((item) => [item.nodeKey, item]));
+  try {
+    for (const edge of snapshot.edges.filter((item) => item.mappingMode === 'contract')) {
+      const sourceNodeRun = insertedByKey.get(edge.from);
+      const targetNodeRun = insertedByKey.get(edge.to);
+      const sourceDefinition = snapshotNodesByKey.get(edge.from);
+      const targetDefinition = snapshotNodesByKey.get(edge.to);
+      const grant = await createGrantRecord(
+        {
+          workspaceId: scope.workspaceId,
+          contractId: edge.dataContractId,
+          contractVersion: edge.dataContractVersion,
+          orchestrationDefinitionId: definition._id,
+          orchestrationRunId: run._id,
+          sourceNodeRunId: sourceNodeRun._id,
+          targetNodeRunId: targetNodeRun._id,
+          sourceSelectionPolicyId: sourceDefinition.selectionPolicyId,
+          targetSelectionPolicyId: targetDefinition.selectionPolicyId,
+          invocationLimit: 1,
+          expiresAt: new Date(Math.min(
+            Date.now() + snapshot.maxRunDurationMs,
+            new Date(definition.expiresAt || Date.now() + snapshot.maxRunDurationMs).getTime(),
+          )),
+          traceId: targetNodeRun.traceId,
+          requestId: targetNodeRun.requestId,
+        },
+        scope,
+        caller,
+      );
+      const targetStatus = grant.status === 'pending' ? 'waiting_approval' : targetNodeRun.status;
+      await OrchestrationNodeRun.updateOne(
+        { _id: targetNodeRun._id, orchestrationRunId: run._id },
+        {
+          $set: {
+            delegationGrantId: grant._id,
+            dataContractId: edge.dataContractId,
+            dataContractVersion: edge.dataContractVersion,
+            ...(grant.approvalRequestId
+              ? { approvalRequestId: grant.approvalRequestId, status: targetStatus }
+              : {}),
+          },
+        },
+      );
+      targetNodeRun.delegationGrantId = grant._id;
+      targetNodeRun.dataContractId = edge.dataContractId;
+      targetNodeRun.dataContractVersion = edge.dataContractVersion;
+      if (grant.approvalRequestId) {
+        targetNodeRun.approvalRequestId = grant.approvalRequestId;
+        targetNodeRun.status = targetStatus;
+        const targetSeed = nodeRuns.find((item) => item.nodeKey === edge.to);
+        if (targetSeed) targetSeed.status = targetStatus;
+      }
+      await audit('orchestration.edge.delegated', 'InterAgentDelegationGrant', grant, scope, {
+        orchestrationRunId: idOf(run),
+        sourceNodeKey: edge.from,
+        targetNodeKey: edge.to,
+        contractId: edge.dataContractId,
+        contractVersion: edge.dataContractVersion,
+        grantId: idOf(grant),
+        status: grant.status,
+      });
+    }
+  } catch (error) {
+    await OrchestrationRun.updateOne(
+      { _id: run._id, status: { $in: ['queued', 'waiting_approval'] } },
+      {
+        $set: {
+          status: 'failed',
+          completedAt: new Date(),
+          failureSummary: {
+            code: error.code || 'INTER_AGENT_GRANT_CREATION_FAILED',
+            message: 'Contract delegation grants could not be initialized.',
+            category: 'delegation',
+            requestId: run.requestId,
+            traceId: run.traceId,
+            occurredAt: new Date(),
+          },
+        },
+      },
+    );
+    await closeRunGrants(run._id, 'failed', scope);
+    throw error;
+  }
+  if (nodeRuns.some((node) => node.status === 'waiting_approval')) {
+    await OrchestrationRun.updateOne({ _id: run._id, status: 'queued' }, { $set: { status: 'waiting_approval' } });
+    run.status = 'waiting_approval';
+  }
   metrics.increment('orchestration_runs_started');
   metrics.increment('orchestration_nodes_ready', {}, nodeRuns.filter((node) => node.status === 'ready').length);
   await audit('orchestration.run.created', 'OrchestrationRun', run, scope, {
@@ -724,6 +1565,19 @@ async function startRun(definitionId, input = {}, caller = {}) {
       orchestrationRunId: idOf(run),
       nodeKey: node.nodeKey,
       status: 'ready',
+    });
+  }
+  try {
+    const { createCheckpointForRun } = require('./orchestrationRecovery.service');
+    await createCheckpointForRun(run._id, 'run-created', scope, {
+      createdBy: scope.actorId,
+      requestId: run.requestId,
+      traceId: run.traceId,
+    });
+  } catch (error) {
+    await audit('orchestration.checkpoint.invalidated', 'OrchestrationRun', run, scope, {
+      orchestrationRunId: idOf(run),
+      safeReasonCode: 'CHECKPOINT_CREATION_FAILED',
     });
   }
   return { ...serializeRun(run, { total: nodeRuns.length, ready: nodeRuns.filter((node) => node.status === 'ready').length }), idempotencyReplayed: false };
@@ -785,7 +1639,7 @@ async function scopedRun(runId, scope, options = {}) {
     organizationId: scope.organizationId,
     workspaceId: scope.workspaceId,
   });
-  if (options.privateFields) query.select('+input +finalOutput +definitionSnapshot +idempotencyKeyHash +requestFingerprint');
+  if (options.privateFields) query.select('+input +finalOutput +definitionSnapshot +recoveryPolicySnapshot +idempotencyKeyHash +requestFingerprint');
   if (options.lean) query.lean();
   const run = await query;
   if (!run) throw new AppError(404, ErrorCodes.ORCHESTRATION_RUN_NOT_FOUND, 'Orchestration run was not found.');
@@ -812,7 +1666,7 @@ async function listRunNodes(runId, input = {}, caller = {}) {
   };
   if (input.status) {
     const status = String(input.status).toLowerCase();
-    if (!['blocked', 'ready', 'queued', 'running', 'retry_wait', 'waiting_approval', 'succeeded', 'failed', 'cancelled', 'skipped'].includes(status))
+    if (!ORCHESTRATION_NODE_STATUSES.includes(status))
       throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Node status filter is invalid.');
     filter.status = status;
   }
@@ -889,8 +1743,23 @@ async function cancelRun(runId, input = {}, caller = {}) {
       );
     }),
   );
+  await closeRunGrants(run._id, 'cancelled', scope);
   const active = await OrchestrationNodeRun.countDocuments({ orchestrationRunId: run._id, status: 'running' });
   if (active === 0) {
+    const privateState = await scopedRun(runId, scope, { privateFields: true });
+    const compensateOnCancellation =
+      privateState.definitionSnapshot?.compensateOnCancellation === true ||
+      privateState.recoveryPolicySnapshot?.compensateOnCancellation === true;
+    if (compensateOnCancellation) {
+      const { beginCancellationCompensation } = require('./orchestrationRecovery.service');
+      const recovery = await beginCancellationCompensation(privateState, scope, {
+        caller,
+        safeReasonCode: 'ORCHESTRATION_CANCELLED',
+      });
+      if (recovery?.run) {
+        return { ...serializeRun(recovery.run), compensationPlanId: idOf(recovery.plan), idempotent: false };
+      }
+    }
     run = await OrchestrationRun.findOneAndUpdate(
       { _id: run._id, status: 'cancel_requested' },
       { $set: { status: 'cancelled', cancelledAt: now, completedAt: now, activeNodeCount: 0 } },

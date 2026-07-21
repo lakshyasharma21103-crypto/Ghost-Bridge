@@ -23,6 +23,22 @@ import { Orchestrations } from './pages/Orchestrations.jsx';
 import { OrchestrationDefinition } from './pages/OrchestrationDefinition.jsx';
 import { OrchestrationRuns } from './pages/OrchestrationRuns.jsx';
 import { OrchestrationRunDetail } from './pages/OrchestrationRunDetail.jsx';
+import { AgentDiscovery } from './pages/AgentDiscovery.jsx';
+import { AgentDetail } from './pages/AgentDetail.jsx';
+import { SelectionPolicies } from './pages/SelectionPolicies.jsx';
+import { SelectionPolicyDetail } from './pages/SelectionPolicyDetail.jsx';
+import { SelectionDecisions } from './pages/SelectionDecisions.jsx';
+import { SelectionDecisionDetail } from './pages/SelectionDecisionDetail.jsx';
+import { DataContracts } from './pages/DataContracts.jsx';
+import { DataContractDetail } from './pages/DataContractDetail.jsx';
+import { DelegationGrants } from './pages/DelegationGrants.jsx';
+import { DelegationGrantDetail } from './pages/DelegationGrantDetail.jsx';
+import { DelegationInvocations } from './pages/DelegationInvocations.jsx';
+import { DelegationInvocationDetail } from './pages/DelegationInvocationDetail.jsx';
+import { RecoveryPolicies } from './pages/RecoveryPolicies.jsx';
+import { RecoveryPolicyDetail } from './pages/RecoveryPolicyDetail.jsx';
+import { Interventions } from './pages/Interventions.jsx';
+import { InterventionDetail } from './pages/InterventionDetail.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -42,6 +58,22 @@ export default function App() {
         <Route path="/orchestrations/definitions/:definitionId" element={<OrchestrationDefinition />} />
         <Route path="/orchestrations/runs" element={<OrchestrationRuns />} />
         <Route path="/orchestrations/runs/:runId" element={<OrchestrationRunDetail />} />
+        <Route path="/recovery-policies" element={<RecoveryPolicies />} />
+        <Route path="/recovery-policies/:policyId" element={<RecoveryPolicyDetail />} />
+        <Route path="/interventions" element={<Interventions />} />
+        <Route path="/interventions/:interventionId" element={<InterventionDetail />} />
+        <Route path="/agent-discovery" element={<AgentDiscovery />} />
+        <Route path="/agent-discovery/agents/:connectionId" element={<AgentDetail />} />
+        <Route path="/selection-policies" element={<SelectionPolicies />} />
+        <Route path="/selection-policies/:policyId" element={<SelectionPolicyDetail />} />
+        <Route path="/selection-decisions" element={<SelectionDecisions />} />
+        <Route path="/selection-decisions/:decisionId" element={<SelectionDecisionDetail />} />
+        <Route path="/data-contracts" element={<DataContracts />} />
+        <Route path="/data-contracts/:contractId" element={<DataContractDetail />} />
+        <Route path="/delegation-grants" element={<DelegationGrants />} />
+        <Route path="/delegation-grants/:grantId" element={<DelegationGrantDetail />} />
+        <Route path="/delegation-invocations" element={<DelegationInvocations />} />
+        <Route path="/delegation-invocations/:invocationId" element={<DelegationInvocationDetail />} />
         <Route path="/passports/new" element={<CreatePassport />} />
         <Route path="/passports" element={<PassportsList />} />
         <Route path="/passports/:passportId" element={<PassportDetail />} />

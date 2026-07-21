@@ -8,6 +8,17 @@ const {
   DEFAULT_ORCHESTRATION_SETTINGS,
   ORCHESTRATION_LIMITS,
 } = require('../constants/orchestration');
+const { AGENT_SELECTION_LIMITS } = require('../constants/agentSelection');
+const {
+  EXPECTED_IDEMPOTENCY_BEHAVIORS,
+  FAILURE_STRATEGIES,
+  RECOVERABILITIES,
+  RECOVERY_LIMITS,
+} = require('../constants/orchestrationRecovery');
+
+function normalizeDataMapping(input) {
+  return require('./interAgentContractValidation.service').normalizeMapping(input);
+}
 
 const SAFE_NODE_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,99}$/;
 const SAFE_PATH_SEGMENT = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
@@ -294,11 +305,43 @@ function validateDefinitionDocument(definition = {}) {
       seen.add(node.nodeKey);
       nodesByKey.set(node.nodeKey, node);
     }
-    if (!SAFE_OBJECT_ID.test(String(node.connectionId || ''))) {
-      issues.push(issue(`${path}.connectionId`, 'ORCHESTRATION_CONNECTION_REFERENCE_INVALID', 'Connection reference is invalid.'));
-    }
-    if (!SAFE_OBJECT_ID.test(String(node.passportId || ''))) {
-      issues.push(issue(`${path}.passportId`, 'ORCHESTRATION_PASSPORT_REFERENCE_INVALID', 'Passport reference is invalid.'));
+    const targetingMode = String(node.targetingMode || (node.selectionPolicyId ? 'governed_selection' : 'pinned'));
+    if (!['pinned', 'governed_selection'].includes(targetingMode)) {
+      issues.push(issue(`${path}.targetingMode`, 'ORCHESTRATION_TARGETING_MODE_INVALID', 'Targeting mode is invalid.'));
+    } else if (targetingMode === 'pinned') {
+      if (!SAFE_OBJECT_ID.test(String(node.connectionId || ''))) {
+        issues.push(issue(`${path}.connectionId`, 'ORCHESTRATION_CONNECTION_REFERENCE_INVALID', 'Connection reference is invalid.'));
+      }
+      if (!SAFE_OBJECT_ID.test(String(node.passportId || ''))) {
+        issues.push(issue(`${path}.passportId`, 'ORCHESTRATION_PASSPORT_REFERENCE_INVALID', 'Passport reference is invalid.'));
+      }
+      if (node.selectionPolicyId || node.selectionConstraints || (node.preferredPassportIds || []).length || (node.excludedPassportIds || []).length) {
+        issues.push(issue(path, 'ORCHESTRATION_TARGETING_MODE_CONFLICT', 'Pinned and governed selection settings cannot be combined.'));
+      }
+    } else {
+      if (node.connectionId || node.passportId) {
+        issues.push(issue(path, 'ORCHESTRATION_TARGETING_MODE_CONFLICT', 'Governed selection cannot pin a connection or passport.'));
+      }
+      if (!SAFE_OBJECT_ID.test(String(node.selectionPolicyId || ''))) {
+        issues.push(issue(`${path}.selectionPolicyId`, 'ORCHESTRATION_SELECTION_POLICY_REFERENCE_INVALID', 'Selection policy reference is invalid.'));
+      }
+      if (String(node.selectionTiming || 'run_creation') !== 'run_creation') {
+        issues.push(issue(`${path}.selectionTiming`, 'ORCHESTRATION_SELECTION_TIMING_INVALID', 'Phase 13D2 supports selection at run creation only.'));
+      }
+      const references = [...(node.preferredPassportIds || []), ...(node.excludedPassportIds || [])];
+      if (references.some((value) => !SAFE_OBJECT_ID.test(String(value)))) {
+        issues.push(issue(`${path}.preferredPassportIds`, 'ORCHESTRATION_SELECTION_REFERENCE_INVALID', 'Selection passport reference is invalid.'));
+      }
+      if (references.length > AGENT_SELECTION_LIMITS.maximumArrayItems) {
+        issues.push(issue(`${path}.preferredPassportIds`, 'ORCHESTRATION_SELECTION_REFERENCE_LIMIT', 'Selection reference limit exceeded.'));
+      }
+      const fallbackCount = Number(node.fallbackCandidateCount ?? 0);
+      if (!Number.isInteger(fallbackCount) || fallbackCount < 0 || fallbackCount > AGENT_SELECTION_LIMITS.maximumFallbackCandidates) {
+        issues.push(issue(`${path}.fallbackCandidateCount`, 'ORCHESTRATION_SELECTION_FALLBACK_INVALID', 'Fallback candidate count is invalid.'));
+      }
+      if (inspectSafeJson(node.selectionConstraints || {}, `${path}.selectionConstraints`).length) {
+        issues.push(issue(`${path}.selectionConstraints`, 'ORCHESTRATION_SELECTION_CONSTRAINTS_UNSAFE', 'Selection constraints contain protected fields.'));
+      }
     }
     issues.push(...schemaIssues(node.inputSchema, `${path}.inputSchema`));
     issues.push(...schemaIssues(node.outputSchema, `${path}.outputSchema`));
@@ -319,6 +362,99 @@ function validateDefinitionDocument(definition = {}) {
     if (inspectSafeJson(node.policyContext || {}, `${path}.policyContext`).length) {
       issues.push(issue(`${path}.policyContext`, 'ORCHESTRATION_POLICY_CONTEXT_UNSAFE', 'Policy context contains protected fields.'));
     }
+    const recoverability = String(node.recoverability || 'retryable');
+    if (!RECOVERABILITIES.includes(recoverability)) {
+      issues.push(issue(`${path}.recoverability`, 'ORCHESTRATION_RECOVERABILITY_INVALID', 'Node recoverability is invalid.'));
+    }
+    if (node.failureStrategy && !FAILURE_STRATEGIES.includes(String(node.failureStrategy))) {
+      issues.push(issue(`${path}.failureStrategy`, 'ORCHESTRATION_RECOVERY_STRATEGY_INVALID', 'Node recovery strategy is invalid.'));
+    }
+    if (recoverability === 'compensatable' && !node.compensationDefinition) {
+      issues.push(issue(`${path}.compensationDefinition`, 'ORCHESTRATION_COMPENSATION_REQUIRED', 'A compensatable node must declare compensation before activation.'));
+    }
+    if (recoverability === 'non_reversible' && node.compensationDefinition) {
+      issues.push(issue(`${path}.compensationDefinition`, 'ORCHESTRATION_NON_REVERSIBLE_CONFLICT', 'A non-reversible node cannot declare automatic compensation.'));
+    }
+    if (node.compensationDefinition) {
+      const compensation = node.compensationDefinition;
+      const compensationPath = `${path}.compensationDefinition`;
+      const compensationTargeting = String(
+        compensation.targetingMode ||
+          (compensation.selectionPolicyId ? 'governed_selection' : 'pinned'),
+      );
+      if (!['pinned', 'governed_selection'].includes(compensationTargeting)) {
+        issues.push(issue(`${compensationPath}.targetingMode`, 'ORCHESTRATION_COMPENSATION_TARGET_INVALID', 'Compensation target mode is invalid.'));
+      } else if (compensationTargeting === 'pinned') {
+        if (
+          !SAFE_OBJECT_ID.test(String(compensation.connectionId || '')) ||
+          !SAFE_OBJECT_ID.test(String(compensation.passportId || ''))
+        ) {
+          issues.push(issue(compensationPath, 'ORCHESTRATION_COMPENSATION_TARGET_INVALID', 'Pinned compensation requires valid connection and passport references.'));
+        }
+        if (
+          compensation.selectionPolicyId ||
+          compensation.selectionConstraints ||
+          (compensation.preferredPassportIds || []).length ||
+          (compensation.excludedPassportIds || []).length
+        ) {
+          issues.push(issue(compensationPath, 'ORCHESTRATION_COMPENSATION_TARGET_CONFLICT', 'Pinned and governed compensation targets cannot be combined.'));
+        }
+      } else {
+        if (compensation.connectionId || compensation.passportId) {
+          issues.push(issue(compensationPath, 'ORCHESTRATION_COMPENSATION_TARGET_CONFLICT', 'Governed compensation cannot pin a connection or passport.'));
+        }
+        if (!SAFE_OBJECT_ID.test(String(compensation.selectionPolicyId || ''))) {
+          issues.push(issue(`${compensationPath}.selectionPolicyId`, 'ORCHESTRATION_SELECTION_POLICY_REFERENCE_INVALID', 'Compensation selection policy reference is invalid.'));
+        }
+      }
+      if (
+        !/^[A-Za-z][A-Za-z0-9._:-]{0,199}$/.test(String(compensation.capability || '')) ||
+        !/^[A-Za-z][A-Za-z0-9._:-]{0,199}$/.test(String(compensation.operation || ''))
+      ) {
+        issues.push(issue(`${compensationPath}.capability`, 'ORCHESTRATION_COMPENSATION_CAPABILITY_INVALID', 'Compensation capability and operation must use bounded identifiers.'));
+      }
+      issues.push(...schemaIssues(compensation.inputSchema, `${compensationPath}.inputSchema`));
+      issues.push(...schemaIssues(compensation.outputSchema, `${compensationPath}.outputSchema`));
+      try {
+        normalizeDataMapping(compensation.inputMapping || {});
+      } catch (error) {
+        issues.push(issue(`${compensationPath}.inputMapping`, 'ORCHESTRATION_COMPENSATION_MAPPING_INVALID', String(error.message || 'Compensation mapping is invalid.').slice(0, 300)));
+      }
+      if (
+        compensation.dataContractId &&
+        (!SAFE_OBJECT_ID.test(String(compensation.dataContractId)) ||
+          !Number.isInteger(Number(compensation.dataContractVersion)) ||
+          Number(compensation.dataContractVersion) < 1)
+      ) {
+        issues.push(issue(`${compensationPath}.dataContractId`, 'DATA_CONTRACT_VERSION_INVALID', 'Compensation data contract requires an explicit valid ID and version.'));
+      }
+      if (!compensation.dataContractId && compensation.dataContractVersion != null) {
+        issues.push(issue(`${compensationPath}.dataContractVersion`, 'DATA_CONTRACT_VERSION_INVALID', 'Compensation contract version cannot exist without a contract ID.'));
+      }
+      if (
+        !EXPECTED_IDEMPOTENCY_BEHAVIORS.includes(
+          String(compensation.expectedIdempotencyBehavior || 'ghost_bridge_keyed'),
+        )
+      ) {
+        issues.push(issue(`${compensationPath}.expectedIdempotencyBehavior`, 'ORCHESTRATION_COMPENSATION_IDEMPOTENCY_INVALID', 'Compensation idempotency behavior is invalid.'));
+      }
+      const compensationAttempts = Number(compensation.retryPolicy?.maxAttempts || 1);
+      if (
+        !Number.isInteger(compensationAttempts) ||
+        compensationAttempts < 1 ||
+        compensationAttempts > RECOVERY_LIMITS.maximumCompensationAttempts
+      ) {
+        issues.push(issue(`${compensationPath}.retryPolicy.maxAttempts`, 'ORCHESTRATION_COMPENSATION_LIMIT_INVALID', 'Compensation attempt limit is invalid.'));
+      }
+      if (inspectSafeJson(compensation.successCriteria || {}, `${compensationPath}.successCriteria`).length) {
+        issues.push(issue(`${compensationPath}.successCriteria`, 'ORCHESTRATION_COMPENSATION_CRITERIA_UNSAFE', 'Compensation success criteria contain protected fields.'));
+      }
+      for (const dependency of compensation.dependencies || []) {
+        if (!SAFE_NODE_KEY.test(String(dependency)) || dependency === node.nodeKey) {
+          issues.push(issue(`${compensationPath}.dependencies`, 'ORCHESTRATION_COMPENSATION_DEPENDENCY_INVALID', 'Compensation dependency is invalid.'));
+        }
+      }
+    }
   });
 
   const dependencies = dependenciesFor(definition);
@@ -329,6 +465,31 @@ function validateDefinitionDocument(definition = {}) {
     if (edge.from === edge.to) {
       issues.push(issue(`edges[${index}]`, 'ORCHESTRATION_CYCLE_DETECTED', 'Self-referencing edges are forbidden.'));
     }
+    const mappingMode = String(edge.mappingMode || (edge.dataContractId ? 'contract' : 'direct'));
+    if (!['direct', 'contract'].includes(mappingMode)) {
+      issues.push(issue(`edges[${index}].mappingMode`, 'ORCHESTRATION_MAPPING_MODE_INVALID', 'Edge mapping mode is invalid.'));
+    } else if (mappingMode === 'contract') {
+      if (!SAFE_OBJECT_ID.test(String(edge.dataContractId || ''))) {
+        issues.push(issue(`edges[${index}].dataContractId`, 'DATA_CONTRACT_SELECTOR_INVALID', 'Contract delegation requires a valid contract identifier.'));
+      }
+      if (!Number.isInteger(Number(edge.dataContractVersion)) || Number(edge.dataContractVersion) < 1) {
+        issues.push(issue(`edges[${index}].dataContractVersion`, 'DATA_CONTRACT_VERSION_INVALID', 'Contract delegation requires an explicit positive version.'));
+      }
+      if ((edge.sourceNodeKey && edge.sourceNodeKey !== edge.from) || (edge.targetNodeKey && edge.targetNodeKey !== edge.to)) {
+        issues.push(issue(`edges[${index}]`, 'DATA_CONTRACT_MAPPING_INVALID', 'Contract edge source and target keys must match its endpoints.'));
+      }
+    } else if (edge.dataContractId || edge.dataContractVersion || edge.sourceNodeKey || edge.targetNodeKey) {
+      issues.push(issue(`edges[${index}]`, 'ORCHESTRATION_MAPPING_MODE_CONFLICT', 'Direct edges cannot carry data-contract authority.'));
+    }
+  });
+  const contractTargets = new Set();
+  edges.forEach((edge, index) => {
+    const mode = String(edge.mappingMode || (edge.dataContractId ? 'contract' : 'direct'));
+    if (mode !== 'contract') return;
+    if (contractTargets.has(edge.to)) {
+      issues.push(issue(`edges[${index}]`, 'DATA_CONTRACT_MAPPING_INVALID', 'A target node may have only one incoming contract delegation.'));
+    }
+    contractTargets.add(edge.to);
   });
   for (const [nodeKey, dependencyKeys] of dependencies) {
     for (const dependency of dependencyKeys) {
@@ -403,6 +564,43 @@ function validateDefinitionDocument(definition = {}) {
   ) {
     issues.push(issue('maxNodeExecutions', 'ORCHESTRATION_EXECUTION_LIMIT_INVALID', 'Maximum node executions is invalid.'));
   }
+  if (definition.recoveryPolicyId || definition.recoveryPolicyVersion) {
+    if (
+      !SAFE_OBJECT_ID.test(String(definition.recoveryPolicyId || '')) ||
+      !Number.isInteger(Number(definition.recoveryPolicyVersion)) ||
+      Number(definition.recoveryPolicyVersion) < 1
+    ) {
+      issues.push(issue('recoveryPolicyId', 'ORCHESTRATION_RECOVERY_POLICY_REFERENCE_INVALID', 'Recovery policy ID and version must be declared together.'));
+    }
+  }
+  if (!FAILURE_STRATEGIES.includes(String(definition.failureStrategy || 'fail'))) {
+    issues.push(issue('failureStrategy', 'ORCHESTRATION_RECOVERY_STRATEGY_INVALID', 'Default recovery strategy is invalid.'));
+  }
+  for (const [name, maximum] of [
+    ['maximumRecoveryAttempts', RECOVERY_LIMITS.maximumRecoveryAttempts],
+    ['maximumCompensationAttempts', RECOVERY_LIMITS.maximumCompensationAttempts],
+  ]) {
+    const value = Number(definition[name] ?? 0);
+    if (!Number.isInteger(value) || value < 0 || value > maximum) {
+      issues.push(issue(name, 'ORCHESTRATION_RECOVERY_LIMIT_INVALID', 'Recovery attempt limit is invalid.'));
+    }
+  }
+  for (const name of ['recoveryDeadlineMs', 'compensationDeadlineMs', 'interventionTimeoutMs']) {
+    if (definition[name] == null) continue;
+    const value = Number(definition[name]);
+    const maximum = name === 'interventionTimeoutMs'
+      ? RECOVERY_LIMITS.maximumInterventionMs
+      : RECOVERY_LIMITS.maximumDeadlineMs;
+    if (!Number.isInteger(value) || value < RECOVERY_LIMITS.minimumDeadlineMs || value > maximum) {
+      issues.push(issue(name, 'ORCHESTRATION_RECOVERY_DEADLINE_INVALID', 'Recovery deadline is outside the allowed bounds.'));
+    }
+  }
+  if (
+    definition.compensationEnabled !== true &&
+    nodes.some((node) => node.compensationDefinition)
+  ) {
+    issues.push(issue('compensationEnabled', 'ORCHESTRATION_COMPENSATION_DISABLED', 'Compensation definitions require orchestration compensation to be enabled.'));
+  }
   return {
     valid: issues.length === 0,
     errors: issues,
@@ -425,13 +623,58 @@ function safeDefinitionSnapshot(definitionInput) {
     maxRunDurationMs: Number(definition.maxRunDurationMs),
     maxNodeExecutions: Number(definition.maxNodeExecutions),
     defaultNodeTimeoutMs: Number(definition.defaultNodeTimeoutMs),
-    edges: (definition.edges || []).map((edge) => ({ from: edge.from, to: edge.to })),
+    ...(definition.recoveryPolicyId
+      ? { recoveryPolicyId: String(definition.recoveryPolicyId) }
+      : {}),
+    ...(definition.recoveryPolicyVersion != null
+      ? { recoveryPolicyVersion: Number(definition.recoveryPolicyVersion) }
+      : {}),
+    failureStrategy: definition.failureStrategy || 'fail',
+    compensationEnabled: definition.compensationEnabled === true,
+    compensateOnCancellation: definition.compensateOnCancellation === true,
+    maximumRecoveryAttempts: Number(definition.maximumRecoveryAttempts || 0),
+    maximumCompensationAttempts: Number(definition.maximumCompensationAttempts || 0),
+    ...(definition.recoveryDeadlineMs != null
+      ? { recoveryDeadlineMs: Number(definition.recoveryDeadlineMs) }
+      : {}),
+    ...(definition.compensationDeadlineMs != null
+      ? { compensationDeadlineMs: Number(definition.compensationDeadlineMs) }
+      : {}),
+    ...(definition.interventionTimeoutMs != null
+      ? { interventionTimeoutMs: Number(definition.interventionTimeoutMs) }
+      : {}),
+    edges: (definition.edges || []).map((edge) => ({
+      from: edge.from,
+      to: edge.to,
+      mappingMode: edge.mappingMode || (edge.dataContractId ? 'contract' : 'direct'),
+      ...(edge.dataContractId ? { dataContractId: String(edge.dataContractId) } : {}),
+      ...(edge.dataContractVersion != null
+        ? { dataContractVersion: Number(edge.dataContractVersion) }
+        : {}),
+      ...(edge.sourceNodeKey || edge.from
+        ? { sourceNodeKey: edge.sourceNodeKey || edge.from }
+        : {}),
+      ...(edge.targetNodeKey || edge.to ? { targetNodeKey: edge.targetNodeKey || edge.to } : {}),
+      ...(edge._inputSchemaHash ? { inputSchemaHash: String(edge._inputSchemaHash) } : {}),
+      ...(edge._outputSchemaHash ? { outputSchemaHash: String(edge._outputSchemaHash) } : {}),
+    })),
     nodes: (definition.nodes || []).map((node) => ({
       nodeKey: node.nodeKey,
       displayName: node.displayName,
-      connectionId: String(node.connectionId),
-      passportId: String(node.passportId),
+      targetingMode: node.targetingMode || 'pinned',
+      ...(node.connectionId ? { connectionId: String(node.connectionId) } : {}),
+      ...(node.passportId ? { passportId: String(node.passportId) } : {}),
       passportVersion: String(node.passportVersion || node._passportVersion || ''),
+      ...(node.selectionPolicyId ? { selectionPolicyId: String(node.selectionPolicyId) } : {}),
+      ...(node.selectionDecisionId ? { selectionDecisionId: String(node.selectionDecisionId) } : {}),
+      ...(node.selectionApprovalRequestId ? { selectionApprovalRequestId: String(node.selectionApprovalRequestId) } : {}),
+      ...(node.selectionPolicyVersion != null ? { selectionPolicyVersion: Number(node.selectionPolicyVersion) } : {}),
+      selectionTiming: node.selectionTiming || 'run_creation',
+      selectionConstraints: cloneJson(node.selectionConstraints || {}),
+      preferredPassportIds: (node.preferredPassportIds || []).map(String).sort(),
+      excludedPassportIds: (node.excludedPassportIds || []).map(String).sort(),
+      fallbackCandidateCount: Number(node.fallbackCandidateCount ?? 0),
+      fallbackCandidates: cloneJson(node.fallbackCandidates || []),
       capability: node.capability,
       operation: node.operation,
       inputSchema: cloneJson(node.inputSchema),
@@ -451,6 +694,103 @@ function safeDefinitionSnapshot(definitionInput) {
       policyContext: cloneJson(node.policyContext || {}),
       continueOnFailure: node.continueOnFailure === true,
       dependencies: [...(dependencies.get(node.nodeKey) || [])].sort(),
+      recoverability: node.recoverability || 'retryable',
+      ...(node.failureStrategy ? { failureStrategy: node.failureStrategy } : {}),
+      ...(node.compensationDefinition
+        ? {
+            compensationDefinition: {
+              targetingMode: node.compensationDefinition.targetingMode || 'pinned',
+              ...(node.compensationDefinition.connectionId
+                ? { connectionId: String(node.compensationDefinition.connectionId) }
+                : {}),
+              ...(node.compensationDefinition.passportId
+                ? { passportId: String(node.compensationDefinition.passportId) }
+                : {}),
+              ...(node.compensationDefinition.passportVersion ||
+              node.compensationDefinition._passportVersion
+                ? {
+                    passportVersion: String(
+                      node.compensationDefinition.passportVersion ||
+                        node.compensationDefinition._passportVersion,
+                    ),
+                  }
+                : {}),
+              ...(node.compensationDefinition.selectionPolicyId
+                ? { selectionPolicyId: String(node.compensationDefinition.selectionPolicyId) }
+                : {}),
+              ...(node.compensationDefinition.selectionPolicyVersion != null
+                ? {
+                    selectionPolicyVersion: Number(
+                      node.compensationDefinition.selectionPolicyVersion,
+                    ),
+                  }
+                : {}),
+              ...(node.compensationDefinition.selectionDecisionId
+                ? {
+                    selectionDecisionId: String(
+                      node.compensationDefinition.selectionDecisionId,
+                    ),
+                  }
+                : {}),
+              selectionConstraints: cloneJson(
+                node.compensationDefinition.selectionConstraints || {},
+              ),
+              preferredPassportIds: (
+                node.compensationDefinition.preferredPassportIds || []
+              ).map(String).sort(),
+              excludedPassportIds: (
+                node.compensationDefinition.excludedPassportIds || []
+              ).map(String).sort(),
+              capability: node.compensationDefinition.capability,
+              operation: node.compensationDefinition.operation,
+              inputSchema: cloneJson(node.compensationDefinition.inputSchema),
+              outputSchema: cloneJson(node.compensationDefinition.outputSchema),
+              inputMapping: cloneJson(node.compensationDefinition.inputMapping || {}),
+              timeoutMs: Number(node.compensationDefinition.timeoutMs),
+              retryPolicy: {
+                maxAttempts: Number(
+                  node.compensationDefinition.retryPolicy?.maxAttempts || 1,
+                ),
+                baseDelayMs: Number(
+                  node.compensationDefinition.retryPolicy?.baseDelayMs || 1_000,
+                ),
+                maxDelayMs: Number(
+                  node.compensationDefinition.retryPolicy?.maxDelayMs || 30_000,
+                ),
+              },
+              ...(node.compensationDefinition.dataContractId
+                ? {
+                    dataContractId: String(
+                      node.compensationDefinition.dataContractId,
+                    ),
+                    dataContractVersion: Number(
+                      node.compensationDefinition.dataContractVersion,
+                    ),
+                  }
+                : {}),
+              approvalRequirement: cloneJson(
+                node.compensationDefinition.approvalRequirement || {
+                  required: false,
+                },
+              ),
+              expectedIdempotencyBehavior:
+                node.compensationDefinition.expectedIdempotencyBehavior ||
+                'ghost_bridge_keyed',
+              successCriteria: cloneJson(
+                node.compensationDefinition.successCriteria || {},
+              ),
+              continueAfterCompensationFailure:
+                node.compensationDefinition.continueAfterCompensationFailure === true,
+              parallelSafe: node.compensationDefinition.parallelSafe === true,
+              dependencies: (
+                node.compensationDefinition.dependencies || []
+              ).map(String).sort(),
+            },
+          }
+        : {}),
+      recoveryOverrides: cloneJson(node.recoveryOverrides || {}),
+      interventionRequirement: cloneJson(node.interventionRequirement || {}),
+      checkpointPolicy: cloneJson(node.checkpointPolicy || {}),
     })),
   };
   assertSafePayload(snapshot);

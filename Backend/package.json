@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "dev:worker": "node --watch src/worker.js",
-    "build": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/verifyComplianceGovernance.js && node --check scripts/verifyEnterpriseOperations.js && node --check scripts/verifyOrchestration.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js && node --check scripts/migrateComplianceGovernance.js && node --check scripts/migrateEnterpriseOperations.js && node --check scripts/migrateOrchestration.js",
+    "build": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/verifyComplianceGovernance.js && node --check scripts/verifyEnterpriseOperations.js && node --check scripts/verifyOrchestration.js && node --check scripts/verifyAgentSelection.js && node --check scripts/verifyInterAgentDelegation.js && node --check scripts/verifyOrchestrationRecovery.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js && node --check scripts/migrateComplianceGovernance.js && node --check scripts/migrateEnterpriseOperations.js && node --check scripts/migrateOrchestration.js && node --check scripts/migrateAgentSelection.js && node --check scripts/migrateInterAgentDelegation.js && node --check scripts/migrateOrchestrationRecovery.js",
     "start": "node src/server.js",
     "worker": "node src/worker.js",
     "typecheck": "node --check src/server.js && node --check src/worker.js && node --check src/app.js",
-    "lint": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/verifyComplianceGovernance.js && node --check scripts/verifyEnterpriseOperations.js && node --check scripts/verifyOrchestration.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js && node --check scripts/migrateComplianceGovernance.js && node --check scripts/migrateEnterpriseOperations.js && node --check scripts/migrateOrchestration.js",
+    "lint": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/verifyComplianceGovernance.js && node --check scripts/verifyEnterpriseOperations.js && node --check scripts/verifyOrchestration.js && node --check scripts/verifyAgentSelection.js && node --check scripts/verifyInterAgentDelegation.js && node --check scripts/verifyOrchestrationRecovery.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js && node --check scripts/migrateComplianceGovernance.js && node --check scripts/migrateEnterpriseOperations.js && node --check scripts/migrateOrchestration.js && node --check scripts/migrateAgentSelection.js && node --check scripts/migrateInterAgentDelegation.js && node --check scripts/migrateOrchestrationRecovery.js",
     "test": "node --test",
     "seed:demo": "node scripts/seedDemo.js",
     "verify:demo": "node scripts/verifyDemo.js",
@@ -23,11 +23,17 @@
     "verify:compliance-governance": "node scripts/verifyComplianceGovernance.js",
     "verify:enterprise-operations": "node scripts/verifyEnterpriseOperations.js",
     "verify:orchestration": "node scripts/verifyOrchestration.js",
+    "verify:agent-selection": "node scripts/verifyAgentSelection.js",
+    "verify:inter-agent-delegation": "node scripts/verifyInterAgentDelegation.js",
+    "verify:orchestration-recovery": "node scripts/verifyOrchestrationRecovery.js",
     "migrate:policy-engine": "node scripts/migratePolicyEngine.js",
     "migrate:secret-governance": "node scripts/migrateSecretGovernance.js",
     "migrate:compliance-governance": "node scripts/migrateComplianceGovernance.js",
     "migrate:enterprise-operations": "node scripts/migrateEnterpriseOperations.js",
-    "migrate:orchestration": "node scripts/migrateOrchestration.js"
+    "migrate:orchestration": "node scripts/migrateOrchestration.js",
+    "migrate:agent-selection": "node scripts/migrateAgentSelection.js",
+    "migrate:inter-agent-delegation": "node scripts/migrateInterAgentDelegation.js",
+    "migrate:orchestration-recovery": "node scripts/migrateOrchestrationRecovery.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

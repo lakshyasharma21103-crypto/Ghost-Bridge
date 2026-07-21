@@ -20,6 +20,37 @@ const approvalRequestSchema = new mongoose.Schema(
     orchestrationRunId: { type: String, trim: true, index: true },
     orchestrationNodeRunId: { type: String, trim: true, index: true },
     orchestrationNodeKey: { type: String, trim: true, maxlength: 100 },
+    agentSelectionDecisionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'AgentSelectionDecision',
+      index: true,
+    },
+    interAgentDelegationGrantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InterAgentDelegationGrant',
+      index: true,
+    },
+    interAgentDataContractId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'InterAgentDataContract',
+      index: true,
+    },
+    interAgentDataContractVersion: { type: Number, min: 1 },
+    orchestrationRecoveryDecisionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationRecoveryDecision',
+      index: true,
+    },
+    orchestrationCompensationRunId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationCompensationRun',
+      index: true,
+    },
+    orchestrationInterventionRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationInterventionRequest',
+      index: true,
+    },
     environment: { type: String, trim: true },
     requestFingerprint: { type: String, required: true, trim: true, index: true },
     fingerprintSummary: { type: mongoose.Schema.Types.Mixed, default: {} },

@@ -13,6 +13,16 @@ const STARTER_DEFINITION = JSON.stringify(
   {
     name: 'Agent orchestration',
     description: 'A compact, explicit DAG.',
+    recoveryPolicyId: 'replace-with-active-recovery-policy-id',
+    recoveryPolicyVersion: 1,
+    failureStrategy: 'request_intervention',
+    compensationEnabled: false,
+    compensateOnCancellation: false,
+    maximumRecoveryAttempts: 2,
+    maximumCompensationAttempts: 1,
+    recoveryDeadlineMs: 900000,
+    compensationDeadlineMs: 900000,
+    interventionTimeoutMs: 3600000,
     inputSchema: {
       type: 'object',
       properties: { topic: { type: 'string' } },
@@ -24,6 +34,7 @@ const STARTER_DEFINITION = JSON.stringify(
       {
         nodeKey: 'research',
         displayName: 'Research',
+        targetingMode: 'pinned',
         connectionId: 'replace-with-connection-object-id',
         passportId: 'replace-with-passport-object-id',
         capability: 'research',
@@ -43,6 +54,12 @@ const STARTER_DEFINITION = JSON.stringify(
         inputMapping: { topic: '$run.input.topic' },
         dependencies: [],
         retryPolicy: { maxAttempts: 2, baseDelayMs: 1000, maxDelayMs: 10000 },
+        recoverability: 'retryable',
+        failureStrategy: 'retry',
+        compensationDefinition: null,
+        recoveryOverrides: { maximumRecoveryAttempts: 2 },
+        interventionRequirement: 'on_non_recoverable_failure',
+        checkpointPolicy: 'after_success',
       },
     ],
     edges: [],
@@ -105,7 +122,7 @@ export function Orchestrations() {
       <PageHeader
         eyebrow="Secure multi-agent execution"
         title="Orchestrations"
-        description="Versioned DAG definitions with explicit data mappings, governed approvals, and Runtime Gateway execution."
+        description="Versioned DAG definitions with explicit data mappings, governed approvals, frozen recovery policy versions, and Runtime Gateway execution."
         actions={
           <div className="flex gap-2">
             <Link to="/orchestrations/runs" className="inline-flex min-h-10 items-center gap-2 border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50">
@@ -156,10 +173,10 @@ export function Orchestrations() {
         <Panel>
           <div className="mb-4 flex items-center gap-2">
             <Network className="h-5 w-5 text-cyan-700" />
-            <div><p className="font-semibold text-slate-950">Create definition draft</p><p className="text-xs text-slate-500">Use installed passport and connection ObjectIds.</p></div>
+            <div><p className="font-semibold text-slate-950">Create definition draft</p><p className="text-xs text-slate-500">Choose pinned connection fields or governed selectionPolicyId fields per node.</p></div>
           </div>
           <form onSubmit={create} className="space-y-4">
-            <JsonEditor label="Definition JSON" value={draft} onChange={setDraft} rows={22} hint="Mappings accept run input, declared dependency outputs, safe metadata, and explicit literals only." />
+            <JsonEditor label="Definition JSON" value={draft} onChange={setDraft} rows={30} hint="Mappings accept declared safe sources and literals only; recovery and compensation must be explicit before activation." />
             <PrimaryButton type="submit" className="w-full" disabled={creating || !partnerConfigured}>
               <Plus className="h-4 w-4" /> {creating ? 'Creating...' : 'Create draft'}
             </PrimaryButton>

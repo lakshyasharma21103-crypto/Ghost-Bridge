@@ -69,6 +69,58 @@ const orchestrationRunSchema = new mongoose.Schema(
     nodeExecutionCount: { type: Number, default: 0, min: 0 },
     activeNodeCount: { type: Number, default: 0, min: 0 },
     definitionSnapshot: { type: mongoose.Schema.Types.Mixed, required: true, select: false },
+    recoveryPolicyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationRecoveryPolicy',
+      index: true,
+    },
+    recoveryPolicyVersion: { type: Number, min: 1 },
+    recoveryPolicySnapshot: { type: mongoose.Schema.Types.Mixed, select: false },
+    recoveryPolicySnapshotHash: { type: String, trim: true, maxlength: 128 },
+    recoveryAttempt: { type: Number, default: 0, min: 0 },
+    maximumRecoveryAttempts: { type: Number, default: 0, min: 0, max: 20 },
+    maximumCompensationAttempts: { type: Number, default: 0, min: 0, max: 10 },
+    recoveryDeadlineAt: { type: Date, index: true },
+    compensationDeadlineAt: { type: Date, index: true },
+    interventionDeadlineAt: { type: Date, index: true },
+    currentRecoveryDecisionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationRecoveryDecision',
+      index: true,
+    },
+    compensationPlanId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationCompensationPlan',
+      index: true,
+    },
+    interventionRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'OrchestrationInterventionRequest',
+      index: true,
+    },
+    checkpointSequence: { type: Number, default: 0, min: 0 },
+    unresolvedSideEffects: {
+      type: [
+        new mongoose.Schema(
+          {
+            nodeRunId: { type: mongoose.Schema.Types.ObjectId, ref: 'OrchestrationNodeRun' },
+            nodeKey: { type: String, trim: true, maxlength: 100 },
+            recoverability: { type: String, trim: true, maxlength: 64 },
+            status: { type: String, trim: true, maxlength: 64 },
+            safeReasonCode: { type: String, trim: true, maxlength: 128 },
+            classification: { type: String, trim: true, maxlength: 64 },
+            acceptedRisk: { type: Boolean, default: false },
+          },
+          { _id: false, strict: 'throw' },
+        ),
+      ],
+      default: [],
+    },
+    recoveredAt: { type: Date },
+    terminationRequestedAt: { type: Date },
+    terminatedAt: { type: Date },
+    terminationReasonCode: { type: String, trim: true, maxlength: 128 },
+    recoveryIncidentId: { type: String, trim: true, maxlength: 128, index: true },
   },
   { timestamps: true, strict: 'throw', optimisticConcurrency: true },
 );
@@ -82,6 +134,8 @@ orchestrationRunSchema.index({ definitionId: 1, definitionVersion: 1, createdAt:
 orchestrationRunSchema.index({ status: 1, updatedAt: 1 });
 orchestrationRunSchema.index({ traceId: 1, createdAt: -1 });
 orchestrationRunSchema.index({ requestId: 1, createdAt: -1 });
+orchestrationRunSchema.index({ organizationId: 1, workspaceId: 1, recoveryDeadlineAt: 1, status: 1 });
+orchestrationRunSchema.index({ organizationId: 1, workspaceId: 1, interventionDeadlineAt: 1, status: 1 });
 
 module.exports =
   mongoose.models.OrchestrationRun ||

@@ -872,7 +872,27 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
       capability: capabilityName,
       inputSummary: actor.recoveryParentInvocationId
         ? { recoveryReplay: true }
-        : redactSecrets(input),
+        : actor.compensationContext
+          ? {
+              compensation: true,
+              fields:
+                input && typeof input === 'object' && !Array.isArray(input)
+                  ? Object.keys(input).sort().slice(0, 100)
+                  : [],
+              classification: actor.compensationContext.inputClassification,
+              purposeCode: 'ORCHESTRATION_COMPENSATION',
+            }
+        : actor.delegationContext
+          ? {
+              delegated: true,
+              fields:
+                input && typeof input === 'object' && !Array.isArray(input)
+                  ? Object.keys(input).sort().slice(0, 100)
+                  : [],
+              classification: actor.delegationContext.effectiveDataClassification,
+              purposeCode: actor.delegationContext.purposeCode,
+            }
+          : redactSecrets(input),
       executionPayload: encryptPayload({ input }),
       protectedReplayAvailable: true,
       ...(connection.credentialBindingId
@@ -914,6 +934,46 @@ async function reserveInvocation({ connection, capabilityName, input, actor, obs
               attempt: actor.orchestrationContext.attempt,
               capability: actor.orchestrationContext.capability,
               operation: actor.orchestrationContext.operation,
+            },
+          }
+        : {}),
+      ...(actor.delegationContext
+        ? {
+            delegationContext: {
+              delegationGrantId: actor.delegationContext.delegationGrantId,
+              delegationInvocationId: actor.delegationContext.delegationInvocationId,
+              contractId: actor.delegationContext.contractId,
+              contractVersion: actor.delegationContext.contractVersion,
+              sourcePassportId: actor.delegationContext.sourcePassportId,
+              targetPassportId: actor.delegationContext.targetPassportId,
+              orchestrationRunId: actor.delegationContext.orchestrationRunId,
+              sourceNodeRunId: actor.delegationContext.sourceNodeRunId,
+              targetNodeRunId: actor.delegationContext.targetNodeRunId,
+              delegationDepth: actor.delegationContext.delegationDepth,
+              effectiveDataClassification:
+                actor.delegationContext.effectiveDataClassification,
+              purposeCode: actor.delegationContext.purposeCode,
+              traceId: actor.delegationContext.traceId,
+              parentTraceId: actor.delegationContext.parentTraceId,
+              requestId: actor.delegationContext.requestId,
+            },
+          }
+        : {}),
+      ...(actor.compensationContext
+        ? {
+            compensationContext: {
+              orchestrationRunId: actor.compensationContext.orchestrationRunId,
+              originalNodeRunId: actor.compensationContext.originalNodeRunId,
+              compensationPlanId: actor.compensationContext.compensationPlanId,
+              compensationRunId: actor.compensationContext.compensationRunId,
+              recoveryDecisionId: actor.compensationContext.recoveryDecisionId,
+              compensationStepOrdinal: actor.compensationContext.compensationStepOrdinal,
+              logicalCompensationAttempt: actor.compensationContext.logicalCompensationAttempt,
+              expectedIdempotencyBehavior:
+                actor.compensationContext.expectedIdempotencyBehavior,
+              traceId: actor.compensationContext.traceId,
+              parentTraceId: actor.compensationContext.parentTraceId,
+              requestId: actor.compensationContext.requestId,
             },
           }
         : {}),
@@ -2075,6 +2135,21 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
     await observer.stage('response_validation', async () =>
       validateCapabilityOutput(context.capability, result.output),
     );
+    if (
+      (actor.delegationContext || actor.compensationContext) &&
+      typeof actor.transformValidatedOutput === 'function'
+    ) {
+      result = {
+        ...result,
+        output: await observer.stage(
+          actor.compensationContext
+            ? 'compensation_output_processing'
+            : 'delegation_output_processing',
+          () =>
+          actor.transformValidatedOutput(result.output),
+        ),
+      };
+    }
     responseValidated = true;
     await actor.onDurableProgress?.('response_validated', new Date());
     try {

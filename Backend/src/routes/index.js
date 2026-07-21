@@ -16,6 +16,12 @@ const { approvalRouter } = require('./approvalRoutes');
 const { evidenceRouter } = require('./evidenceRoutes');
 const { enterpriseOperationsRouter } = require('./enterpriseOperationsRoutes');
 const { orchestrationRouter } = require('./orchestrationRoutes');
+const { agentDiscoveryRouter } = require('./agentDiscoveryRoutes');
+const { agentSelectionRouter } = require('./agentSelectionRoutes');
+const {
+  interAgentContractRouter,
+  interAgentDelegationRouter,
+} = require('./interAgentDelegationRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -48,6 +54,10 @@ router.use(`${API_PREFIX}/approvals`, approvalRouter);
 router.use(`${API_PREFIX}/evidence`, evidenceRouter);
 router.use(`${API_PREFIX}/admin/operations`, enterpriseOperationsRouter);
 router.use(`${API_PREFIX}/orchestrations`, orchestrationRouter);
+router.use(`${API_PREFIX}/agent-discovery`, agentDiscoveryRouter);
+router.use(`${API_PREFIX}/agent-selection`, agentSelectionRouter);
+router.use(`${API_PREFIX}/inter-agent-contracts`, interAgentContractRouter);
+router.use(`${API_PREFIX}/inter-agent-delegations`, interAgentDelegationRouter);
 if (env.NODE_ENV === 'development') {
   router.use(`${API_PREFIX}/demo`, demoRouter);
   router.use(`${API_PREFIX}/developer-sandbox`, developerSandboxRouter);

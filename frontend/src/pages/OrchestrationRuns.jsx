@@ -9,15 +9,15 @@ import { StatusBadge } from '../components/StatusBadge.jsx';
 import { formatDate, formatDuration, PageHeader, SecondaryButton } from './pageChrome.jsx';
 
 function tone(status) {
-  if (status === 'succeeded') return 'ready';
-  if (['failed', 'cancelled'].includes(status)) return 'offline';
-  if (status === 'partial_failure') return 'limited';
-  if (status === 'waiting_approval') return 'pending';
+  if (['succeeded', 'recovered', 'compensated'].includes(status)) return 'ready';
+  if (['failed', 'cancelled', 'terminated', 'compensation_failed'].includes(status)) return 'offline';
+  if (['partial_failure', 'terminated_with_accepted_risk', 'non_reversible'].includes(status)) return 'limited';
+  if (['waiting_approval', 'waiting_intervention', 'recovery_pending', 'compensation_pending', 'termination_requested'].includes(status)) return 'pending';
   return 'info';
 }
 
 function progress(run) {
-  const completed = ['succeeded', 'failed', 'cancelled', 'skipped'].reduce(
+  const completed = Number.isInteger(run.progress?.completed) ? run.progress.completed : ['succeeded', 'failed', 'cancelled', 'skipped', 'compensated', 'compensation_failed', 'non_reversible', 'terminated'].reduce(
     (total, status) => total + Number(run.progress?.[status] || 0),
     0,
   );
@@ -42,7 +42,7 @@ export function OrchestrationRuns() {
 
   return (
     <>
-      <PageHeader eyebrow="Durable execution" title="Orchestration runs" description="Tenant-scoped progress, approvals, trace lineage, attempts, and safe failure summaries." actions={<div className="flex gap-2"><Link to="/orchestrations" className="inline-flex min-h-10 items-center border border-slate-300 px-4 py-2 text-sm font-medium">Definitions</Link><SecondaryButton onClick={load} disabled={state.loading || !partnerConfigured}><RefreshCw className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`} /> Refresh</SecondaryButton></div>} />
+      <PageHeader eyebrow="Durable execution" title="Orchestration runs" description="Tenant-scoped progress, recovery, intervention, compensation, approvals, and safe failure summaries." actions={<div className="flex gap-2"><Link to="/orchestrations" className="inline-flex min-h-10 items-center border border-slate-300 px-4 py-2 text-sm font-medium">Definitions</Link><SecondaryButton onClick={load} disabled={state.loading || !partnerConfigured}><RefreshCw className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`} /> Refresh</SecondaryButton></div>} />
       {state.error ? <ErrorAlert error={state.error} title="Could not load orchestration runs" /> : null}
       {state.loading ? <LoadingBlock label="Loading orchestration runs" /> : null}
       {!state.loading && state.items.length ? (

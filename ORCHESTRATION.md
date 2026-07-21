@@ -2,11 +2,13 @@
 
 Phase 13D1 adds tenant-scoped directed acyclic graph (DAG) execution for installed Agent Passports. It extends the existing Runtime Gateway, enterprise RBAC and policy engine, approvals, durable work, operational controls, auditing, compliance evidence, tracing, and invocation cancellation. It does not create a second runtime or credential path.
 
+Phase 13D4 extends that control plane with versioned recovery policies, explicit compensation, durable human intervention, guarded operator decisions, and verified checkpoints. The complete recovery architecture and its non-atomic limits are documented in [ORCHESTRATION_RECOVERY.md](./ORCHESTRATION_RECOVERY.md).
+
 ## Trust and secret boundaries
 
 The control plane stores graph metadata, immutable safe snapshots, run/node state, explicitly resolved node input, and schema-validated output. Node input/output and run input/final output are private MongoDB fields excluded from normal queries and API serializers.
 
-Definitions store only connection and passport identifiers. Immediately before execution, the worker resolves the connection, passport, and capability again under the run tenant. The Runtime Gateway performs credential brokerage; the orchestration worker never decrypts or receives delegated credentials.
+Definitions store only connection and passport identifiers. Immediately before execution, the worker resolves the connection, passport, and capability again under the run tenant. The Runtime Gateway performs credential brokerage; the orchestration worker never decrypts or receives delegated credentials. Contract edges additionally freeze only the data-contract ID/version and input/output schema hashes; their scoped grants are data authority, never credential authority.
 
 Snapshots, mapped payloads, APIs, logs, and evidence exclude:
 
@@ -93,11 +95,13 @@ The scheduler atomically reserves a per-run slot before claiming a node. A claim
 
 Every node calls `runtimeGateway.invoke`. The gateway retains connection resolution, authorization/policy, credential brokerage, rate limits, circuit breakers, runtime health, timeouts, durable invocation work, cancellation, tracing, auditing, and adapters. Agents receive only mapped task input.
 
+Edges explicitly choose `direct` or `contract` mapping. Direct edges retain the Phase 13D1 mapper. A contract edge binds its frozen source and target selection to a Phase 13D3 grant, processes the source's schema-validated output through allowlist extraction, transformations, redaction, minimization, classification/residency checks, and target-schema validation, then invokes through the same gateway. See [INTER_AGENT_DELEGATION.md](./INTER_AGENT_DELEGATION.md).
+
 Each attempt uses `orchestration:<run>:<node>:attempt:<n>` as its gateway idempotency key. Expired orchestration leases requeue with `resumeAttempt=true`, preserving the attempt and key; restart recovery cannot create a second logical invocation.
 
 ## Policy, approvals, retries, and cancellation
 
-Permission Registry v6 adds separate definition read/create/update/validate/activate/archive, run create/read/cancel, and node execute/retry permissions. Central authorization and active policy evaluation run for definition lifecycle operations, run creation, node execution, dependency-output mapping, Runtime Gateway invocation, retries, cancellation, and approval decisions.
+Permission Registry v8 retains the separate definition read/create/update/validate/activate/archive, run create/read/cancel, node execute/retry, and Phase 13D2 agent-selection permissions, and adds distinct contract, grant, preview, and invocation-record permissions. Central authorization and active policy evaluation run for definition lifecycle operations, governed selection, contract/grant lifecycle operations, every delegated invocation, run creation, node execution, dependency-output mapping, Runtime Gateway invocation, retries, cancellation, revocation, and approval decisions.
 
 The operational guard rejects new runs for suspended tenants or applicable maintenance modes. Draining rejects new claims while existing claims follow the safe execution boundary. Suspension marks ready/retry nodes as operationally blocked; controlled resume releases only those nodes.
 
@@ -108,6 +112,18 @@ Retry classification reuses the platform utility plus a fail-closed deny list fo
 Required-node failure fails the run and cancels pending nodes. `continueOnFailure` permits independent branches to finish; dependents that need the failed output are skipped and the run becomes `partial_failure`.
 
 `POST /api/v1/orchestrations/runs/:runId/cancel` atomically records `cancel_requested`, cancels unclaimed nodes, and calls the existing invocation cancellation service for linked running invocations. Repeated requests are idempotent and cancellation survives restart.
+
+## Recovery, compensation, and intervention
+
+Phase 13D4 freezes a tenant-scoped active recovery-policy version into each new run and extends the run/node state machines with guarded recovery, intervention, compensation, and termination states. Separate immutable decisions, deterministic compensation plans, leased compensation runs, durable intervention requests, and hash-bound checkpoints preserve the original execution history instead of rewriting it.
+
+Retry, cancellation, and compensation have distinct semantics. Retry is allowed only for bounded failures whose replay is proven safe. Cancellation stops future work and requests cooperative cancellation but does not prove that transmitted external work stopped. Compensation invokes an explicit predeclared corrective capability through the Runtime Gateway. It is not a transaction or atomic rollback, and a node without a valid frozen compensation definition is non-compensatable. Completed non-reversible work and compensation failures remain visible as unresolved or accepted risk.
+
+Compensation planning uses reverse topological order so completed dependent children are handled before parents; independent branches use reverse completion order with a stable tie break. Parallel steps require independent branches, a frozen parallel-safety declaration, policy permission, and the configured bound. Deterministic plan/step identities, unique indexes, atomic claims, leases, and Runtime Gateway idempotency prevent a completed logical compensation from executing twice.
+
+Automatic recovery never silently replaces an agent, contract, policy, or input. Operator retry, skip, input correction, governed agent replacement, compensation, waiver, checkpoint resume, and termination each require current RBAC, policy, recovery-policy, approval, expiry, tenant, and transition checks. Phase 13D2 selection preserves the original selected-agent history during replacement, and Phase 13D3 extraction, redaction, minimization, classification, residency, schemas, grants, and retention govern correction and compensation data.
+
+When an external outcome cannot be proven, non-idempotent work is not replayed. The durable invocation and provider idempotency/status evidence are inspected first; otherwise the run enters intervention with its request, trace, and invocation lineage. Checkpoint resume similarly revalidates current access and policy and does not rerun completed logical work or restore revoked access. Recovery deadlines, intervention expiry, incident linkage, safe audit/evidence, operational guards, and bounded metrics all survive process restart. See [ORCHESTRATION_RECOVERY.md](./ORCHESTRATION_RECOVERY.md) for the full lifecycles, action rules, trust boundaries, and known Phase 13D5+ limits.
 
 ## Operations, APIs, and console
 
@@ -122,9 +138,9 @@ The shared worker process starts both durable Runtime Gateway work and orchestra
 
 Enterprise drain status includes orchestration active, queued, approval-waiting, and expired-lease counts. Active runs block tenant deletion, and all three collections participate in scoped deletion steps. Audit events automatically enter normalized compliance evidence. Metrics use bounded labels and omit IDs.
 
-All endpoints are under `/api/v1/orchestrations`, require Partner authentication, scope every query by organization/workspace, and use bounded pagination, stable sorting, escaped search, and status filters. Serializers omit raw inputs/outputs, snapshots, idempotency hashes, leases, credentials, tokens, and raw invocation responses.
+Definition, run, node, compensation, and checkpoint endpoints are under `/api/v1/orchestrations`; recovery policies use `/api/v1/orchestration-recovery`, and intervention requests use `/api/v1/orchestration-interventions`. They require Partner authentication, scope every query by organization/workspace, and use bounded validation, pagination, stable sorting, escaped search, state guards, and idempotency for mutations. Serializers omit raw inputs/outputs, snapshots, idempotency hashes, leases, credentials, tokens, delegation references, and raw invocation responses.
 
-The existing compact console adds definition list/editor/validation, run list, and run detail pages. The run detail displays only safe input summary, progress, trace lineage, attempts, approval state, safe failures, timestamps, and authorized cancellation.
+The existing compact console adds definition list/editor/validation, run list, Recovery Policies, Interventions, and run recovery detail pages. Run detail displays only safe summaries, progress, trace lineage, attempts, approval/intervention state, compensation counts, unresolved-side-effect references, checkpoints, timestamps, and server-advertised authorized actions.
 
 Run the deterministic non-billed gate:
 
@@ -134,9 +150,17 @@ npm run verify:orchestration
 
 It prepares two in-memory mock passports and delegated-connection references, validates/snapshots a two-node DAG, invokes both nodes through a deterministic Runtime Gateway boundary, verifies output minimization, trace lineage, final output, audits, secret exclusion, replay, cancellation, and cleanup. It performs no provider or database mutation.
 
-## Deferred beyond Phase 13D1
+The additional deterministic non-billed Phase 13D4 gate is:
 
-- compensation and saga transactions;
+```powershell
+npm run verify:orchestration-recovery
+```
+
+Use `npm run migrate:orchestration-recovery` to create the recovery-policy, decision, plan, compensation-run, intervention, checkpoint, and recovery scheduling indexes/backfills idempotently.
+
+## Deferred beyond Phase 13D4
+
+- atomic external rollback, distributed transaction semantics, and inferred compensating actions;
 - graphical graph editing;
 - cross-organization execution;
 - streaming node channels, loops, and dynamic graph mutation;

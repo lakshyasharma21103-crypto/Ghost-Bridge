@@ -5,6 +5,9 @@ Phase 13C3 secret inventory, encryption-key versioning, bindings, leases, rotati
 Phase 13C4 approval workflows, separation of duties, normalized evidence, tamper-evident chains, retention, legal holds, and evidence packages are documented in [COMPLIANCE_GOVERNANCE.md](./COMPLIANCE_GOVERNANCE.md).
 Phase 13C5 organization and workspace lifecycle, maintenance, enterprise identity administration, access reviews, configuration, incidents, tenant export/deletion, recovery, and DR status are documented in [ENTERPRISE_OPERATIONS.md](./ENTERPRISE_OPERATIONS.md).
 Phase 13D1 tenant-scoped DAG definitions, secure data mapping, durable multi-agent scheduling, approval resumption, cancellation, and restart recovery are documented in [ORCHESTRATION.md](./ORCHESTRATION.md).
+Phase 13D2 tenant-safe installed-agent discovery, conservative schema compatibility, versioned selection policy, deterministic scoring, immutable decisions, and governed orchestration targeting are documented in [AGENT_SELECTION.md](./AGENT_SELECTION.md).
+Phase 13D3 versioned data contracts, scoped delegation grants, safe extraction/transformation/redaction/minimization, atomic invocation accounting, and Runtime Gateway execution are documented in [INTER_AGENT_DELEGATION.md](./INTER_AGENT_DELEGATION.md).
+Phase 13D4 durable recovery policies, explicit compensation, human intervention, governed replacement/correction, uncertain-outcome containment, and verified checkpoint resume are documented in [ORCHESTRATION_RECOVERY.md](./ORCHESTRATION_RECOVERY.md).
 
 One key to discover, connect, and invoke any compatible AI agent.
 
@@ -68,3 +71,15 @@ intended.
 
 `npm run verify:orchestration` runs the deterministic non-billed two-agent scenario. Use
 `npm run migrate:orchestration` to create the restart-safe orchestration indexes.
+
+## Agent-selection verification
+
+`npm run verify:agent-selection` runs the deterministic non-billed three-agent selection and governed-snapshot scenario. Use `npm run migrate:agent-selection` for restart-safe catalog, policy, decision, approval, and orchestration indexes/backfills.
+
+## Inter-agent delegation verification
+
+`npm run verify:inter-agent-delegation` runs the deterministic non-billed contract-delegation scenario with two local mock agents. Use `npm run migrate:inter-agent-delegation` to add delegation indexes and safely backfill legacy orchestration edges to direct mapping.
+
+## Orchestration-recovery verification
+
+`npm run verify:orchestration-recovery` runs the deterministic non-billed retry, intervention, compensation, governed-replacement, non-reversible-effect, and checkpoint-resume scenario with local mock agents. Use `npm run migrate:orchestration-recovery` for restart-safe recovery-policy, decision, plan, compensation-run, intervention, checkpoint, and orchestration state indexes/backfills. Compensation is an explicit corrective invocation through the Runtime Gateway, not an atomic rollback of an external action.

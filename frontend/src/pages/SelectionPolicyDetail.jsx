@@ -1,0 +1,24 @@
+import { Archive, CheckCircle2, Save, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { apiClient } from '../api/apiClient.js';
+import { useAppState } from '../app/AppState.jsx';
+import { ErrorAlert, LoadingBlock } from '../components/Feedback.jsx';
+import { JsonEditor } from '../components/JsonEditor.jsx';
+import { StatusBadge } from '../components/StatusBadge.jsx';
+import { PageHeader, Panel, PrimaryButton, SecondaryButton } from './pageChrome.jsx';
+
+const editableKeys = ['name', 'description', 'capabilityRequirements', 'allowedCapabilityCategories', 'allowedPassportIds', 'deniedPassportIds', 'allowedPublishers', 'deniedPublishers', 'minimumTrustTier', 'requiredVerificationStatuses', 'allowedRegions', 'requiredResidencyRegions', 'allowedDataClassifications', 'maximumCostClass', 'maximumLatencyClass', 'requireHealthy', 'requireReady', 'allowOpenCircuit', 'allowRateLimitedCandidate', 'allowUncertainSchemaCompatibility', 'requireApprovalWhen', 'scoreWeights', 'fallbackCandidateCount', 'fallbackCandidatesPermitted', 'userPreferenceOverridesPermitted', 'tieBreaker'];
+
+export function SelectionPolicyDetail() {
+  const { policyId } = useParams(); const navigate = useNavigate();
+  const { identity, partnerConfigured, recordEvent } = useAppState();
+  const [state, setState] = useState({ loading: true, error: null, item: null }); const [editor, setEditor] = useState('{}'); const [validation, setValidation] = useState(null); const [busy, setBusy] = useState('');
+  const query = useMemo(() => new URLSearchParams({ workspaceId: identity.receivingWorkspaceId }), [identity.receivingWorkspaceId]);
+  const load = useCallback(() => { if (!partnerConfigured) return; apiClient.get(`/agent-selection/policies/${policyId}?${query}`).then((item) => { setState({ loading: false, error: null, item }); setEditor(JSON.stringify(Object.fromEntries(editableKeys.map((key) => [key, item[key]])), null, 2)); }).catch((error) => setState({ loading: false, error, item: null })); }, [partnerConfigured, policyId, query]);
+  useEffect(() => load(), [load]);
+  async function action(name) { setBusy(name); try { const result = await apiClient.post(`/agent-selection/policies/${policyId}/${name}`, { workspaceId: identity.receivingWorkspaceId }); if (name === 'validate') setValidation(result); else { recordEvent(`Selection policy ${name}`, state.item.name, 'success'); load(); } } catch (error) { setState((current) => ({ ...current, error })); } finally { setBusy(''); } }
+  async function save() { setBusy('save'); try { const item = await apiClient.patch(`/agent-selection/policies/${policyId}`, { ...JSON.parse(editor), workspaceId: identity.receivingWorkspaceId }); recordEvent('Selection policy saved', `${item.name} v${item.version}`, 'success'); if (item.policyId !== policyId) navigate(`/selection-policies/${item.policyId}`); else load(); } catch (error) { setState((current) => ({ ...current, error })); } finally { setBusy(''); } }
+  if (state.loading) return <LoadingBlock label="Loading selection policy" />; const item = state.item;
+  return <><PageHeader eyebrow="Agent selection policy" title={item?.name || 'Policy unavailable'} description={item ? `Version ${item.version} · deterministic tie breaker ${item.tieBreaker}` : ''} actions={<Link to="/selection-policies" className="text-sm font-medium text-cyan-800">Back to policies</Link>} />{state.error ? <ErrorAlert error={state.error} title="Policy action failed" /> : null}{item ? <div className="space-y-6"><Panel><div className="flex flex-wrap items-center justify-between gap-4"><StatusBadge tone={item.status === 'active' ? 'ready' : 'pending'}>{item.status}</StatusBadge><div className="flex gap-2"><SecondaryButton onClick={() => action('validate')} disabled={Boolean(busy)}><ShieldCheck className="h-4 w-4" /> Validate</SecondaryButton>{item.status === 'draft' ? <PrimaryButton onClick={() => action('activate')} disabled={Boolean(busy)}><CheckCircle2 className="h-4 w-4" /> Activate</PrimaryButton> : null}{item.status !== 'archived' ? <SecondaryButton onClick={() => action('archive')} disabled={Boolean(busy)}><Archive className="h-4 w-4" /> Archive</SecondaryButton> : null}</div></div>{validation ? <pre className="mt-4 overflow-auto bg-slate-50 p-3 text-xs">{JSON.stringify(validation, null, 2)}</pre> : null}</Panel><Panel><div className="mb-4 flex justify-between"><div><h2 className="font-semibold">Bounded policy editor</h2><p className="text-xs text-slate-500">Saving an active version creates a new draft.</p></div><SecondaryButton onClick={save} disabled={Boolean(busy) || item.status === 'archived'}><Save className="h-4 w-4" /> Save</SecondaryButton></div><JsonEditor label="Policy JSON" value={editor} onChange={setEditor} rows={30} /></Panel></div> : null}</>;
+}

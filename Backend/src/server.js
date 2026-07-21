@@ -9,6 +9,10 @@ const { markActiveInvocationRecovery } = require('./services/invocationLifecycle
 const { createAuditLog } = require('./services/auditService');
 const { ensureDurableIndexes } = require('./services/durableWork.service');
 const { ensureOrchestrationIndexes } = require('./services/orchestration.service');
+const { ensureAgentSelectionIndexes } = require('./services/agentSelection.service');
+const {
+  ensureInterAgentDelegationIndexes,
+} = require('./services/interAgentDelegation.service');
 
 async function start(options = {}) {
   const activeLogger = options.logger || logger;
@@ -147,6 +151,8 @@ async function start(options = {}) {
     if (currentDatabaseStatus() === 'connected') {
       await ensureIndexes();
       await ensureOrchestrationIndexes();
+      await ensureAgentSelectionIndexes();
+      await ensureInterAgentDelegationIndexes();
       lifecycle.markReady();
       if (!options.connectDatabase) {
         const { resumePendingEvidenceExports } = require('./services/evidence.service');

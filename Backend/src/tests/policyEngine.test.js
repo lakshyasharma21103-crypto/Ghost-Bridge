@@ -333,9 +333,9 @@ test('attribute registry exposes metadata but not resolver functions', () => {
   );
 });
 
-test('permission registry v6 exposes granular governance and orchestration permissions with role mappings', () => {
+test('permission registry v9 exposes granular governance and orchestration permissions with role mappings', () => {
   const registry = getPermissionRegistry();
-  assert.equal(registry.version, 6);
+  assert.equal(registry.version, 9);
   for (const id of [
     'policy.create',
     'policy.update',
@@ -354,11 +354,44 @@ test('permission registry v6 exposes granular governance and orchestration permi
     'access-review.remediate',
     'tenant-deletion.execute',
     'orchestration.node.execute',
+    'orchestration.node.retry',
+    'orchestrationRecoveryPolicy.read',
+    'orchestrationRecoveryPolicy.create',
+    'orchestrationRecoveryPolicy.update',
+    'orchestrationRecoveryPolicy.validate',
+    'orchestrationRecoveryPolicy.activate',
+    'orchestrationRecoveryPolicy.archive',
+    'orchestrationRecovery.read',
+    'orchestrationRecovery.plan',
+    'orchestrationRecovery.resume',
+    'orchestrationRecovery.terminate',
+    'orchestrationNode.retry',
+    'orchestrationNode.skip',
+    'orchestrationNode.correctInput',
+    'orchestrationNode.replaceAgent',
+    'orchestrationNode.compensate',
+    'orchestrationNode.waiveCompensation',
+    'orchestrationCompensation.read',
+    'orchestrationIntervention.read',
+    'orchestrationIntervention.resolve',
+    'orchestrationCheckpoint.read',
+    'orchestrationCheckpoint.create',
+    'orchestrationCheckpoint.resume',
   ]) {
     assert.equal(
       registry.permissions.some((permission) => permission.id === id),
       true,
     );
+  }
+  for (const id of [
+    'orchestrationRecovery.terminate',
+    'orchestrationNode.correctInput',
+    'orchestrationNode.replaceAgent',
+    'orchestrationNode.waiveCompensation',
+  ]) {
+    const permission = registry.permissions.find((item) => item.id === id);
+    assert.equal(permission.defaultRoles.includes('operator'), false);
+    assert.equal(permission.defaultRoles.includes('developer'), false);
   }
 });
 

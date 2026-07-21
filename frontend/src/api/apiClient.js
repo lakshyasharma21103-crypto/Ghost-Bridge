@@ -127,6 +127,12 @@ export async function apiRequest(path, options = {}) {
     path.startsWith('/evidence') ||
     path.startsWith('/admin/operations') ||
     path.startsWith('/orchestrations') ||
+    path.startsWith('/agent-discovery') ||
+    path.startsWith('/agent-selection') ||
+    path.startsWith('/inter-agent-contracts') ||
+    path.startsWith('/inter-agent-delegations') ||
+    path.startsWith('/orchestration-recovery') ||
+    path.startsWith('/orchestration-interventions') ||
     isPhase13B3Control(path, options.method);
   if (requiresPartnerAuthentication && !headers.has('X-Partner-Api-Key')) {
     if (!partnerApiKey) {

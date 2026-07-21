@@ -244,11 +244,23 @@ test('node transition table accepts the complete happy path', () => {
   assert.equal(assertNodeTransition('running', 'succeeded'), true);
 });
 
-test('node terminal states reject every further transition', () => {
-  for (const state of ['succeeded', 'failed', 'cancelled', 'skipped']) {
+test('irrecoverable node terminal states reject every further transition', () => {
+  for (const state of ['cancelled', 'skipped', 'compensated', 'terminated']) {
     assert.deepEqual(NODE_TRANSITIONS[state], []);
     assert.throws(() => assertNodeTransition(state, 'ready'), { code: 'ORCHESTRATION_NODE_TRANSITION_INVALID' });
   }
+});
+
+test('D4 succeeded and failed nodes expose explicit recovery transitions', () => {
+  assert.equal(assertNodeTransition('succeeded', 'compensation_pending'), true);
+  assert.equal(assertNodeTransition('succeeded', 'non_reversible'), true);
+  assert.equal(assertNodeTransition('failed', 'recovery_pending'), true);
+  assert.equal(assertNodeTransition('failed', 'waiting_intervention'), true);
+  assert.equal(assertNodeTransition('failed', 'compensation_pending'), true);
+  assert.equal(assertNodeTransition('failed', 'retry_wait'), true);
+  assert.throws(() => assertNodeTransition('succeeded', 'ready'), {
+    code: 'ORCHESTRATION_NODE_TRANSITION_INVALID',
+  });
 });
 
 test('approval pause and resume transitions are explicit', () => {

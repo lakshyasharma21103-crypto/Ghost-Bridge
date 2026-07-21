@@ -103,10 +103,54 @@ const SAFE_METADATA_KEYS = new Set([
   'nodeCount',
   'attempt',
   'approvalRequestId',
+  'capabilityKey',
+  'operationKey',
+  'candidateCount',
+  'eligibleCandidateCount',
+  'selectedPassportId',
+  'selectedConnectionId',
+  'score',
+  'policyVersion',
+  'trustTier',
+  'contractId',
+  'contractVersion',
+  'grantId',
+  'delegationGrantId',
+  'delegationInvocationId',
+  'purposeCode',
+  'capability',
+  'operation',
+  'delegationDepth',
+  'delegatedFieldCount',
+  'removedFieldCount',
+  'redactedFieldCount',
+  'transformedFieldCount',
+  'sizeCategory',
+  'errorCodes',
 ]);
 
 const CONTROL_CATALOG = Object.freeze(
   [
+    [
+      'DGN-001',
+      'Scoped inter-agent data-contract delegation',
+      'Inter-Agent Delegation',
+      'IMPLEMENTED',
+      ['inter_agent.contract.activated', 'inter_agent.invocation.succeeded', 'inter_agent.grant.revoked'],
+      'inter-agent-delegation',
+      ['Backend/src/tests/interAgentDelegation.test.js'],
+      'Delegation is tenant/workspace scoped, non-transitive by default, and carries data authority rather than credentials.',
+    ],
+    [
+      'AGS-001',
+      'Governed deterministic agent selection',
+      'Agent Selection',
+      'IMPLEMENTED',
+      ['agent.selection.evaluated', 'agent.selection.completed'],
+      'agent-selection',
+      ['Backend/src/tests/agentSelection.test.js'],
+      'Compatibility is conservative for the documented JSON Schema subset; unsupported features produce uncertain results.',
+    ],
     [
       'AUTH-001',
       'Default-deny authorization',
@@ -343,6 +387,7 @@ function retentionClassFor(action = '') {
   )
     return 'COMPLIANCE';
   if (action === 'authorization.decision' || action.startsWith('policy.')) return 'SECURITY';
+  if (action.startsWith('inter_agent.')) return 'SECURITY';
   return 'OPERATIONAL';
 }
 
@@ -352,6 +397,8 @@ function sourceSubsystemFor(action = '') {
   if (action.startsWith('policy.') || action === 'authorization.decision')
     return 'authorization-policy';
   if (action.startsWith('invocation.') || action.startsWith('work.')) return 'runtime';
+  if (action.startsWith('agent.discovery.') || action.startsWith('agent.selection.') || action.startsWith('agent.trust.') || action.startsWith('agent.verification.')) return 'agent-selection';
+  if (action.startsWith('inter_agent.')) return 'inter-agent-delegation';
   if (action.startsWith('orchestration.')) return 'orchestration-control-plane';
   if (action.startsWith('evidence.') || action.startsWith('audit.')) return 'evidence';
   return 'control-plane';

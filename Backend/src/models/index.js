@@ -53,6 +53,20 @@ const DisasterRecoveryStatus = require('./DisasterRecoveryStatus');
 const OrchestrationDefinition = require('./OrchestrationDefinition');
 const OrchestrationRun = require('./OrchestrationRun');
 const OrchestrationNodeRun = require('./OrchestrationNodeRun');
+const CapabilityCatalogEntry = require('./CapabilityCatalogEntry');
+const AgentSelectionPolicy = require('./AgentSelectionPolicy');
+const AgentSelectionDecision = require('./AgentSelectionDecision');
+const InterAgentDataContract = require('./InterAgentDataContract');
+const InterAgentDelegationGrant = require('./InterAgentDelegationGrant');
+const InterAgentDelegationInvocation = require('./InterAgentDelegationInvocation');
+const InterAgentDelegationReference = require('./InterAgentDelegationReference');
+const OrchestrationRecoveryPolicy = require('./OrchestrationRecoveryPolicy');
+const OrchestrationRecoveryDecision = require('./OrchestrationRecoveryDecision');
+const OrchestrationCompensationPlan = require('./OrchestrationCompensationPlan');
+const OrchestrationCompensationRun = require('./OrchestrationCompensationRun');
+const OrchestrationInterventionRequest = require('./OrchestrationInterventionRequest');
+const OrchestrationCheckpoint = require('./OrchestrationCheckpoint');
+const OrchestrationCorrectedInput = require('./OrchestrationCorrectedInput');
 
 module.exports = {
   Partner,
@@ -110,4 +124,18 @@ module.exports = {
   OrchestrationDefinition,
   OrchestrationRun,
   OrchestrationNodeRun,
+  CapabilityCatalogEntry,
+  AgentSelectionPolicy,
+  AgentSelectionDecision,
+  InterAgentDataContract,
+  InterAgentDelegationGrant,
+  InterAgentDelegationInvocation,
+  InterAgentDelegationReference,
+  OrchestrationRecoveryPolicy,
+  OrchestrationRecoveryDecision,
+  OrchestrationCompensationPlan,
+  OrchestrationCompensationRun,
+  OrchestrationInterventionRequest,
+  OrchestrationCheckpoint,
+  OrchestrationCorrectedInput,
 };
