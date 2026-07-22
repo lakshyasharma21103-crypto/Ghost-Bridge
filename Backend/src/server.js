@@ -13,6 +13,8 @@ const { ensureAgentSelectionIndexes } = require('./services/agentSelection.servi
 const {
   ensureInterAgentDelegationIndexes,
 } = require('./services/interAgentDelegation.service');
+const { ensureProductionScaleIndexes } = require('./services/productionScaleOperations.service');
+const dataAccessPerformance = require('./services/dataAccessPerformance.service');
 
 async function start(options = {}) {
   const activeLogger = options.logger || logger;
@@ -107,6 +109,7 @@ async function start(options = {}) {
         server.closeAllConnections?.();
         await serverClosed;
       }
+      if (!options.connectDatabase) await dataAccessPerformance.closeCache();
       await disconnect();
       lifecycle.markStopped();
       activeLogger.info(
@@ -153,6 +156,9 @@ async function start(options = {}) {
       await ensureOrchestrationIndexes();
       await ensureAgentSelectionIndexes();
       await ensureInterAgentDelegationIndexes();
+      await ensureProductionScaleIndexes();
+      dataAccessPerformance.timeoutHierarchy();
+      await dataAccessPerformance.recordIndexDriftSnapshot();
       lifecycle.markReady();
       if (!options.connectDatabase) {
         const { resumePendingEvidenceExports } = require('./services/evidence.service');

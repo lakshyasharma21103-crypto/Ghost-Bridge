@@ -29,6 +29,10 @@ import {
   LifeBuoy,
   UserCheck,
   Workflow,
+  Layers3,
+  ServerCog,
+  TrafficCone,
+  ArchiveX,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -38,6 +42,15 @@ import { useAppState } from '../app/AppState.jsx';
 const primaryItems = [
   { label: 'Overview', path: '/', icon: Home, end: true },
   { label: 'Operations', path: '/operations', icon: Gauge },
+  { label: 'Scale & Capacity', path: '/operations/scale-capacity', icon: BarChart3 },
+  { label: 'Queue Partitions', path: '/operations/queue-partitions', icon: Layers3 },
+  { label: 'Worker Pools', path: '/operations/worker-pools', icon: ServerCog },
+  { label: 'Admission & Quotas', path: '/operations/admission-quotas', icon: TrafficCone },
+  { label: 'Dead Letter', path: '/operations/dead-letter', icon: ArchiveX },
+  { label: 'Database & Cache', path: '/operations/database-cache', icon: ServerCog },
+  { label: 'Query Performance', path: '/operations/query-performance', icon: BarChart3 },
+  { label: 'Indexes', path: '/operations/database-indexes', icon: Layers3 },
+  { label: 'Projections', path: '/operations/data-projections', icon: Workflow },
   { label: 'Policies', path: '/policies', icon: ShieldEllipsis },
   { label: 'Secrets', path: '/secrets', icon: LockKeyhole },
   { label: 'Compliance', path: '/compliance', icon: Scale },

@@ -26,6 +26,7 @@ const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { retryPolicyDecision } = require('../utils/retryPolicy');
 const { logger } = require('../utils/logger');
+const { defaultScaleConfiguration, routeWorkload } = require('./productionScale.service');
 const {
   canTransition,
   legacyStatusForState,
@@ -67,6 +68,10 @@ const ENQUEUE_KEYS = new Set([
   'retryCount',
   'retryDecisionReason',
   'recoveryReasonCode',
+  'workloadCategory',
+  'routingVersion',
+  'admissionClass',
+  'priorityClass',
 ]);
 const FINALIZE_KEYS = new Set([
   'status',
@@ -703,6 +708,15 @@ function serializeWorkItem(value) {
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
     traceId: item.traceId,
+    workloadCategory: item.workloadCategory,
+    routingVersion: item.routingVersion,
+    partitionNumber: item.partitionNumber,
+    partitionKey: item.partitionKey,
+    admissionClass: item.admissionClass,
+    priorityClass: item.priorityClass,
+    workerPool: item.workerPool,
+    leaseEpoch: item.leaseEpoch,
+    partitionOwnershipEpoch: item.partitionOwnershipEpoch,
     version: item.version,
   };
 }
@@ -777,6 +791,25 @@ function enqueueDocument(input, now) {
     ...(retryDecisionReason ? { retryDecisionReason } : {}),
     ...(recoveryReasonCode ? { recoveryReasonCode } : {}),
   };
+  const route = routeWorkload(
+    {
+      organizationId: String(identity.organizationId || identity.partnerId),
+      workspaceId: identity.receivingWorkspaceId,
+      routingKey: String(input.invocationId),
+      workloadCategory: input.workloadCategory || 'orchestration_node',
+      routingVersion: input.routingVersion || 1,
+    },
+    defaultScaleConfiguration(),
+  );
+  Object.assign(document, {
+    workloadCategory: route.workloadCategory,
+    routingVersion: route.routingVersion,
+    partitionNumber: route.partitionNumber,
+    partitionKey: route.partitionKey,
+    workerPool: route.workerPool,
+    admissionClass: input.admissionClass || 'standard',
+    priorityClass: input.priorityClass || 'standard',
+  });
   if (document.attemptNumber > maximumAttempts) {
     throw validationError('attemptNumber', 'attemptNumber cannot exceed maximumAttempts.');
   }
@@ -803,12 +836,13 @@ async function enqueueWork(input, options = {}) {
       maximum: 3_600_000,
     });
     const leaseToken = rawLeaseToken();
-    initialOwnership = { leaseOwner, leaseToken };
+    initialOwnership = { leaseOwner, leaseToken, leaseEpoch: 1 };
     document = {
       ...document,
       status: 'claimed',
       leaseOwner,
       leaseTokenHash: leaseTokenHash(leaseToken),
+      leaseEpoch: 1,
       leaseAcquiredAt: now,
       leaseExpiresAt: new Date(now.getTime() + leaseMs),
       lastHeartbeatAt: now,
@@ -868,13 +902,15 @@ function rawLeaseToken() {
 }
 
 function ownershipFilter(workItemId, ownership, now, statuses = OWNED_DURABLE_WORK_STATUSES) {
-  return {
+  const filter = {
     _id: objectId(workItemId, 'workItemId'),
     status: { $in: statuses },
     leaseOwner: safeIdentifier(ownership?.leaseOwner, 'leaseOwner'),
     leaseTokenHash: leaseTokenHash(ownership?.leaseToken),
     leaseExpiresAt: { $gt: now },
   };
+  if (ownership?.leaseEpoch !== undefined) filter.leaseEpoch = Number(ownership.leaseEpoch);
+  return filter;
 }
 
 function leaseLost(workItemId) {
@@ -1352,7 +1388,7 @@ async function claimNextWork(input, options = {}) {
           claimedAt: now,
           safeStage: 'work_claimed',
         },
-        $inc: { version: 1 },
+        $inc: { version: 1, leaseEpoch: 1 },
       },
       {
         new: true,
@@ -1362,7 +1398,7 @@ async function claimNextWork(input, options = {}) {
       },
     );
     if (!item) return null;
-    const ownership = { leaseOwner, leaseToken };
+    const ownership = { leaseOwner, leaseToken, leaseEpoch: item.leaseEpoch };
     item = await ensureClaimMilestone(item, ownership, now, options);
     const decision = verifyInvocation
       ? await (options.invocationPermitsClaim || invocationPermitsClaim)(plain(item))
@@ -1414,12 +1450,12 @@ async function claimWorkById(workItemId, input, options = {}) {
         claimedAt: now,
         safeStage: 'work_claimed',
       },
-      $inc: { version: 1 },
+      $inc: { version: 1, leaseEpoch: 1 },
     },
     { new: true, runValidators: true, ...sessionOption(options) },
   );
   if (!item) return null;
-  const ownership = { leaseOwner, leaseToken };
+  const ownership = { leaseOwner, leaseToken, leaseEpoch: item.leaseEpoch };
   item = await ensureClaimMilestone(item, ownership, now, options);
   const decision =
     options.verifyInvocation === false

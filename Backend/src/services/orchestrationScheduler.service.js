@@ -48,6 +48,18 @@ const {
 } = require('./orchestrationValidation.service');
 const { safeClone: safeDelegationClone } = require('./interAgentData.service');
 const { decryptCorrectedInput } = require('./orchestrationRecoveryValidation.service');
+const {
+  assertPartitionFence,
+  claimPartition,
+  fairSchedule,
+  heartbeatWorker,
+  registerWorker,
+  releaseQuotaReservation,
+} = require('./productionScale.service');
+const {
+  createDeadLetter,
+  ensureProductionScaleIndexes,
+} = require('./productionScaleOperations.service');
 
 const NON_RETRYABLE_ORCHESTRATION_CODES = new Set([
   ErrorCodes.AUTHENTICATION_REQUIRED,
@@ -162,12 +174,20 @@ function schedulerDependencies(overrides = {}) {
     assertWorkersNotDraining,
     createAuditLog,
     ensureOrchestrationIndexes,
+    ensureProductionScaleIndexes,
     reconcileSelectionApprovals,
     closeRunGrants,
     executeDelegatedInvocation,
     connectDatabase,
     disconnectDatabase,
     databaseStatus,
+    assertPartitionFence,
+    claimPartition,
+    fairSchedule,
+    heartbeatWorker,
+    registerWorker,
+    releaseQuotaReservation,
+    createDeadLetter,
     logger,
     random: Math.random,
     ...overrides,
@@ -188,10 +208,14 @@ async function privateRun(Model, runId) {
 
 async function transitionNode(node, toState, update = {}, dependencies = {}) {
   const Model = dependencies.OrchestrationNodeRun || OrchestrationNodeRun;
+  if (node.leaseOwner && node.partitionKey) {
+    await (dependencies.assertPartitionFence || assertPartitionFence)(node, { dependencies });
+  }
   assertNodeTransition(node.status, toState);
   const filter = { _id: node._id, status: node.status };
   if (node.leaseOwner) filter.leaseOwner = node.leaseOwner;
   if (node.leaseToken) filter.leaseToken = node.leaseToken;
+  if (node.leaseEpoch !== undefined) filter.leaseEpoch = node.leaseEpoch;
   const set = { status: toState, ...update };
   if (TERMINAL_NODE_STATUSES.includes(toState)) set.completedAt ||= new Date();
   const unset = {};
@@ -275,15 +299,41 @@ async function claimNextNode(options = {}) {
   const dependencies = schedulerDependencies(options.dependencies);
   const now = options.now || new Date();
   const workerId = String(options.workerId || `orchestration:${crypto.randomUUID()}`);
+  const instanceId = String(options.instanceId || workerId);
   const leaseMs = Number(options.leaseMs || env.ORCHESTRATION_NODE_LEASE_MS || 120_000);
-  const candidate = await dependencies.OrchestrationNodeRun.findOne({
+  const eligibility = {
     $or: [
       { status: 'ready' },
       { status: 'retry_wait', nextAttemptAt: { $lte: now } },
     ],
-  })
-    .select('+resumeAttempt +recoveryTargetSnapshot')
-    .sort({ nextAttemptAt: 1, createdAt: 1, nodeKey: 1 });
+    ...(options.excludedPartitionKeys?.length
+      ? { partitionKey: { $nin: options.excludedPartitionKeys } }
+      : {}),
+  };
+  let candidate;
+  if (options.fairScheduling === true) {
+    const candidates = await dependencies.OrchestrationNodeRun.find(eligibility)
+      .select('+resumeAttempt +recoveryTargetSnapshot')
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(Math.max(10, Math.min(Number(options.fairCandidateLimit || 200), 500)));
+    const tenantFilters = [...new Map(candidates.map((item) => [
+      `${item.organizationId}\u0000${item.workspaceId}`,
+      { organizationId: item.organizationId, workspaceId: item.workspaceId },
+    ])).values()];
+    const history = tenantFilters.length
+      ? await dependencies.OrchestrationNodeRun.aggregate([
+          { $match: { claimedAt: { $exists: true }, $or: tenantFilters } },
+          { $group: { _id: { organizationId: '$organizationId', workspaceId: '$workspaceId' }, serviceCount: { $sum: 1 }, lastServedAt: { $max: '$claimedAt' } } },
+        ])
+      : [];
+    const tenantServiceCounts = new Map(history.map((item) => [`${item._id.organizationId}\u0000${item._id.workspaceId}`, item.serviceCount]));
+    const tenantLastServedAt = new Map(history.map((item) => [`${item._id.organizationId}\u0000${item._id.workspaceId}`, item.lastServedAt]));
+    candidate = dependencies.fairSchedule(candidates, { now, tenantServiceCounts, tenantLastServedAt })[0];
+  } else {
+    candidate = await dependencies.OrchestrationNodeRun.findOne(eligibility)
+      .select('+resumeAttempt +recoveryTargetSnapshot')
+      .sort({ nextAttemptAt: 1, createdAt: 1, nodeKey: 1 });
+  }
   if (!candidate) return null;
   const run = await privateRun(dependencies.OrchestrationRun, candidate.orchestrationRunId);
   if (!run || !['queued', 'running', 'waiting_approval', 'recovering', 'recovered'].includes(run.status)) return null;
@@ -317,6 +367,27 @@ async function claimNextNode(options = {}) {
       ].includes(error.code)
     ) return null;
     throw error;
+  }
+  let partitionOwnership;
+  if (options.partitionCoordination === true && candidate.partitionKey) {
+    partitionOwnership = await dependencies.claimPartition(
+      {
+        partitionKey: candidate.partitionKey,
+        workloadCategory: candidate.workloadCategory || 'orchestration_node',
+        routingVersion: candidate.routingVersion || 1,
+        partitionNumber: candidate.partitionNumber || 0,
+        workerId,
+        instanceId,
+        leaseMs,
+      },
+      { dependencies },
+    );
+    if (!partitionOwnership) {
+      metrics.increment('orchestration_scheduler_claim_conflicts', { reason: 'partition_ownership' });
+      const excludedPartitionKeys = [...(options.excludedPartitionKeys || []), candidate.partitionKey];
+      if (excludedPartitionKeys.length >= 32) return null;
+      return claimNextNode({ ...options, dependencies, now, excludedPartitionKeys });
+    }
   }
   const resuming = candidate.resumeAttempt === true;
   const slot = await dependencies.OrchestrationRun.findOneAndUpdate(
@@ -362,12 +433,14 @@ async function claimNextNode(options = {}) {
         status: 'running',
         leaseOwner: workerId,
         leaseToken,
+        partitionOwnershipEpoch: partitionOwnership?.ownershipEpoch,
         leaseExpiresAt: new Date(now.getTime() + leaseMs),
         heartbeatAt: now,
+        claimedAt: now,
         startedAt: candidate.startedAt || now,
         resumeAttempt: false,
       },
-      ...(resuming ? {} : { $inc: { attempt: 1 } }),
+      $inc: { leaseEpoch: 1, ...(resuming ? {} : { attempt: 1 }) },
       $unset: { nextAttemptAt: 1 },
     },
     { new: true, runValidators: true },
@@ -379,6 +452,9 @@ async function claimNextNode(options = {}) {
     return null;
   }
   const freshRun = await privateRun(dependencies.OrchestrationRun, run._id);
+  if (freshRun?.quotaReservationId) {
+    await dependencies.releaseQuotaReservation(freshRun.quotaReservationId, { scope: scopeFor(freshRun, claimed) }, { dependencies });
+  }
   metrics.increment('orchestration_node_executions');
   await audit('orchestration.node.started', 'OrchestrationNodeRun', claimed._id, freshRun, claimed, {
     fromState: candidate.status,
@@ -393,19 +469,31 @@ async function claimNextNode(options = {}) {
       status: 'running',
     }, dependencies);
   }
-  return { run: freshRun, node: claimed, workerId, leaseToken };
+  return {
+    run: freshRun,
+    node: claimed,
+    workerId,
+    instanceId,
+    leaseToken,
+    leaseEpoch: claimed.leaseEpoch,
+    partitionOwnershipEpoch: claimed.partitionOwnershipEpoch,
+  };
 }
 
 async function renewNodeLease(node, options = {}) {
   const dependencies = schedulerDependencies(options.dependencies);
   const now = options.now || new Date();
   const leaseMs = Number(options.leaseMs || env.ORCHESTRATION_NODE_LEASE_MS || 120_000);
+  if (node.partitionKey) {
+    await dependencies.assertPartitionFence(node, { dependencies, now, extendLeaseMs: leaseMs });
+  }
   const updated = await dependencies.OrchestrationNodeRun.findOneAndUpdate(
     {
       _id: node._id,
       status: 'running',
       leaseOwner: node.leaseOwner,
       leaseToken: node.leaseToken,
+      leaseEpoch: node.leaseEpoch,
       leaseExpiresAt: { $gt: now },
     },
     { $set: { heartbeatAt: now, leaseExpiresAt: new Date(now.getTime() + leaseMs) } },
@@ -747,6 +835,27 @@ async function scheduleFailure(run, node, definition, error, dependencies) {
     reasonCode: failure.code,
     attempt: node.attempt,
   }, dependencies);
+  if (Number(node.attempt || 0) >= Number(node.maxAttempts || 1)) {
+    await dependencies.createDeadLetter(
+      {
+        organizationId: run.organizationId,
+        workspaceId: run.workspaceId,
+        safeJobId: `node:${idOf(node)}`,
+        sourceType: 'orchestration_node',
+        sourceRecordId: idOf(node),
+        workloadCategory: node.workloadCategory || 'orchestration_node',
+        priorityClass: node.priorityClass || 'standard',
+        routingVersion: node.routingVersion || 1,
+        partitionNumber: node.partitionNumber || 0,
+        safeFailureCode: failure.code,
+        attemptCount: node.attempt,
+        requestId: node.requestId,
+        traceId: node.traceId,
+        lastAttemptAt: new Date(),
+      },
+      { dependencies },
+    );
+  }
   return failed;
 }
 
@@ -1278,12 +1387,15 @@ async function reconcileRun(runId, options = {}) {
 function createOrchestrationWorker(options = {}) {
   const dependencies = schedulerDependencies(options.dependencies);
   const workerId = String(options.workerId || `orchestration-worker:${crypto.randomUUID()}`);
+  const instanceId = String(options.instanceId || `instance:${crypto.randomUUID()}`);
   const pollIntervalMs = Number(options.pollIntervalMs || env.ORCHESTRATION_WORKER_POLL_INTERVAL_MS || 1_000);
   const batchSize = Number(options.batchSize || env.ORCHESTRATION_WORKER_BATCH_SIZE || 5);
   const concurrency = Number(options.concurrency || env.ORCHESTRATION_WORKER_CONCURRENCY || 3);
   const leaseMs = Number(options.leaseMs || env.ORCHESTRATION_NODE_LEASE_MS || 120_000);
   const heartbeatMs = Number(options.heartbeatMs || env.ORCHESTRATION_NODE_HEARTBEAT_MS || 30_000);
   const manageDatabase = options.manageDatabase !== false;
+  const partitionCoordination = options.partitionCoordination === true;
+  const supportedRoutingVersions = options.supportedRoutingVersions || [1, 2, 3, 4, 5, 6, 7, 8];
   const active = new Map();
   let state = 'stopped';
   let acceptingClaims = false;
@@ -1294,6 +1406,7 @@ function createOrchestrationWorker(options = {}) {
   function snapshot() {
     return {
       workerId,
+      instanceId,
       status: state,
       ready: state === 'ready' && acceptingClaims && dependencies.databaseStatus() === 'connected',
       draining: state === 'draining',
@@ -1323,12 +1436,25 @@ function createOrchestrationWorker(options = {}) {
 
   async function pollOnce() {
     if (!acceptingClaims || dependencies.databaseStatus() !== 'connected') return { claimed: 0 };
+    if (partitionCoordination) {
+      await dependencies.heartbeatWorker(
+        { workerId, instanceId, activeClaimCount: active.size },
+        { dependencies },
+      );
+    }
     await recoverExpiredLeases({ dependencies, limit: batchSize });
     await dependencies.reconcileSelectionApprovals({ limit: batchSize });
     await reconcileWaitingApprovals({ dependencies, limit: batchSize });
     let claimedCount = 0;
     while (acceptingClaims && active.size < concurrency && claimedCount < batchSize) {
-      const claim = await claimNextNode({ dependencies, workerId, leaseMs });
+      const claim = await claimNextNode({
+        dependencies,
+        workerId,
+        instanceId,
+        leaseMs,
+        fairScheduling: partitionCoordination,
+        partitionCoordination,
+      });
       if (!claim) break;
       claimedCount += 1;
       void runClaim(claim);
@@ -1362,7 +1488,27 @@ function createOrchestrationWorker(options = {}) {
       throw new AppError(503, ErrorCodes.SERVICE_UNAVAILABLE, 'Orchestration worker requires MongoDB.');
     }
     await dependencies.ensureOrchestrationIndexes();
+    if (partitionCoordination) await dependencies.ensureProductionScaleIndexes();
     await recoverExpiredLeases({ dependencies, limit: 500 });
+    if (partitionCoordination) {
+      await dependencies.registerWorker(
+        {
+          workerId,
+          instanceId,
+          workerPool: 'execution',
+          supportedWorkloadCategories: ['orchestration_node', 'orchestration_retry'],
+          supportedRoutingVersions,
+          maximumConcurrency: concurrency,
+          activeClaimCount: 0,
+          status: 'idle',
+          softwareVersion: options.softwareVersion || '0.1.0',
+          protocolVersion: '1',
+          safeRegion: options.safeRegion,
+          safeZone: options.safeZone,
+        },
+        { dependencies },
+      );
+    }
     state = 'ready';
     acceptingClaims = true;
     if (options.autoPoll !== false) schedule(0);
@@ -1404,6 +1550,23 @@ function createOrchestrationWorker(options = {}) {
     shutdownPromise = (async () => {
       acceptingClaims = false;
       state = 'draining';
+      if (partitionCoordination && dependencies.databaseStatus() === 'connected') {
+        await dependencies.registerWorker(
+          {
+            workerId,
+            instanceId,
+            workerPool: 'execution',
+            supportedWorkloadCategories: ['orchestration_node', 'orchestration_retry'],
+            supportedRoutingVersions,
+            maximumConcurrency: concurrency,
+            activeClaimCount: active.size,
+            status: 'draining',
+            softwareVersion: options.softwareVersion || '0.1.0',
+            protocolVersion: '1',
+          },
+          { dependencies },
+        );
+      }
       clearTimeout(pollTimer);
       if (pollPromise) await pollPromise.catch(() => undefined);
       const drainMs = Number(options.shutdownDrainMs || env.DURABLE_WORK_SHUTDOWN_DRAIN_MS || 30_000);
@@ -1412,6 +1575,23 @@ function createOrchestrationWorker(options = {}) {
       if (forced) abortActive('ORCHESTRATION_WORKER_DRAIN_TIMEOUT');
       if (forced) drained = await waitForActive(Math.min(1_000, heartbeatMs));
       state = 'stopped';
+      if (partitionCoordination && dependencies.databaseStatus() === 'connected') {
+        await dependencies.registerWorker(
+          {
+            workerId,
+            instanceId,
+            workerPool: 'execution',
+            supportedWorkloadCategories: ['orchestration_node', 'orchestration_retry'],
+            supportedRoutingVersions,
+            maximumConcurrency: concurrency,
+            activeClaimCount: 0,
+            status: 'stopped',
+            softwareVersion: options.softwareVersion || '0.1.0',
+            protocolVersion: '1',
+          },
+          { dependencies },
+        );
+      }
       if (manageDatabase) await dependencies.disconnectDatabase();
       return { drained: drained && active.size === 0, forced, workerId, signal };
     })();

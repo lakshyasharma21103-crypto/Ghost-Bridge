@@ -197,8 +197,8 @@ test('serializers and API routes never expose internal references or raw delegat
   assert.match(gateway, /transformValidatedOutput/); assert.ok(gateway.indexOf('transformValidatedOutput(result.output)') < gateway.lastIndexOf('output: result.output'));
 });
 
-test('permission registry v10 separates activation, preview, revocation and invocation detail', () => {
-  const registry = getPermissionRegistry(); assert.equal(registry.version, 10);
+test('permission registry v11 separates activation, preview, revocation and invocation detail', () => {
+  const registry = getPermissionRegistry(); assert.equal(registry.version, 11);
   for (const id of ['interAgentContract.activate', 'interAgentDelegation.preview', 'interAgentDelegation.revoke', 'interAgentDelegationInvocation.readDetails']) assert.ok(registry.permissions.some((permission) => permission.id === id));
   assert.equal(registry.permissions.find((item) => item.id === 'interAgentContract.activate').defaultRoles.includes('operator'), false);
   assert.equal(registry.permissions.find((item) => item.id === 'interAgentDelegation.revoke').defaultRoles.includes('operator'), false);

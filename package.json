@@ -39,6 +39,8 @@
     "verify:inter-agent-delegation": "npm run verify:inter-agent-delegation --workspace backend",
     "verify:orchestration-recovery": "npm run verify:orchestration-recovery --workspace backend",
     "verify:orchestration-observability": "npm run verify:orchestration-observability --workspace backend",
+    "verify:production-scale": "npm run verify:production-scale --workspace backend",
+    "verify:data-access-performance": "npm run verify:data-access-performance --workspace backend",
     "migrate:policy-engine": "npm run migrate:policy-engine --workspace backend",
     "migrate:secret-governance": "npm run migrate:secret-governance --workspace backend",
     "migrate:compliance-governance": "npm run migrate:compliance-governance --workspace backend",
@@ -48,6 +50,8 @@
     "migrate:inter-agent-delegation": "npm run migrate:inter-agent-delegation --workspace backend",
     "migrate:orchestration-recovery": "npm run migrate:orchestration-recovery --workspace backend",
     "migrate:orchestration-observability": "npm run migrate:orchestration-observability --workspace backend",
+    "migrate:production-scale": "npm run migrate:production-scale --workspace backend",
+    "migrate:data-access-performance": "npm run migrate:data-access-performance --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"

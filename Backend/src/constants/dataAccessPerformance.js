@@ -1,0 +1,114 @@
+const CONSISTENCY_CLASSES = Object.freeze({
+  STRONG_AUTHORITY: 'strong_authority',
+  VERSIONED_IMMUTABLE: 'versioned_immutable',
+  EVENTUAL_PROJECTION: 'eventual_projection',
+});
+
+const QUERY_OPERATION_TYPES = Object.freeze([
+  'find_one',
+  'find_many',
+  'count',
+  'aggregate',
+  'update_one',
+  'find_one_and_update',
+  'bulk_write',
+  'delete_many',
+  'projection_rebuild',
+]);
+
+const DATA_ACCESS_LIMITS = Object.freeze({
+  maximumPageSize: 100,
+  maximumBatchSize: 250,
+  maximumResultCount: 500,
+  maximumExecutionMs: 10_000,
+  maximumAggregationStages: 12,
+  maximumLookupStages: 2,
+  maximumSortFields: 3,
+  maximumFilterFields: 12,
+  maximumEncodedFilterBytes: 4_096,
+  maximumCursorBytes: 2_048,
+  maximumDocumentBytes: 8 * 1024 * 1024,
+  maximumCacheValueBytes: 512 * 1024,
+});
+
+function shape(input) {
+  return Object.freeze({
+    maximumPageSize: 100,
+    maximumResultCount: 100,
+    maximumExecutionMs: 5_000,
+    maximumBatchSize: 100,
+    maximumAggregationStages: 8,
+    maximumLookupStages: 1,
+    maximumSortFields: 2,
+    maximumFilterFields: 8,
+    maximumEncodedFilterBytes: 2_048,
+    maximumCursorBytes: 1_536,
+    diagnosticSamplingCategory: 'operational',
+    allowedFilterFields: [],
+    allowedSortFields: [],
+    defaultSort: { createdAt: -1, _id: -1 },
+    expectedIndexNames: [],
+    cacheNamespace: null,
+    ...input,
+  });
+}
+
+const QUERY_SHAPES = Object.freeze([
+  shape({ queryShapeId: 'orchestration_runs_list', collectionName: 'orchestrationruns', operationType: 'find_many', allowedFilterFields: ['status', 'definitionId', 'definitionName', 'createdAt'], allowedSortFields: ['createdAt', 'updatedAt', 'status'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_orchestration_runs_scope_created'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'orchestration_ready_node_claim', collectionName: 'orchestrationnoderuns', operationType: 'find_one_and_update', allowedFilterFields: ['status', 'nextAttemptAt', 'partitionKey', 'routingVersion'], allowedSortFields: ['priority', 'nextAttemptAt', 'createdAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_ready_node_claim'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'orchestration_retry_schedule', collectionName: 'orchestrationnoderuns', operationType: 'find_many', allowedFilterFields: ['status', 'nextAttemptAt'], allowedSortFields: ['nextAttemptAt', 'createdAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_node_retry_schedule'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'compensation_claim', collectionName: 'orchestrationcompensationruns', operationType: 'find_one_and_update', allowedFilterFields: ['status', 'nextAttemptAt', 'partitionKey', 'routingVersion'], allowedSortFields: ['nextAttemptAt', 'createdAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_compensation_claim'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'delegation_invocation_lookup', collectionName: 'interagentdelegationinvocations', operationType: 'find_one', allowedFilterFields: ['_id', 'status', 'grantId'], allowedSortFields: [], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_delegation_lookup'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'agent_selection_decisions_list', collectionName: 'agentselectiondecisions', operationType: 'find_many', allowedFilterFields: ['status', 'policyId', 'createdAt'], allowedSortFields: ['createdAt', 'status'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_selection_decisions_scope_created'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'approval_queue_list', collectionName: 'approvalrequests', operationType: 'find_many', allowedFilterFields: ['status', 'actionType', 'createdAt'], allowedSortFields: ['createdAt', 'expiresAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_approval_queue'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'intervention_queue_list', collectionName: 'orchestrationinterventionrequests', operationType: 'find_many', allowedFilterFields: ['status', 'runId', 'createdAt'], allowedSortFields: ['createdAt', 'updatedAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_intervention_queue'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'orchestration_timeline_lookup', collectionName: 'orchestrationtimelineevents', operationType: 'find_many', allowedFilterFields: ['runId', 'sequence', 'eventType'], allowedSortFields: ['sequence', 'createdAt'], defaultSort: { sequence: 1, _id: 1 }, requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_timeline_scope_sequence'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION, cacheNamespace: 'timeline_projection' }),
+  shape({ queryShapeId: 'orchestration_trace_lookup', collectionName: 'orchestrationtracespans', operationType: 'find_many', allowedFilterFields: ['runId', 'traceId', 'startedAt'], allowedSortFields: ['startedAt', 'durationMs'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_trace_scope_started'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION, cacheNamespace: 'trace_projection' }),
+  shape({ queryShapeId: 'slo_evaluations_list', collectionName: 'orchestrationsloevaluations', operationType: 'find_many', allowedFilterFields: ['policyId', 'status', 'evaluatedAt'], allowedSortFields: ['evaluatedAt', 'status'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_slo_scope_evaluated'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION, cacheNamespace: 'slo_summary' }),
+  shape({ queryShapeId: 'orchestration_alerts_list', collectionName: 'orchestrationalerts', operationType: 'find_many', allowedFilterFields: ['status', 'severity', 'createdAt'], allowedSortFields: ['createdAt', 'severity', 'updatedAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_alert_scope_status_created'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION }),
+  shape({ queryShapeId: 'worker_registrations_list', collectionName: 'workerregistrations', operationType: 'find_many', allowedFilterFields: ['workerPool', 'status', 'heartbeatAt'], allowedSortFields: ['heartbeatAt', 'updatedAt', 'workerId'], requiredTenantScope: false, requiredWorkspaceScope: false, expectedIndexNames: ['dap_worker_pool_status_heartbeat'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'queue_partitions_list', collectionName: 'queuepartitions', operationType: 'find_many', allowedFilterFields: ['workloadCategory', 'routingVersion', 'status'], allowedSortFields: ['workloadCategory', 'routingVersion', 'partitionNumber'], defaultSort: { workloadCategory: 1, routingVersion: 1, partitionNumber: 1, _id: 1 }, maximumSortFields: 4, requiredTenantScope: false, requiredWorkspaceScope: false, expectedIndexNames: ['dap_queue_partition_route'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'quota_reservations_lookup', collectionName: 'workloadquotareservations', operationType: 'find_many', allowedFilterFields: ['reservationType', 'status', 'expiresAt'], allowedSortFields: ['createdAt', 'expiresAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_quota_scope_status_created'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'admission_decisions_list', collectionName: 'workloadadmissiondecisions', operationType: 'find_many', allowedFilterFields: ['decision', 'workloadCategory', 'createdAt'], allowedSortFields: ['createdAt', 'decision'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_admission_scope_created'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'observability_summary', collectionName: 'orchestrationoperationalsnapshots', operationType: 'find_many', allowedFilterFields: ['snapshotAt'], allowedSortFields: ['snapshotAt'], requiredTenantScope: true, requiredWorkspaceScope: true, maximumPageSize: 50, expectedIndexNames: ['dap_operational_snapshot_scope_time'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION, cacheNamespace: 'observability_summary' }),
+  shape({ queryShapeId: 'observability_summary_aggregate', collectionName: 'orchestrationoperationalsnapshots', operationType: 'aggregate', allowedFilterFields: ['snapshotAt'], allowedSortFields: ['snapshotAt'], requiredTenantScope: true, requiredWorkspaceScope: true, maximumResultCount: 50, expectedIndexNames: ['dap_operational_snapshot_scope_time'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION, cacheNamespace: 'observability_summary', diagnosticSamplingCategory: 'analytics' }),
+  shape({ queryShapeId: 'data_access_policies_list', collectionName: 'dataaccessperformancepolicies', operationType: 'find_many', allowedFilterFields: ['scope', 'status', 'name'], allowedSortFields: ['updatedAt', 'version', 'name'], requiredTenantScope: true, requiredWorkspaceScope: false, expectedIndexNames: ['dap_policy_scope_status'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'query_performance_samples_list', collectionName: 'queryperformancesamples', operationType: 'find_many', allowedFilterFields: ['queryShapeId', 'operationType', 'success', 'safeFailureCode', 'indexUsageCategory', 'sampledAt'], allowedSortFields: ['sampledAt', 'durationMs'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_query_sample_scope_time'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION }),
+  shape({ queryShapeId: 'cache_invalidation_events_list', collectionName: 'cacheinvalidationevents', operationType: 'find_many', allowedFilterFields: ['namespace', 'status', 'createdAt'], allowedSortFields: ['createdAt', 'sequence'], requiredTenantScope: true, requiredWorkspaceScope: false, expectedIndexNames: ['dap_invalidation_scope_status_retry'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION }),
+  shape({ queryShapeId: 'index_drift_records_list', collectionName: 'indexdriftrecords', operationType: 'find_many', allowedFilterFields: ['collectionName', 'indexName', 'status', 'detectedAt'], allowedSortFields: ['detectedAt', 'status'], requiredTenantScope: false, requiredWorkspaceScope: false, expectedIndexNames: ['dap_index_drift_identity'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION }),
+  shape({ queryShapeId: 'cache_invalidation_claim', collectionName: 'cacheinvalidationevents', operationType: 'find_one_and_update', allowedFilterFields: ['status', 'nextAttemptAt', 'leaseExpiresAt'], allowedSortFields: ['sequence', 'createdAt'], defaultSort: { sequence: 1, _id: 1 }, requiredTenantScope: false, requiredWorkspaceScope: false, expectedIndexNames: ['dap_cache_invalidation_claim'], consistencyClass: CONSISTENCY_CLASSES.STRONG_AUTHORITY }),
+  shape({ queryShapeId: 'projection_metadata_list', collectionName: 'projectionmetadatas', operationType: 'find_many', allowedFilterFields: ['projectionName', 'status', 'lagCategory'], allowedSortFields: ['updatedAt', 'lastProcessedAt'], requiredTenantScope: true, requiredWorkspaceScope: true, expectedIndexNames: ['dap_projection_scope_name'], consistencyClass: CONSISTENCY_CLASSES.EVENTUAL_PROJECTION }),
+]);
+
+const CACHE_NAMESPACES = Object.freeze([
+  { namespace: 'passport_version', allowedClassification: 'internal', defaultTtlMs: 300_000, maximumTtlMs: 3_600_000, maximumKeyBytes: 512, maximumValueBytes: 262_144, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'none', invalidationTags: ['passport'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'immutable_not_found' },
+  { namespace: 'orchestration_definition_version', allowedClassification: 'internal', defaultTtlMs: 300_000, maximumTtlMs: 3_600_000, maximumKeyBytes: 512, maximumValueBytes: 524_288, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'none', invalidationTags: ['orchestration_definition'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'immutable_not_found' },
+  { namespace: 'policy_version', allowedClassification: 'confidential', defaultTtlMs: 180_000, maximumTtlMs: 900_000, maximumKeyBytes: 512, maximumValueBytes: 262_144, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'none', invalidationTags: ['policy'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'immutable_not_found' },
+  { namespace: 'recovery_policy_version', allowedClassification: 'internal', defaultTtlMs: 180_000, maximumTtlMs: 900_000, maximumKeyBytes: 512, maximumValueBytes: 262_144, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'none', invalidationTags: ['recovery_policy'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'immutable_not_found' },
+  { namespace: 'data_contract_version', allowedClassification: 'confidential', defaultTtlMs: 180_000, maximumTtlMs: 900_000, maximumKeyBytes: 512, maximumValueBytes: 524_288, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'none', invalidationTags: ['data_contract'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'immutable_not_found' },
+  { namespace: 'active_version_alias', allowedClassification: 'internal', defaultTtlMs: 30_000, maximumTtlMs: 60_000, maximumKeyBytes: 512, maximumValueBytes: 16_384, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'none', invalidationTags: ['active_alias'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'capability_catalog', allowedClassification: 'internal', defaultTtlMs: 60_000, maximumTtlMs: 300_000, maximumKeyBytes: 512, maximumValueBytes: 524_288, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['capability_catalog'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'public_not_found' },
+  { namespace: 'safe_connection_metadata', allowedClassification: 'confidential', defaultTtlMs: 30_000, maximumTtlMs: 60_000, maximumKeyBytes: 512, maximumValueBytes: 65_536, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'none', invalidationTags: ['connection_metadata'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'timeline_projection', allowedClassification: 'internal', defaultTtlMs: 30_000, maximumTtlMs: 120_000, maximumKeyBytes: 512, maximumValueBytes: 262_144, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['timeline'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'trace_projection', allowedClassification: 'internal', defaultTtlMs: 30_000, maximumTtlMs: 120_000, maximumKeyBytes: 512, maximumValueBytes: 262_144, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['trace'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'observability_summary', allowedClassification: 'internal', defaultTtlMs: 30_000, maximumTtlMs: 120_000, maximumKeyBytes: 512, maximumValueBytes: 262_144, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['observability'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'slo_summary', allowedClassification: 'internal', defaultTtlMs: 30_000, maximumTtlMs: 120_000, maximumKeyBytes: 512, maximumValueBytes: 262_144, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['slo'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'fleet_summary', allowedClassification: 'internal', defaultTtlMs: 15_000, maximumTtlMs: 60_000, maximumKeyBytes: 512, maximumValueBytes: 131_072, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['fleet'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'index_status_summary', allowedClassification: 'internal', defaultTtlMs: 30_000, maximumTtlMs: 120_000, maximumKeyBytes: 512, maximumValueBytes: 131_072, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['index_status'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+  { namespace: 'query_performance_summary', allowedClassification: 'internal', defaultTtlMs: 30_000, maximumTtlMs: 120_000, maximumKeyBytes: 512, maximumValueBytes: 131_072, failureBehavior: 'fallback_authoritative', staleReadAllowance: 'bounded', invalidationTags: ['query_performance'], serializationVersion: 1, compressionPolicy: 'none', negativeCachePolicy: 'none' },
+]);
+
+const PROJECTION_DEFINITIONS = Object.freeze([
+  { projectionName: 'orchestration_timeline', version: 1, sourceCollection: 'orchestrationtimelineevents', targetCollection: 'orchestrationoperationalsnapshots', maximumBatchSize: 100 },
+  { projectionName: 'orchestration_trace_summary', version: 1, sourceCollection: 'orchestrationtracespans', targetCollection: 'orchestrationoperationalsnapshots', maximumBatchSize: 100 },
+  { projectionName: 'fleet_summary', version: 1, sourceCollection: 'workerregistrations', targetCollection: 'orchestrationoperationalsnapshots', maximumBatchSize: 100 },
+]);
+
+module.exports = {
+  CACHE_NAMESPACES,
+  CONSISTENCY_CLASSES,
+  DATA_ACCESS_LIMITS,
+  PROJECTION_DEFINITIONS,
+  QUERY_OPERATION_TYPES,
+  QUERY_SHAPES,
+};

@@ -1,5 +1,7 @@
 # Operations, runtime protection, and durable recovery controls
 
+Phase 13E1 production-scale capacity, partitions, worker pools, admission/quota policy, durable backpressure, and safe dead-letter controls are documented in [PRODUCTION_SCALE.md](./PRODUCTION_SCALE.md). Their authenticated console routes live under `/operations/*` and their API routes under `/api/v1/production-scale`.
+
 The Operations page and `/api/v1/operations` APIs provide receiving-workspace metrics from persisted
 gateway records. Every request requires `X-Partner-Api-Key` plus the current receiving identity fields
 `receivingWorkspaceId` and `receivingUserId`; queries, alert records, acknowledgement updates, and

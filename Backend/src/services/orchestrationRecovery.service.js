@@ -94,6 +94,7 @@ const { decryptPayload } = require('../utils/crypto');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const metrics = require('./orchestrationMetrics.service');
+const { resolveWorkloadRoute } = require('./productionScale.service');
 
 const ACTION_PERMISSIONS = Object.freeze({
   operator_retry: 'orchestrationNode.retry',
@@ -1902,6 +1903,13 @@ async function createCompensationPlanForRun(runInput, triggerNodeInput, input = 
       logicalCompensationAttempt: 1,
     });
     const classification = compensationClassification(definition);
+    const compensationRoute = await resolveWorkloadRoute({
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      routingKey: `${idOf(run)}:compensation:${step.order}`,
+      workloadCategory: 'orchestration_compensation',
+      routingVersion: run.routingVersion || 1,
+    });
     const compensationRun = await OrchestrationCompensationRun.create({
       organizationId: scope.organizationId,
       workspaceId: scope.workspaceId,
@@ -1936,6 +1944,13 @@ async function createCompensationPlanForRun(runInput, triggerNodeInput, input = 
       traceId: `trace_${secureDigest('orchestration-compensation-trace', `${run.traceId}:${step.order}`).slice(-48)}`,
       parentTraceId: triggerNode?.traceId || run.traceId,
       createdBy: options.createdBy || scope.actorId,
+      workloadCategory: compensationRoute.workloadCategory,
+      routingVersion: compensationRoute.routingVersion,
+      partitionNumber: compensationRoute.partitionNumber,
+      partitionKey: compensationRoute.partitionKey,
+      workerPool: compensationRoute.workerPool,
+      admissionClass: 'protected',
+      priorityClass: 'critical_recovery',
     });
     compensationRuns.push(compensationRun);
     if (['succeeded', 'failed', 'waiting_intervention', 'compensation_failed'].includes(node.status)) {
@@ -2864,7 +2879,7 @@ async function claimNextCompensation(options = {}) {
       filter,
       {
         $set: { status: 'running', leaseOwner: workerId, leaseTokenHash: secureDigest('orchestration-compensation-lease', leaseToken), leaseExpiresAt: new Date(now.getTime() + leaseMs), heartbeatAt: now, startedAt: candidate.startedAt || now },
-        $inc: { attempt: 1 },
+        $inc: { attempt: 1, leaseEpoch: 1 },
         $unset: { nextAttemptAt: 1 },
       },
       { new: true, runValidators: true },
@@ -2882,7 +2897,7 @@ async function claimNextCompensation(options = {}) {
     if (currentRun.status === 'compensation_pending') currentRun = await transitionRunState(currentRun, 'compensating', {});
     const node = await OrchestrationNodeRun.findById(claimed.originalNodeRunId).select('+resolvedInput +validatedOutput +recoveryTargetSnapshot');
     if (node?.status === 'compensation_pending') await transitionNodeState(node, 'compensating', { compensationStatus: 'running', compensationAttempt: claimed.attempt });
-    return { compensation: claimed, run: currentRun, node, plan, workerId, leaseToken };
+    return { compensation: claimed, run: currentRun, node, plan, workerId, leaseToken, leaseEpoch: claimed.leaseEpoch };
   }
   return null;
 }
@@ -2892,7 +2907,7 @@ async function renewCompensationLease(claim, options = {}) {
   const leaseMs = Math.max(1_000, Math.min(Number(options.leaseMs || 120_000), RECOVERY_LIMITS.maximumLeaseMs));
   const tokenHash = secureDigest('orchestration-compensation-lease', claim.leaseToken);
   const updated = await OrchestrationCompensationRun.findOneAndUpdate(
-    { _id: claim.compensation._id, status: 'running', leaseOwner: claim.workerId, leaseTokenHash: tokenHash, leaseExpiresAt: { $gt: now } },
+    { _id: claim.compensation._id, status: 'running', leaseOwner: claim.workerId, leaseTokenHash: tokenHash, leaseEpoch: claim.leaseEpoch, leaseExpiresAt: { $gt: now } },
     { $set: { heartbeatAt: now, leaseExpiresAt: new Date(now.getTime() + leaseMs) } },
     { new: true },
   ).select('+compensationDefinitionSnapshot +leaseTokenHash');
@@ -2905,7 +2920,7 @@ async function transitionClaimedCompensation(claim, toState, update = {}) {
   const tokenHash = secureDigest('orchestration-compensation-lease', claim.leaseToken);
   assertRecoveryTransition(COMPENSATION_RUN_TRANSITIONS, claim.compensation.status, toState, 'ORCHESTRATION_COMPENSATION_TRANSITION_INVALID');
   const changed = await OrchestrationCompensationRun.findOneAndUpdate(
-    { _id: claim.compensation._id, status: claim.compensation.status, leaseOwner: claim.workerId, leaseTokenHash: tokenHash },
+    { _id: claim.compensation._id, status: claim.compensation.status, leaseOwner: claim.workerId, leaseTokenHash: tokenHash, leaseEpoch: claim.leaseEpoch },
     { $set: { status: toState, ...update }, $unset: { leaseOwner: 1, leaseTokenHash: 1, leaseExpiresAt: 1, heartbeatAt: 1, ...(toState !== 'retry_wait' ? { nextAttemptAt: 1 } : {}) } },
     { new: true, runValidators: true },
   ).select('+compensationDefinitionSnapshot');

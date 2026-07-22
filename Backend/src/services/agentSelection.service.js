@@ -978,8 +978,8 @@ async function updateTrust(connectionId, input = {}, caller = {}, mode = 'trust'
   return serializeCatalogEntry(changed);
 }
 
-async function handleApprovalResolution(approvalRequestId) {
-  let request = await ApprovalRequest.findOne({ approvalRequestId });
+async function handleApprovalResolution(approvalRequestId, prefetchedRequest) {
+  let request = prefetchedRequest || await ApprovalRequest.findOne({ approvalRequestId });
   if (!request?.agentSelectionDecisionId) return { updated: 0 };
   request = await expireIfNeeded(request);
   if (['PENDING', 'PARTIALLY_APPROVED'].includes(request.status)) return { updated: 0, status: request.status };
@@ -1008,13 +1008,22 @@ async function reconcileSelectionApprovals(options = {}) {
     decisionStatus: 'approval_required',
     approvalRequestId: { $exists: true, $ne: null },
   })
-    .select('approvalRequestId')
+    .select('approvalRequestId organizationId workspaceId')
     .sort({ createdAt: 1, _id: 1 })
     .limit(limit)
     .lean();
+  const requests = await ApprovalRequest.find({
+    approvalRequestId: { $in: decisions.map((decision) => decision.approvalRequestId).slice(0, limit) },
+  })
+    .select('_id approvalRequestId agentSelectionDecisionId organizationId workspaceId status expiresAt revision requestId traceId requesterActorId permission invalidationReasonCode')
+    .limit(limit)
+    .lean();
+  const requestsById = new Map(requests.map((request) => [request.approvalRequestId, request]));
   let updated = 0;
   for (const decision of decisions) {
-    const result = await handleApprovalResolution(decision.approvalRequestId);
+    const request = requestsById.get(decision.approvalRequestId);
+    if (request && (request.organizationId !== decision.organizationId || request.workspaceId !== decision.workspaceId)) continue;
+    const result = await handleApprovalResolution(decision.approvalRequestId, request);
     updated += result.updated || 0;
   }
   return { scanned: decisions.length, updated };

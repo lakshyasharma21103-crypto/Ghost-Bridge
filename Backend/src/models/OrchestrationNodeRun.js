@@ -5,6 +5,12 @@ const {
   FAILURE_CATEGORIES,
   RECOVERABILITIES,
 } = require('../constants/orchestrationRecovery');
+const {
+  ADMISSION_CLASSES,
+  PRIORITY_CLASSES,
+  WORKER_POOLS,
+  WORKLOAD_CATEGORIES,
+} = require('../constants/productionScale');
 
 const safeFailureSchema = new mongoose.Schema(
   {
@@ -63,6 +69,7 @@ const orchestrationNodeRunSchema = new mongoose.Schema(
     leaseToken: { type: String, trim: true, maxlength: 128, select: false },
     leaseExpiresAt: { type: Date, index: true },
     heartbeatAt: { type: Date },
+    claimedAt: { type: Date, index: true },
     resumeAttempt: { type: Boolean, default: false, select: false },
     operationallyBlocked: { type: Boolean, default: false, select: false },
     operationalBlockReasonCode: { type: String, trim: true, maxlength: 128, select: false },
@@ -71,6 +78,15 @@ const orchestrationNodeRunSchema = new mongoose.Schema(
     requestId: { type: String, required: true, trim: true, maxlength: 128, index: true },
     traceId: { type: String, required: true, trim: true, maxlength: 128, index: true },
     parentTraceId: { type: String, required: true, trim: true, maxlength: 128 },
+    workloadCategory: { type: String, enum: WORKLOAD_CATEGORIES, default: 'orchestration_node', required: true, index: true },
+    routingVersion: { type: Number, default: 1, required: true, min: 1, max: 1_000 },
+    partitionNumber: { type: Number, default: 0, required: true, min: 0, max: 255 },
+    partitionKey: { type: String, trim: true, maxlength: 200, index: true },
+    admissionClass: { type: String, enum: ADMISSION_CLASSES, default: 'standard', required: true },
+    priorityClass: { type: String, enum: PRIORITY_CLASSES, default: 'standard', required: true, index: true },
+    workerPool: { type: String, enum: WORKER_POOLS, default: 'execution', required: true },
+    leaseEpoch: { type: Number, default: 0, required: true, min: 0 },
+    partitionOwnershipEpoch: { type: Number, min: 0 },
     approvalRequestId: { type: String, trim: true, maxlength: 128, index: true },
     selectionDecisionId: { type: mongoose.Schema.Types.ObjectId, ref: 'AgentSelectionDecision', index: true },
     selectionApprovalRequestId: { type: String, trim: true, maxlength: 128, index: true },
@@ -146,6 +162,9 @@ orchestrationNodeRunSchema.index(
   { unique: true, name: 'unique_orchestration_run_node' },
 );
 orchestrationNodeRunSchema.index({ status: 1, nextAttemptAt: 1, createdAt: 1 });
+orchestrationNodeRunSchema.index({ workloadCategory: 1, routingVersion: 1, partitionNumber: 1, status: 1, nextAttemptAt: 1 });
+orchestrationNodeRunSchema.index({ organizationId: 1, workspaceId: 1, status: 1, priorityClass: 1, createdAt: 1 });
+orchestrationNodeRunSchema.index({ organizationId: 1, workspaceId: 1, claimedAt: -1 });
 orchestrationNodeRunSchema.index({ status: 1, leaseExpiresAt: 1 });
 orchestrationNodeRunSchema.index({ orchestrationRunId: 1, status: 1, nodeKey: 1 });
 orchestrationNodeRunSchema.index({ organizationId: 1, workspaceId: 1, status: 1, updatedAt: -1 });

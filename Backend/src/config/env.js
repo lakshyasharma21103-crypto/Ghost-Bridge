@@ -180,6 +180,44 @@ const orchestrationNodeHeartbeatMs = integerInRangeFromEnv(
   1_000,
   300_000,
 );
+const mongodbMinPoolSize = integerInRangeFromEnv('MONGODB_MIN_POOL_SIZE', 0, 0, 100);
+const mongodbMaxPoolSize = integerInRangeFromEnv('MONGODB_MAX_POOL_SIZE', 50, 1, 500);
+const databaseOperationTimeoutMs = integerInRangeFromEnv(
+  'DATABASE_OPERATION_TIMEOUT_MS',
+  3_000,
+  100,
+  10_000,
+);
+const databaseRepositoryBudgetMs = integerInRangeFromEnv(
+  'DATABASE_REPOSITORY_BUDGET_MS',
+  5_000,
+  200,
+  30_000,
+);
+const databaseServiceBudgetMs = integerInRangeFromEnv(
+  'DATABASE_SERVICE_BUDGET_MS',
+  10_000,
+  300,
+  60_000,
+);
+const dataAccessHttpTimeoutMs = integerInRangeFromEnv(
+  'DATA_ACCESS_HTTP_TIMEOUT_MS',
+  15_000,
+  400,
+  120_000,
+);
+const databaseLeaseSafetyMarginMs = integerInRangeFromEnv(
+  'DATABASE_LEASE_SAFETY_MARGIN_MS',
+  15_000,
+  500,
+  300_000,
+);
+const dataAccessWorkerOperationTimeoutMs = integerInRangeFromEnv(
+  'DATA_ACCESS_WORKER_OPERATION_TIMEOUT_MS',
+  60_000,
+  1_000,
+  600_000,
+);
 
 if (runtimeRetryMaxDelayMs < runtimeRetryBaseDelayMs) {
   throw new Error(
@@ -221,6 +259,26 @@ if (orchestrationNodeHeartbeatMs * 3 > orchestrationNodeLeaseMs) {
   throw new Error('ORCHESTRATION_NODE_HEARTBEAT_MS must be at most one third of ORCHESTRATION_NODE_LEASE_MS');
 }
 
+if (mongodbMinPoolSize > mongodbMaxPoolSize) {
+  throw new Error('MONGODB_MIN_POOL_SIZE must be less than or equal to MONGODB_MAX_POOL_SIZE');
+}
+
+if (
+  !(databaseOperationTimeoutMs < databaseRepositoryBudgetMs &&
+    databaseRepositoryBudgetMs < databaseServiceBudgetMs &&
+    databaseServiceBudgetMs < dataAccessHttpTimeoutMs)
+) {
+  throw new Error('Database operation, repository, service, and HTTP timeouts must be strictly ordered');
+}
+
+if (
+  !(databaseOperationTimeoutMs < databaseLeaseSafetyMarginMs &&
+    databaseLeaseSafetyMarginMs < dataAccessWorkerOperationTimeoutMs &&
+    dataAccessWorkerOperationTimeoutMs < durableWorkLeaseMs)
+) {
+  throw new Error('Database operation, lease margin, worker operation, and job lease timeouts must be strictly ordered');
+}
+
 const env = {
   NODE_ENV: nodeEnv,
   PORT: integerFromEnv('PORT', 5001),
@@ -228,6 +286,27 @@ const env = {
   MONGODB_URI: process.env.MONGODB_URI || '',
   MONGODB_DB_NAME: process.env.MONGODB_DB_NAME || 'agent_passport_runtime_gateway',
   MONGODB_AUTH_SOURCE: process.env.MONGODB_AUTH_SOURCE || 'admin',
+  MONGODB_MIN_POOL_SIZE: mongodbMinPoolSize,
+  MONGODB_MAX_POOL_SIZE: mongodbMaxPoolSize,
+  MONGODB_MAX_CONNECTING: integerInRangeFromEnv('MONGODB_MAX_CONNECTING', 4, 1, 32),
+  MONGODB_WAIT_QUEUE_TIMEOUT_MS: integerInRangeFromEnv('MONGODB_WAIT_QUEUE_TIMEOUT_MS', 5_000, 100, 60_000),
+  MONGODB_SERVER_SELECTION_TIMEOUT_MS: integerInRangeFromEnv('MONGODB_SERVER_SELECTION_TIMEOUT_MS', 5_000, 100, 60_000),
+  MONGODB_SOCKET_TIMEOUT_MS: integerInRangeFromEnv('MONGODB_SOCKET_TIMEOUT_MS', 30_000, 1_000, 300_000),
+  MONGODB_CONNECT_TIMEOUT_MS: integerInRangeFromEnv('MONGODB_CONNECT_TIMEOUT_MS', 10_000, 100, 60_000),
+  MONGODB_MAX_IDLE_TIME_MS: integerInRangeFromEnv('MONGODB_MAX_IDLE_TIME_MS', 60_000, 0, 600_000),
+  MONGODB_HEARTBEAT_FREQUENCY_MS: integerInRangeFromEnv('MONGODB_HEARTBEAT_FREQUENCY_MS', 10_000, 500, 60_000),
+  DATABASE_OPERATION_TIMEOUT_MS: databaseOperationTimeoutMs,
+  DATABASE_REPOSITORY_BUDGET_MS: databaseRepositoryBudgetMs,
+  DATABASE_SERVICE_BUDGET_MS: databaseServiceBudgetMs,
+  DATA_ACCESS_HTTP_TIMEOUT_MS: dataAccessHttpTimeoutMs,
+  DATABASE_LEASE_SAFETY_MARGIN_MS: databaseLeaseSafetyMarginMs,
+  DATA_ACCESS_WORKER_OPERATION_TIMEOUT_MS: dataAccessWorkerOperationTimeoutMs,
+  DATA_ACCESS_CURSOR_SECRET: process.env.DATA_ACCESS_CURSOR_SECRET || credentialEncryptionKey || 'ghostbridge-development-cursor-secret',
+  CACHE_KEY_DIGEST_SECRET: process.env.CACHE_KEY_DIGEST_SECRET || credentialEncryptionKey || 'ghostbridge-development-cache-key-secret',
+  CACHE_ADAPTER: process.env.CACHE_ADAPTER || 'memory',
+  CACHE_MEMORY_MAX_ENTRIES: integerInRangeFromEnv('CACHE_MEMORY_MAX_ENTRIES', 1_000, 1, 100_000),
+  CACHE_MEMORY_MAX_BYTES: integerInRangeFromEnv('CACHE_MEMORY_MAX_BYTES', 33_554_432, 1_024, 268_435_456),
+  CACHE_COMMAND_TIMEOUT_MS: integerInRangeFromEnv('CACHE_COMMAND_TIMEOUT_MS', 500, 10, 5_000),
   CREDENTIAL_ENCRYPTION_KEY: credentialEncryptionKey,
   CREDENTIAL_ENCRYPTION_KEY_VERSION: credentialEncryptionKeyVersion,
   CREDENTIAL_ENCRYPTION_KEYS: encryptionKeyRing(
@@ -374,6 +453,18 @@ if (!['development', 'test', 'production'].includes(env.NODE_ENV)) {
 
 if (env.NODE_ENV === 'production' && !env.MONGODB_URI) {
   throw new Error('MONGODB_URI is required in production');
+}
+
+if (!['memory', 'noop', 'distributed'].includes(env.CACHE_ADAPTER)) {
+  throw new Error('CACHE_ADAPTER must be memory, noop, or distributed');
+}
+
+if (Buffer.byteLength(env.DATA_ACCESS_CURSOR_SECRET, 'utf8') < 16) {
+  throw new Error('DATA_ACCESS_CURSOR_SECRET must contain at least 16 bytes');
+}
+
+if (Buffer.byteLength(env.CACHE_KEY_DIGEST_SECRET, 'utf8') < 16) {
+  throw new Error('CACHE_KEY_DIGEST_SECRET must contain at least 16 bytes');
 }
 
 module.exports = {

@@ -9,6 +9,12 @@ const {
   DURABLE_WORK_TYPES,
   MAX_DURABLE_WORK_MILESTONES,
 } = require('../constants/durableWork');
+const {
+  ADMISSION_CLASSES,
+  PRIORITY_CLASSES,
+  WORKER_POOLS,
+  WORKLOAD_CATEGORIES,
+} = require('../constants/productionScale');
 
 const SAFE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
 const SAFE_HASH_PATTERN = /^sha256:[a-f0-9]{64}$/;
@@ -85,6 +91,19 @@ const runtimeWorkItemSchema = new mongoose.Schema(
     workType: { type: String, enum: DURABLE_WORK_TYPES, required: true },
     dedupeKey: { type: String, required: true, match: SAFE_HASH_PATTERN, select: false },
     traceId: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN, maxlength: 128 },
+    workloadCategory: {
+      type: String,
+      enum: WORKLOAD_CATEGORIES,
+      default: 'orchestration_node',
+      required: true,
+      index: true,
+    },
+    routingVersion: { type: Number, default: 1, required: true, min: 1, max: 1_000 },
+    partitionNumber: { type: Number, default: 0, required: true, min: 0, max: 255 },
+    partitionKey: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN },
+    admissionClass: { type: String, enum: ADMISSION_CLASSES, default: 'standard', required: true },
+    priorityClass: { type: String, enum: PRIORITY_CLASSES, default: 'standard', required: true, index: true },
+    workerPool: { type: String, enum: WORKER_POOLS, default: 'execution', required: true },
 
     status: {
       type: String,
@@ -108,6 +127,8 @@ const runtimeWorkItemSchema = new mongoose.Schema(
 
     leaseOwner: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN, select: false },
     leaseTokenHash: { type: String, trim: true, match: SAFE_HASH_PATTERN, select: false },
+    leaseEpoch: { type: Number, default: 0, required: true, min: 0 },
+    partitionOwnershipEpoch: { type: Number, min: 0 },
     leaseAcquiredAt: { type: Date },
     leaseExpiresAt: { type: Date, index: true },
     lastHeartbeatAt: { type: Date },
@@ -159,6 +180,8 @@ runtimeWorkItemSchema.index(
   { unique: true, name: 'unique_durable_execution_generation' },
 );
 runtimeWorkItemSchema.index({ status: 1, priority: -1, availableAt: 1, createdAt: 1 });
+runtimeWorkItemSchema.index({ workloadCategory: 1, routingVersion: 1, partitionNumber: 1, status: 1, availableAt: 1 });
+runtimeWorkItemSchema.index({ organizationId: 1, receivingWorkspaceId: 1, status: 1, priorityClass: 1, availableAt: 1 });
 runtimeWorkItemSchema.index({ status: 1, leaseExpiresAt: 1 });
 runtimeWorkItemSchema.index({ partnerId: 1, receivingWorkspaceId: 1, status: 1, createdAt: -1 });
 runtimeWorkItemSchema.index({

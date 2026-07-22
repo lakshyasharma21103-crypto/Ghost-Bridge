@@ -5,6 +5,12 @@ const {
   FAILURE_CATEGORIES,
   RECOVERY_LIMITS,
 } = require('../constants/orchestrationRecovery');
+const {
+  ADMISSION_CLASSES,
+  PRIORITY_CLASSES,
+  WORKER_POOLS,
+  WORKLOAD_CATEGORIES,
+} = require('../constants/productionScale');
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,127}$/;
 const SAFE_HASH = /^(?:sha256|hmac-sha256):[a-f0-9]{64}$/;
@@ -115,6 +121,15 @@ const orchestrationCompensationRunSchema = new mongoose.Schema(
     leaseTokenHash: { type: String, trim: true, match: SAFE_HASH, select: false },
     leaseExpiresAt: { type: Date, index: true },
     heartbeatAt: { type: Date },
+    workloadCategory: { type: String, enum: WORKLOAD_CATEGORIES, default: 'orchestration_compensation', required: true, index: true },
+    routingVersion: { type: Number, default: 1, required: true, min: 1, max: 1_000 },
+    partitionNumber: { type: Number, default: 0, required: true, min: 0, max: 255 },
+    partitionKey: { type: String, trim: true, maxlength: 200, index: true },
+    admissionClass: { type: String, enum: ADMISSION_CLASSES, default: 'protected', required: true },
+    priorityClass: { type: String, enum: PRIORITY_CLASSES, default: 'critical_recovery', required: true, index: true },
+    workerPool: { type: String, enum: WORKER_POOLS, default: 'recovery', required: true },
+    leaseEpoch: { type: Number, default: 0, required: true, min: 0 },
+    partitionOwnershipEpoch: { type: Number, min: 0 },
     requestId: { type: String, required: true, trim: true, maxlength: 128, immutable: true, index: true },
     traceId: { type: String, required: true, trim: true, maxlength: 128, immutable: true, index: true },
     parentTraceId: { type: String, required: true, trim: true, maxlength: 128, immutable: true },
@@ -140,6 +155,7 @@ orchestrationCompensationRunSchema.index({ orchestrationRunId: 1, status: 1, cre
 orchestrationCompensationRunSchema.index({ originalNodeRunId: 1, status: 1, createdAt: -1 });
 orchestrationCompensationRunSchema.index({ status: 1, leaseExpiresAt: 1 });
 orchestrationCompensationRunSchema.index({ status: 1, nextAttemptAt: 1, createdAt: 1 });
+orchestrationCompensationRunSchema.index({ workloadCategory: 1, routingVersion: 1, partitionNumber: 1, status: 1, nextAttemptAt: 1 });
 orchestrationCompensationRunSchema.index({ requestId: 1, createdAt: -1 });
 orchestrationCompensationRunSchema.index({ traceId: 1, createdAt: -1 });
 orchestrationCompensationRunSchema.index(

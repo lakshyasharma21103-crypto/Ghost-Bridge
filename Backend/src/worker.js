@@ -2,13 +2,15 @@ const { logger } = require('./utils/logger');
 const { createDurableWorker, safeWorkerError } = require('./services/durableWorker.service');
 const { createOrchestrationWorker } = require('./services/orchestrationScheduler.service');
 const { env } = require('./config/env');
+const { createDataAccessWorker } = require('./services/dataAccessWorker.service');
 
 async function startWorker(options = {}) {
   const durableWorker = createDurableWorker(options.durable || options);
   await durableWorker.start();
   const orchestrationWorker = env.ORCHESTRATION_WORKER_ENABLED
-    ? createOrchestrationWorker({
+      ? createOrchestrationWorker({
         ...(options.orchestration || {}),
+        partitionCoordination: options.orchestration?.partitionCoordination !== false,
         manageDatabase: false,
       })
     : null;
@@ -18,6 +20,8 @@ async function startWorker(options = {}) {
     await durableWorker.shutdown('ORCHESTRATION_WORKER_START_FAILED');
     throw error;
   }
+  const dataAccessWorker = createDataAccessWorker(options.dataAccess || {});
+  await dataAccessWorker.start();
   return {
     abortActive(reasonCode) {
       return (
@@ -34,16 +38,19 @@ async function startWorker(options = {}) {
           acceptingClaims: false,
           activeNodeCount: 0,
         },
+        dataAccess: dataAccessWorker.snapshot(),
       };
     },
     async shutdown(signal) {
+      const dataAccess = await dataAccessWorker.shutdown(signal);
       const orchestration = orchestrationWorker
         ? await orchestrationWorker.shutdown(signal)
         : { drained: true, forced: false };
       const durable = await durableWorker.shutdown(signal);
       return {
-        drained: orchestration.drained && durable.drained,
-        forced: orchestration.forced || durable.forced,
+        drained: dataAccess.drained && orchestration.drained && durable.drained,
+        forced: dataAccess.forced || orchestration.forced || durable.forced,
+        dataAccess,
         orchestration,
         durable,
       };

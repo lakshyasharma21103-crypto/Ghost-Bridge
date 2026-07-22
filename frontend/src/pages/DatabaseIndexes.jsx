@@ -1,0 +1,19 @@
+import { RefreshCw, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiClient } from '../api/apiClient.js';
+import { useAppState } from '../app/AppState.jsx';
+import { DataPerformanceNav } from '../components/DataPerformanceNav.jsx';
+import { ErrorAlert, LoadingBlock } from '../components/Feedback.jsx';
+import { StatusBadge } from '../components/StatusBadge.jsx';
+import { PageHeader, Panel, SecondaryButton } from './pageChrome.jsx';
+
+export function DatabaseIndexes() {
+  const { identity, partnerConfigured, recordEvent } = useAppState();
+  const [state, setState] = useState({ loading: false, error: null, items: [] });
+  const [busy, setBusy] = useState('');
+  const query = useMemo(() => new URLSearchParams({ workspaceId: identity.receivingWorkspaceId }), [identity.receivingWorkspaceId]);
+  const load = useCallback(async () => { if (!partnerConfigured) return; setState((current) => ({ ...current, loading: true, error: null })); try { const result = await apiClient.get(`/data-performance/indexes?${query}`); setState({ loading: false, error: null, items: result.items || [] }); } catch (error) { setState((current) => ({ ...current, loading: false, error })); } }, [partnerConfigured, query]);
+  useEffect(() => { void load(); }, [load]);
+  async function reconcile(item) { if (!window.confirm(`Create missing index ${item.indexName}? No indexes will be dropped.`)) return; setBusy(item.indexName); try { await apiClient.post(`/data-performance/indexes/${encodeURIComponent(item.indexName)}/reconcile`, { workspaceId: identity.receivingWorkspaceId, reasonCode: 'OPERATOR_CONFIRMED_ADDITIVE_RECONCILIATION' }, { headers: { 'Idempotency-Key': crypto.randomUUID() } }); recordEvent('Safe index reconciliation requested', item.indexName, 'success'); await load(); } catch (error) { setState((current) => ({ ...current, error })); } finally { setBusy(''); } }
+  return <><PageHeader eyebrow="Operations / Data access" title="Indexes" description="Deterministic manifest and drift states. Reconciliation is additive; index removal is never automated." actions={<SecondaryButton onClick={load}><RefreshCw className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`} />Refresh</SecondaryButton>} /><DataPerformanceNav />{state.error ? <ErrorAlert error={state.error} title="Index diagnostics failed" /> : null}{state.loading ? <LoadingBlock label="Loading index manifest" /> : null}<div className="mb-4 flex items-center gap-2 border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><ShieldAlert className="h-4 w-4" />Reconciliation can create one missing safe index. It cannot drop or rewrite an index.</div><Panel className="overflow-hidden p-0"><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-xs"><thead className="bg-slate-50 uppercase text-slate-500"><tr><th className="px-4 py-3">Collection</th><th>Index</th><th>Status</th><th>Purpose</th><th>Query shapes</th><th>Unique</th><th>Partial</th><th>TTL</th><th>Actions</th></tr></thead><tbody className="divide-y divide-slate-200">{state.items.map((item) => <tr key={`${item.collectionName}:${item.indexName}`}><td className="px-4 py-3">{item.collectionName}</td><td className="font-medium">{item.indexName}</td><td><StatusBadge status={item.status} /></td><td>{item.purpose || item.reasonCode}</td><td>{(item.relatedQueryShapeIds || []).join(', ') || '-'}</td><td>{item.unique ? 'Yes' : 'No'}</td><td>{item.partialFilterExpression ? 'Yes' : 'No'}</td><td>{item.expireAfterSeconds ?? '-'}</td><td>{item.status === 'missing' && item.automaticReconciliationAllowed ? <button className="text-cyan-700 disabled:text-slate-400" disabled={Boolean(busy)} onClick={() => reconcile(item)}>{busy === item.indexName ? 'Reconciling…' : 'Reconcile'}</button> : '-'}</td></tr>)}</tbody></table></div></Panel></>;
+}

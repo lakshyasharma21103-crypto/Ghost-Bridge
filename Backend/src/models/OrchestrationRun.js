@@ -48,6 +48,17 @@ const orchestrationRunSchema = new mongoose.Schema(
     idempotencyKeyHash: { type: String, required: true, trim: true, select: false },
     requestFingerprint: { type: String, required: true, trim: true, select: false },
     clientIdempotencyProvided: { type: Boolean, default: false, select: false },
+    admissionDecisionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WorkloadAdmissionDecision',
+      index: true,
+    },
+    quotaReservationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WorkloadQuotaReservation',
+      index: true,
+    },
+    routingVersion: { type: Number, default: 1, required: true, min: 1, max: 1_000 },
     concurrencyLimit: {
       type: Number,
       required: true,

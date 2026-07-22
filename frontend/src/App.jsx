@@ -43,6 +43,15 @@ import { RecoveryPolicies } from './pages/RecoveryPolicies.jsx';
 import { RecoveryPolicyDetail } from './pages/RecoveryPolicyDetail.jsx';
 import { Interventions } from './pages/Interventions.jsx';
 import { InterventionDetail } from './pages/InterventionDetail.jsx';
+import { ScaleCapacity } from './pages/ScaleCapacity.jsx';
+import { QueuePartitions } from './pages/QueuePartitions.jsx';
+import { WorkerPools } from './pages/WorkerPools.jsx';
+import { AdmissionQuotas } from './pages/AdmissionQuotas.jsx';
+import { DeadLetter } from './pages/DeadLetter.jsx';
+import { DatabaseCache } from './pages/DatabaseCache.jsx';
+import { QueryPerformance } from './pages/QueryPerformance.jsx';
+import { DatabaseIndexes } from './pages/DatabaseIndexes.jsx';
+import { DataProjections } from './pages/DataProjections.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -54,6 +63,15 @@ export default function App() {
         <Route path="/" element={<Landing />} />
         <Route path="/partner" element={<PartnerDashboard />} />
         <Route path="/operations" element={<Operations />} />
+        <Route path="/operations/scale-capacity" element={<ScaleCapacity />} />
+        <Route path="/operations/queue-partitions" element={<QueuePartitions />} />
+        <Route path="/operations/worker-pools" element={<WorkerPools />} />
+        <Route path="/operations/admission-quotas" element={<AdmissionQuotas />} />
+        <Route path="/operations/dead-letter" element={<DeadLetter />} />
+        <Route path="/operations/database-cache" element={<DatabaseCache />} />
+        <Route path="/operations/query-performance" element={<QueryPerformance />} />
+        <Route path="/operations/database-indexes" element={<DatabaseIndexes />} />
+        <Route path="/operations/data-projections" element={<DataProjections />} />
         <Route path="/policies" element={<Policies />} />
         <Route path="/secrets" element={<Secrets />} />
         <Route path="/compliance" element={<Compliance />} />

@@ -77,6 +77,19 @@ const OrchestrationAlert = require('./OrchestrationAlert');
 const OrchestrationOperationalSnapshot = require('./OrchestrationOperationalSnapshot');
 const OrchestrationFleetControl = require('./OrchestrationFleetControl');
 const OrchestrationDiagnosticExport = require('./OrchestrationDiagnosticExport');
+const QueuePartition = require('./QueuePartition');
+const WorkerRegistration = require('./WorkerRegistration');
+const WorkloadAdmissionDecision = require('./WorkloadAdmissionDecision');
+const WorkloadBackpressureState = require('./WorkloadBackpressureState');
+const WorkloadDeadLetter = require('./WorkloadDeadLetter');
+const WorkloadQuotaPolicy = require('./WorkloadQuotaPolicy');
+const WorkloadQuotaReservation = require('./WorkloadQuotaReservation');
+const WorkloadScaleConfiguration = require('./WorkloadScaleConfiguration');
+const DataAccessPerformancePolicy = require('./DataAccessPerformancePolicy');
+const CacheInvalidationEvent = require('./CacheInvalidationEvent');
+const QueryPerformanceSample = require('./QueryPerformanceSample');
+const ProjectionMetadata = require('./ProjectionMetadata');
+const IndexDriftRecord = require('./IndexDriftRecord');
 
 module.exports = {
   Partner,
@@ -158,4 +171,17 @@ module.exports = {
   OrchestrationOperationalSnapshot,
   OrchestrationFleetControl,
   OrchestrationDiagnosticExport,
+  QueuePartition,
+  WorkerRegistration,
+  WorkloadAdmissionDecision,
+  WorkloadBackpressureState,
+  WorkloadDeadLetter,
+  WorkloadQuotaPolicy,
+  WorkloadQuotaReservation,
+  WorkloadScaleConfiguration,
+  DataAccessPerformancePolicy,
+  CacheInvalidationEvent,
+  QueryPerformanceSample,
+  ProjectionMetadata,
+  IndexDriftRecord,
 };

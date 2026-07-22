@@ -251,8 +251,8 @@ test('new catalog, policy, decision and governed orchestration documents validat
   assert.equal(definitionDocument.validateSync(), undefined);
 });
 
-test('permission registry v10 separates discovery, selection and inter-agent delegation administration', () => {
-  const registry = getPermissionRegistry(); assert.equal(registry.version, 10);
+test('permission registry v11 separates discovery, selection and production-scale administration', () => {
+  const registry = getPermissionRegistry(); assert.equal(registry.version, 11);
   for (const id of ['agentDiscovery.read', 'agentSelection.evaluate', 'agentSelectionPolicy.activate', 'agentSelectionDecision.read', 'agentTrust.manage']) assert.ok(registry.permissions.some((permission) => permission.id === id));
   const trust = registry.permissions.find((permission) => permission.id === 'agentTrust.manage'); assert.equal(trust.defaultRoles.includes('operator'), false);
 });

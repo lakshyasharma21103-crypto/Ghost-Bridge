@@ -6,6 +6,8 @@ Phase 13D4 extends that control plane with versioned recovery policies, explicit
 
 Phase 13D5 adds orchestration timeline, distributed trace validation, run health, stuck detection, critical path, bottleneck analysis, SLOs, alerts, operations overview, fleet controls, safe diagnostic export, and retention. The operations architecture is documented in [ORCHESTRATION_OBSERVABILITY.md](./ORCHESTRATION_OBSERVABILITY.md).
 
+Phase 13E1 adds multi-process worker registration, deterministic versioned queue partitions, partition and lease fencing, tenant-aware fair scheduling, atomic admission reservations, and durable backpressure. The scale architecture and consistency boundaries are documented in [PRODUCTION_SCALE.md](./PRODUCTION_SCALE.md).
+
 ## Trust and secret boundaries
 
 The control plane stores graph metadata, immutable safe snapshots, run/node state, explicitly resolved node input, and schema-validated output. Node input/output and run input/final output are private MongoDB fields excluded from normal queries and API serializers.

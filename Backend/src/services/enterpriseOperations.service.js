@@ -45,6 +45,10 @@ const SecurityEvent = require('../models/SecurityEvent');
 const TenantDataExport = require('../models/TenantDataExport');
 const TenantDeletionJob = require('../models/TenantDeletionJob');
 const TenantDeletionTombstone = require('../models/TenantDeletionTombstone');
+const DataAccessPerformancePolicy = require('../models/DataAccessPerformancePolicy');
+const CacheInvalidationEvent = require('../models/CacheInvalidationEvent');
+const QueryPerformanceSample = require('../models/QueryPerformanceSample');
+const ProjectionMetadata = require('../models/ProjectionMetadata');
 const OperationalRecovery = require('../models/OperationalRecovery');
 const DisasterRecoveryStatus = require('../models/DisasterRecoveryStatus');
 const OrchestrationDefinition = require('../models/OrchestrationDefinition');
@@ -3955,7 +3959,41 @@ async function deleteTenantExportPackages(scope) {
   return TenantDataExport.deleteMany({ organizationId: scope.organizationId });
 }
 
+async function invalidateTenantCacheMetadata(scope) {
+  const { cacheAdapter } = require('./dataAccessPerformance.service');
+  const { tenantCacheTag } = require('./dataAccessCache.service');
+  const { env } = require('../config/env');
+  const invalidated = await cacheAdapter.invalidateTags([
+    tenantCacheTag(scope.organizationId, undefined, env.CACHE_KEY_DIGEST_SECRET),
+  ]);
+  return { deletedCount: invalidated };
+}
+
 const DELETION_COLLECTIONS = Object.freeze([
+  {
+    name: 'tenantCacheMetadata',
+    execute: invalidateTenantCacheMetadata,
+  },
+  {
+    name: 'cacheInvalidationEvents',
+    model: CacheInvalidationEvent,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'queryPerformanceSamples',
+    model: QueryPerformanceSample,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'projectionMetadata',
+    model: ProjectionMetadata,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'dataAccessPerformancePolicies',
+    model: DataAccessPerformancePolicy,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
   {
     name: 'runtimeCapacitySlots',
     model: RuntimeCapacitySlot,
@@ -4570,6 +4608,7 @@ module.exports = {
   decideAccessReviewItem,
   drainStatus,
   evaluateFeature,
+  enforceAdministrativeApproval,
   executeTenantDeletion,
   getAccessReview,
   getIncident,

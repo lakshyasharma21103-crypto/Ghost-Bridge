@@ -9,6 +9,7 @@ Phase 13D2 tenant-safe installed-agent discovery, conservative schema compatibil
 Phase 13D3 versioned data contracts, scoped delegation grants, safe extraction/transformation/redaction/minimization, atomic invocation accounting, and Runtime Gateway execution are documented in [INTER_AGENT_DELEGATION.md](./INTER_AGENT_DELEGATION.md).
 Phase 13D4 durable recovery policies, explicit compensation, human intervention, governed replacement/correction, uncertain-outcome containment, and verified checkpoint resume are documented in [ORCHESTRATION_RECOVERY.md](./ORCHESTRATION_RECOVERY.md).
 Phase 13D5 orchestration timeline, trace validation, health, critical path, bottlenecks, SLOs, alerts, worker/queue operations, fleet controls, safe diagnostics, retention, and verification are documented in [ORCHESTRATION_OBSERVABILITY.md](./ORCHESTRATION_OBSERVABILITY.md).
+Phase 13E1 horizontal worker scaling, deterministic versioned partitions, fencing, tenant fairness, atomic admission quotas, durable backpressure, protected capacity, safe dead letters, and provider-neutral capacity signals are documented in [PRODUCTION_SCALE.md](./PRODUCTION_SCALE.md).
 
 One key to discover, connect, and invoke any compatible AI agent.
 
@@ -88,3 +89,11 @@ intended.
 ## Orchestration-observability verification
 
 `npm run verify:orchestration-observability` runs the deterministic non-billed Phase 13D5 observability and operations scenario. Use `npm run migrate:orchestration-observability` for restart-safe timeline, trace, health, SLO, alert, snapshot, fleet-control, and diagnostic-export indexes.
+
+## Production-scale verification
+
+`npm run verify:production-scale` runs the deterministic non-billed Phase 13E1 multi-worker, partition-routing, fencing, fair-scheduling, quota, backpressure, dead-letter, and capacity scenario. Use `npm run migrate:production-scale` to create restart-safe indexes, default partitions, and missing routing metadata without rewriting active work.
+
+## Data-access performance verification
+
+`npm run verify:data-access-performance` runs the deterministic non-billed Phase 13E2 query-governance, cursor, cache, durable invalidation, resumable projection, slow-diagnostic, and index-drift scenario. Use `npm run migrate:data-access-performance` for explicit additive index reconciliation. See [DATA_ACCESS_PERFORMANCE.md](DATA_ACCESS_PERFORMANCE.md) for the authority, consistency, repository, cache, projection, retention, and operations architecture.

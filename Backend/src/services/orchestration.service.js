@@ -16,6 +16,13 @@ const { createGrantRecord, closeRunGrants } = require('./interAgentDelegation.se
 const { actorFromPartner, assertAuthorized } = require('./authorization.service');
 const { assertOperationalAccess } = require('./operationalState.service');
 const { createAuditLog } = require('./auditService');
+const { env } = require('../config/env');
+const {
+  buildCursorFilter,
+  createCursorFromRecord,
+  decodeCursor,
+  validateQueryRequest,
+} = require('./dataAccessRegistry.service');
 const { requestCancellation: cancelInvocation } = require('./invocationControl.service');
 const metrics = require('./orchestrationMetrics.service');
 const {
@@ -47,6 +54,11 @@ const {
 } = require('../utils/idempotency');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const {
+  assertAdmissionAccepted,
+  releaseQuotaReservation,
+  resolveWorkloadRoute,
+} = require('./productionScale.service');
 
 function idOf(value) {
   return String(value?._id || value?.id || value || '').trim();
@@ -1281,10 +1293,47 @@ async function startRun(definitionId, input = {}, caller = {}) {
     ? secureDigest('orchestration-recovery-policy-snapshot', canonicalize(recoveryPolicySnapshot))
     : undefined;
   const snapshot = safeDefinitionSnapshot(plain);
+  const runId = new mongoose.Types.ObjectId();
+  const admission = await assertAdmissionAccepted(
+    {
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      workloadCategory: 'orchestration_node',
+      priorityClass: 'standard',
+      admissionClass: 'standard',
+      orchestrationDefinitionId: definition._id,
+      orchestrationRunId: runId,
+      idempotencyKey: idempotencyKeyHash,
+      payloadBytesEstimate: Buffer.byteLength(canonicalize(runInput), 'utf8'),
+      reservationExpiresAt: new Date(Date.now() + snapshot.maxRunDurationMs),
+    },
+    caller,
+  );
+  const routesByNodeKey = new Map();
+  for (const node of snapshot.nodes) {
+    const route = await resolveWorkloadRoute({
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      routingKey: `${idOf(runId)}:${node.nodeKey}`,
+      workloadCategory: 'orchestration_node',
+      routingVersion: admission.routingVersion,
+    });
+    routesByNodeKey.set(
+      node.nodeKey,
+      {
+        workloadCategory: route.workloadCategory,
+        routingVersion: route.routingVersion,
+        partitionNumber: route.partitionNumber,
+        partitionKey: route.partitionKey,
+        workerPool: route.workerPool,
+      },
+    );
+  }
   let run;
   const now = new Date();
   try {
     run = await OrchestrationRun.create({
+      _id: runId,
       organizationId: scope.organizationId,
       workspaceId: scope.workspaceId,
       definitionId: definition._id,
@@ -1298,6 +1347,9 @@ async function startRun(definitionId, input = {}, caller = {}) {
       idempotencyKeyHash,
       requestFingerprint,
       clientIdempotencyProvided: normalizedKey.clientProvided,
+      admissionDecisionId: admission.decisionId,
+      quotaReservationId: admission.quotaReservationId,
+      routingVersion: admission.routingVersion,
       concurrencyLimit: snapshot.concurrencyLimit,
       maxRunDurationMs: snapshot.maxRunDurationMs,
       maxNodeExecutions: snapshot.maxNodeExecutions,
@@ -1342,7 +1394,12 @@ async function startRun(definitionId, input = {}, caller = {}) {
         : {}),
     });
   } catch (error) {
-    if (!isDuplicateKeyError(error)) throw error;
+    if (!isDuplicateKeyError(error)) {
+      if (admission.quotaReservationId) {
+        await releaseQuotaReservation(admission.quotaReservationId, { scope }).catch(() => undefined);
+      }
+      throw error;
+    }
     const replay = await OrchestrationRun.findOne({
       organizationId: scope.organizationId,
       workspaceId: scope.workspaceId,
@@ -1364,7 +1421,16 @@ async function startRun(definitionId, input = {}, caller = {}) {
     passportVersion: node.passportVersion,
     capability: node.capability,
     operation: node.operation,
-    status: node.selectionApprovalRequestId ? 'waiting_approval' : node.dependencies.length ? 'blocked' : 'ready',
+    status: node.selectionApprovalRequestId
+      ? 'waiting_approval'
+      : node.dependencies.length
+        ? 'blocked'
+        : admission.decision === 'accepted_deferred'
+          ? 'retry_wait'
+          : 'ready',
+    ...(admission.decision === 'accepted_deferred' && !node.dependencies.length
+      ? { nextAttemptAt: new Date(Date.now() + 30_000) }
+      : {}),
     dependencyNodeKeys: node.dependencies,
     continueOnFailure: node.continueOnFailure,
     attempt: 0,
@@ -1373,6 +1439,9 @@ async function startRun(definitionId, input = {}, caller = {}) {
     requestId: `req_${secureDigest('orchestration-node-request', `${idOf(run)}:${node.nodeKey}`).slice(-48)}`,
     traceId: `trace_${secureDigest('orchestration-node-trace', `${run.traceId}:${node.nodeKey}`).slice(-48)}`,
     parentTraceId: run.traceId,
+    ...routesByNodeKey.get(node.nodeKey),
+    admissionClass: admission.decision === 'accepted_deferred' ? 'deferred' : admission.admissionClass,
+    priorityClass: admission.priorityClass,
     selectionDecisionId: node.selectionDecisionId,
     selectionApprovalRequestId: node.selectionApprovalRequestId,
     recoverability: node.recoverability || 'retryable',
@@ -1416,6 +1485,9 @@ async function startRun(definitionId, input = {}, caller = {}) {
         },
       },
     );
+    if (admission.quotaReservationId) {
+      await releaseQuotaReservation(admission.quotaReservationId, { scope }).catch(() => undefined);
+    }
     throw error;
   }
   for (const { node, decision } of selectionResults) {
@@ -1551,6 +1623,9 @@ async function startRun(definitionId, input = {}, caller = {}) {
       },
     );
     await closeRunGrants(run._id, 'failed', scope);
+    if (admission.quotaReservationId) {
+      await releaseQuotaReservation(admission.quotaReservationId, { scope }).catch(() => undefined);
+    }
     throw error;
   }
   if (nodeRuns.some((node) => node.status === 'waiting_approval')) {
@@ -1589,12 +1664,13 @@ async function startRun(definitionId, input = {}, caller = {}) {
   return { ...serializeRun(run, { total: nodeRuns.length, ready: nodeRuns.filter((node) => node.status === 'ready').length }), idempotencyReplayed: false };
 }
 
-async function progressByRunIds(runIds) {
+async function progressByRunIds(runIds, scope) {
   if (!runIds.length) return new Map();
   const rows = await OrchestrationNodeRun.aggregate([
-    { $match: { orchestrationRunId: { $in: runIds } } },
+    { $match: { organizationId: scope.organizationId, workspaceId: scope.workspaceId, orchestrationRunId: { $in: runIds.slice(0, 100) } } },
     { $group: { _id: { runId: '$orchestrationRunId', status: '$status' }, count: { $sum: 1 } } },
-  ]);
+    { $limit: 1_000 },
+  ]).option({ maxTimeMS: env.DATABASE_OPERATION_TIMEOUT_MS, allowDiskUse: false });
   const result = new Map();
   for (const row of rows) {
     const runId = idOf(row._id.runId);
@@ -1609,30 +1685,44 @@ async function progressByRunIds(runIds) {
 async function listRuns(input = {}, caller = {}) {
   const scope = callerScope(input, caller);
   await authorize('orchestration.run.read', 'OrchestrationRun', null, scope, caller);
-  const paging = pagination(input);
-  const filter = { organizationId: scope.organizationId, workspaceId: scope.workspaceId };
+  if (Number(input.page || 1) > 1 && !input.cursor) {
+    throw new AppError(400, 'QUERY_CURSOR_INVALID', 'Large orchestration run lists require cursor pagination.');
+  }
+  const requestedFilter = {};
   if (input.status) {
     const statuses = String(input.status).split(',').map((value) => value.trim().toLowerCase()).filter(Boolean);
     if (!statuses.length || statuses.some((status) => !ORCHESTRATION_RUN_STATUSES.includes(status)))
       throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Run status filter is invalid.');
-    filter.status = { $in: statuses.slice(0, 10) };
+    requestedFilter.status = { $in: statuses.slice(0, 10) };
   }
   if (input.definitionId) {
     if (!mongoose.isValidObjectId(input.definitionId)) {
       throw new AppError(400, ErrorCodes.VALIDATION_ERROR, 'Run definition filter is invalid.');
     }
-    filter.definitionId = input.definitionId;
+    requestedFilter.definitionId = input.definitionId;
   }
   const search = safeSearch(input.search || input.q);
-  if (search) filter.definitionName = new RegExp(search, 'i');
-  const [items, total] = await Promise.all([
-    OrchestrationRun.find(filter).sort({ createdAt: -1, _id: -1 }).skip(paging.skip).limit(paging.limit).lean(),
-    OrchestrationRun.countDocuments(filter),
-  ]);
-  const progress = await progressByRunIds(items.map((item) => item._id));
+  if (search) requestedFilter.definitionName = search;
+  const governed = validateQueryRequest('orchestration_runs_list', { filter: requestedFilter, limit: input.limit, maximumTimeMS: env.DATABASE_OPERATION_TIMEOUT_MS });
+  let filter = { organizationId: scope.organizationId, workspaceId: scope.workspaceId, ...governed.filter };
+  if (input.cursor) {
+    const claims = decodeCursor(input.cursor, { queryShapeId: governed.shape.queryShapeId, organizationId: scope.organizationId, workspaceId: scope.workspaceId, sort: governed.sort, filter: governed.filter }, { secret: env.DATA_ACCESS_CURSOR_SECRET });
+    filter = { $and: [filter, buildCursorFilter(claims)] };
+  }
+  const rows = await OrchestrationRun.find(filter)
+    .select('_id organizationId workspaceId definitionId definitionName definitionVersion status failureSummary requestedBy startedAt completedAt cancelledAt cancelRequestedAt traceId requestId concurrencyLimit maxRunDurationMs nodeExecutionCount activeNodeCount recoveryPolicyId recoveryPolicyVersion recoveryPolicySnapshotHash recoveryAttempt maximumRecoveryAttempts maximumCompensationAttempts recoveryDeadlineAt compensationDeadlineAt interventionDeadlineAt currentRecoveryDecisionId compensationPlanId interventionRequestId checkpointSequence unresolvedSideEffects recoveredAt terminationRequestedAt terminatedAt terminationReasonCode recoveryIncidentId createdAt updatedAt')
+    .sort(governed.sort)
+    .limit(governed.limit + 1)
+    .maxTimeMS(governed.maximumTimeMS)
+    .comment(governed.shape.queryShapeId)
+    .lean();
+  const hasMore = rows.length > governed.limit;
+  const items = rows.slice(0, governed.limit);
+  const progress = await progressByRunIds(items.map((item) => item._id), scope);
+  const nextCursor = hasMore && items.length ? createCursorFromRecord(governed.shape.queryShapeId, items.at(-1), { organizationId: scope.organizationId, workspaceId: scope.workspaceId, sort: governed.sort, filter: governed.filter }, { secret: env.DATA_ACCESS_CURSOR_SECRET }) : null;
   return {
     items: items.map((item) => serializeRun(item, progress.get(idOf(item)))),
-    pagination: { page: paging.page, limit: paging.limit, total },
+    pagination: { page: 1, limit: governed.limit, total: null, hasMore, nextCursor },
   };
 }
 
@@ -1750,6 +1840,9 @@ async function cancelRun(runId, input = {}, caller = {}) {
     }),
   );
   await closeRunGrants(run._id, 'cancelled', scope);
+  if (run.quotaReservationId) {
+    await releaseQuotaReservation(run.quotaReservationId, { scope }).catch(() => undefined);
+  }
   const active = await OrchestrationNodeRun.countDocuments({ orchestrationRunId: run._id, status: 'running' });
   if (active === 0) {
     const privateState = await scopedRun(runId, scope, { privateFields: true });

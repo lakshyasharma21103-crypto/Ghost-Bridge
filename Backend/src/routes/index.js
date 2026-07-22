@@ -22,6 +22,8 @@ const {
   interAgentContractRouter,
   interAgentDelegationRouter,
 } = require('./interAgentDelegationRoutes');
+const { productionScaleRouter } = require('./productionScaleRoutes');
+const { dataAccessPerformanceRouter } = require('./dataAccessPerformanceRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -58,6 +60,8 @@ router.use(`${API_PREFIX}/agent-discovery`, agentDiscoveryRouter);
 router.use(`${API_PREFIX}/agent-selection`, agentSelectionRouter);
 router.use(`${API_PREFIX}/inter-agent-contracts`, interAgentContractRouter);
 router.use(`${API_PREFIX}/inter-agent-delegations`, interAgentDelegationRouter);
+router.use(`${API_PREFIX}/production-scale`, productionScaleRouter);
+router.use(`${API_PREFIX}/data-performance`, dataAccessPerformanceRouter);
 if (env.NODE_ENV === 'development') {
   router.use(`${API_PREFIX}/demo`, demoRouter);
   router.use(`${API_PREFIX}/developer-sandbox`, developerSandboxRouter);
