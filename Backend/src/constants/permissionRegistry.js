@@ -1,4 +1,4 @@
-const PERMISSION_REGISTRY_VERSION = 9;
+const PERMISSION_REGISTRY_VERSION = 10;
 const PERMISSION_REGISTRY_ID = `permission-registry.v${PERMISSION_REGISTRY_VERSION}`;
 
 const RiskLevels = Object.freeze({
@@ -669,6 +669,132 @@ const permissionDefinitions = [
     defaultRoles: ['organization_owner', 'organization_admin', 'workspace_admin', 'operator'],
     auditRequired: true,
   },
+  ...[
+    [
+      'orchestrationObservability.read',
+      'Read tenant-scoped orchestration timelines, health summaries, analytics, worker and queue projections.',
+      'LOW',
+      [
+        'organization_owner',
+        'organization_admin',
+        'security_admin',
+        'workspace_admin',
+        'operator',
+        'developer',
+        'auditor',
+        'viewer',
+      ],
+    ],
+    [
+      'orchestrationObservability.trace.read',
+      'Read safe distributed trace projections and trace-integrity diagnostics.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor'],
+    ],
+    [
+      'orchestrationObservability.logs.read',
+      'Read safe orchestration diagnostic logs without raw payloads.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor'],
+    ],
+    [
+      'orchestrationSloPolicy.read',
+      'Read tenant-scoped orchestration SLO policies and evaluations.',
+      'LOW',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'developer', 'auditor', 'viewer'],
+    ],
+    [
+      'orchestrationSloPolicy.create',
+      'Create tenant-scoped orchestration SLO policy drafts.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestrationSloPolicy.update',
+      'Update draft SLO policies or create successor versions.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestrationSloPolicy.activate',
+      'Activate immutable orchestration SLO policy versions.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
+    ],
+    [
+      'orchestrationSloPolicy.evaluate',
+      'Run deterministic SLO evaluation and store safe snapshots.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestrationAlertRule.read',
+      'Read tenant-scoped orchestration alert rules.',
+      'LOW',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor', 'viewer'],
+    ],
+    [
+      'orchestrationAlertRule.create',
+      'Create bounded orchestration alert rule drafts.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestrationAlertRule.update',
+      'Update bounded orchestration alert rule drafts.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestrationAlertRule.activate',
+      'Activate orchestration alert rule versions.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin'],
+    ],
+    [
+      'orchestrationAlert.read',
+      'Read tenant-scoped orchestration alert instances.',
+      'LOW',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor', 'viewer'],
+    ],
+    [
+      'orchestrationAlert.manage',
+      'Acknowledge and resolve orchestration alert instances.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestrationAlert.suppress',
+      'Suppress orchestration alert instances for a bounded window.',
+      'HIGH',
+      ['organization_owner', 'organization_admin', 'security_admin', 'operator'],
+    ],
+    [
+      'orchestrationOperations.control',
+      'Run guarded orchestration fleet controls such as pause, drain, checkpoint request and quarantine.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator'],
+    ],
+    [
+      'orchestrationDiagnostic.export',
+      'Create bounded redacted orchestration diagnostic exports.',
+      'CRITICAL',
+      ['organization_owner', 'organization_admin', 'security_admin', 'auditor'],
+    ],
+    [
+      'orchestrationRetention.manage',
+      'Apply bounded orchestration observability retention cleanup.',
+      'CRITICAL',
+      ['organization_owner', 'security_admin'],
+    ],
+  ].map(([id, description, riskLevel, defaultRoles]) => ({
+    id,
+    description,
+    category: 'Orchestration Observability',
+    riskLevel: RiskLevels[riskLevel],
+    defaultRoles,
+    auditRequired: true,
+  })),
   {
     id: 'policy.read',
     description: 'Read policy definitions, versions, and the trusted attribute catalog.',

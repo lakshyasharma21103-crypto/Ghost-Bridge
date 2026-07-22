@@ -82,6 +82,12 @@ const RUNTIME_INVOCATION_TIMEOUT_MS = configuredTimeoutMs(
   'RUNTIME_INVOCATION_TIMEOUT_MS',
   DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS,
 );
+const EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS = 2;
+const EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS = 5_000;
+const RETRYABLE_GATEWAY_PROVIDER_CODES = new Set([
+  'GEMINI_REQUEST_TIMEOUT',
+  'GEMINI_UPSTREAM_UNAVAILABLE',
+]);
 const externalAgentPort = Number(process.env.EXTERNAL_FLOW_AGENT_PORT || 5002);
 const gatewayPort = Number(process.env.EXTERNAL_FLOW_GATEWAY_PORT || 5014);
 let externalRuntimeBootstrap;
@@ -1112,6 +1118,89 @@ function success(result, label, options = {}) {
   return result.body.data;
 }
 
+function retryableGatewayProviderFailure(result) {
+  const code = safeCode(result?.body?.error?.code);
+  return (
+    RETRYABLE_GATEWAY_PROVIDER_CODES.has(code) &&
+    Number(result?.response?.status) >= 500
+  );
+}
+
+function gatewayRetryDelay(delayMs) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref?.();
+  });
+}
+
+async function invokeGatewayWithTransientRetry(options = {}) {
+  const maxAttempts = Math.max(
+    1,
+    Math.min(EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS, Number(options.maxAttempts) || 1),
+  );
+  const retryDelayMs = Math.max(
+    0,
+    Math.min(60_000, Number(options.retryDelayMs) || 0),
+  );
+  const requestFn = options.requestFn || request;
+  const delayFn = options.delayFn || gatewayRetryDelay;
+  const retryReportFn = options.retryReportFn || ((details) => {
+    console.warn(
+      `RETRY gateway invocation: ${details.code} cleared provider retries; ` +
+        `attempt ${details.nextAttempt}/${details.maxAttempts} starts in ${details.delayMs} ms`,
+    );
+  });
+  const randomUUID = options.randomUUID || crypto.randomUUID;
+
+  for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber += 1) {
+    const traceId = `trace_${randomUUID()}`;
+    const requestId = `req_${randomUUID()}`;
+    const invocationResult = await requestFn(
+      options.baseUrl,
+      `/connections/${options.connectionId}/invoke`,
+      {
+        method: 'POST',
+        headers: { 'X-Trace-Id': traceId, 'X-Request-Id': requestId },
+        body: options.body,
+        label: 'gateway invocation',
+        timeoutMs: options.timeoutMs ?? VERIFICATION_REQUEST_TIMEOUT_MS,
+        connectionId: options.connectionId,
+      },
+    );
+
+    if (
+      retryableGatewayProviderFailure(invocationResult) &&
+      attemptNumber < maxAttempts
+    ) {
+      const code = safeCode(invocationResult.body?.error?.code);
+      retryReportFn({
+        attemptNumber,
+        code,
+        delayMs: retryDelayMs,
+        maxAttempts,
+        nextAttempt: attemptNumber + 1,
+        requestId,
+        traceId,
+      });
+      await delayFn(retryDelayMs);
+      continue;
+    }
+
+    return {
+      attemptNumber,
+      invocation: success(invocationResult, 'gateway invocation', {
+        connectionId: options.connectionId,
+        runtimeMode: options.runtimeMode,
+      }),
+      invocationResult,
+      requestId,
+      traceId,
+    };
+  }
+
+  throw new Error('Gateway invocation retry loop exited without a result.');
+}
+
 function safeResponseIdentifiers(result) {
   return {
     requestId: safeIdentifier(
@@ -1386,29 +1475,21 @@ async function verify() {
     report('resolution', 'connected connection created with encrypted delegated credential');
 
     beginStage(state, 'gateway_invocation');
-    const traceId = `trace_${crypto.randomUUID()}`;
-    const requestId = `req_${crypto.randomUUID()}`;
-    const invocationResult = await request(
-      gatewayBaseUrl,
-      `/connections/${resolved.connectionId}/invoke`,
-      {
-        method: 'POST',
-        headers: { 'X-Trace-Id': traceId, 'X-Request-Id': requestId },
-        body: {
-          capability: 'research_topic',
-          input: { topic: TOPIC },
-          receivingWorkspaceId: WORKSPACE_ID,
-          receivingUserId: USER_ID,
-        },
-        label: 'gateway invocation',
-        timeoutMs: VERIFICATION_REQUEST_TIMEOUT_MS,
-        connectionId: resolved.connectionId,
+    const gatewayInvocation = await invokeGatewayWithTransientRetry({
+      baseUrl: gatewayBaseUrl,
+      body: {
+        capability: 'research_topic',
+        input: { topic: TOPIC },
+        receivingWorkspaceId: WORKSPACE_ID,
+        receivingUserId: USER_ID,
       },
-    );
-    const invocation = success(invocationResult, 'gateway invocation', {
       connectionId: resolved.connectionId,
+      maxAttempts: EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS,
+      retryDelayMs: EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS,
       runtimeMode: runtimeConfiguration.mode,
+      timeoutMs: VERIFICATION_REQUEST_TIMEOUT_MS,
     });
+    const { invocation, invocationResult, requestId, traceId } = gatewayInvocation;
     assert(
       invocationResult.response.headers.get('x-trace-id') === traceId,
       'Gateway trace ID was not preserved.',
@@ -1671,6 +1752,8 @@ module.exports = {
   EXTERNAL_AGENT_RUNTIME_TOKEN_ENV,
   EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
   EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
+  EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS,
+  EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS,
   ExternalFlowVerificationError,
   LOCAL_SPAWNED_AGENT_MODE,
   REMOTE_LIVE_AGENT_MODE,
@@ -1684,12 +1767,14 @@ module.exports = {
   externalAgentEnvironment,
   externalAgentProbeUrl,
   formatVerificationFailure,
+  invokeGatewayWithTransientRetry,
   normalizeExternalAgentBaseUrl,
   request,
   readinessDiagnostics,
   requireExternalRuntimeConfiguration,
   resolveExternalAgentBaseUrl,
   resolveExternalRuntime,
+  retryableGatewayProviderFailure,
   runStartupStage,
   sourceExtractionDiagnostics,
   success,

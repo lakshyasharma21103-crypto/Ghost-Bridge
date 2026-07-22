@@ -20,9 +20,13 @@ import { Secrets } from './pages/Secrets.jsx';
 import { Compliance } from './pages/Compliance.jsx';
 import { EnterpriseOperations } from './pages/EnterpriseOperations.jsx';
 import { Orchestrations } from './pages/Orchestrations.jsx';
+import { OrchestrationAlerts } from './pages/OrchestrationAlerts.jsx';
+import { OrchestrationAnalytics } from './pages/OrchestrationAnalytics.jsx';
 import { OrchestrationDefinition } from './pages/OrchestrationDefinition.jsx';
+import { OrchestrationOperations } from './pages/OrchestrationOperations.jsx';
 import { OrchestrationRuns } from './pages/OrchestrationRuns.jsx';
 import { OrchestrationRunDetail } from './pages/OrchestrationRunDetail.jsx';
+import { OrchestrationSLOs } from './pages/OrchestrationSLOs.jsx';
 import { AgentDiscovery } from './pages/AgentDiscovery.jsx';
 import { AgentDetail } from './pages/AgentDetail.jsx';
 import { SelectionPolicies } from './pages/SelectionPolicies.jsx';
@@ -55,6 +59,10 @@ export default function App() {
         <Route path="/compliance" element={<Compliance />} />
         <Route path="/enterprise-operations" element={<EnterpriseOperations />} />
         <Route path="/orchestrations" element={<Orchestrations />} />
+        <Route path="/orchestrations/operations" element={<OrchestrationOperations />} />
+        <Route path="/orchestrations/analytics" element={<OrchestrationAnalytics />} />
+        <Route path="/orchestrations/slos" element={<OrchestrationSLOs />} />
+        <Route path="/orchestrations/alerts" element={<OrchestrationAlerts />} />
         <Route path="/orchestrations/definitions/:definitionId" element={<OrchestrationDefinition />} />
         <Route path="/orchestrations/runs" element={<OrchestrationRuns />} />
         <Route path="/orchestrations/runs/:runId" element={<OrchestrationRunDetail />} />

@@ -1,5 +1,7 @@
 # Phase 13A1 observability
 
+Phase 13D5 orchestration-specific timeline, trace validation, run health, SLOs, alerts, operations controls, safe diagnostic export, and retention are documented in [ORCHESTRATION_OBSERVABILITY.md](./ORCHESTRATION_OBSERVABILITY.md).
+
 The gateway and external research agent use provider-neutral JSON diagnostics. Each event has an
 `event`, `service`, `environment` (when available), `version`, `timestamp`, and only the correlation
 and outcome fields relevant to that event. Fields whose values are undefined are omitted.

@@ -77,6 +77,7 @@ const {
   resourceFromConnection,
 } = require('./authorization.service');
 const { assertOperationalAccess } = require('./operationalState.service');
+const { assertConnectionNotQuarantined } = require('./orchestrationObservability.service');
 
 const inputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
 const outputAjv = new Ajv({ allErrors: true, strict: false, validateSchema: true });
@@ -1578,6 +1579,11 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       observer,
       connection,
     );
+    await assertConnectionNotQuarantined(connectionId, {
+      organizationId: idOf(connection.organizationId || connection.partnerId),
+      partnerId: idOf(connection.partnerId),
+      workspaceId: connection.receivingWorkspaceId,
+    });
     observer = observer.child({
       connectionId: idOf(context.connection),
       agentId: idOf(context.passport),

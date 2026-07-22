@@ -49,6 +49,10 @@ const {
   selectionRequiresApproval,
 } = require('./agentSelectionEngine.service');
 const metrics = require('./agentSelectionMetrics.service');
+const {
+  filterQuarantinedCandidates,
+  listQuarantinedConnectionIds,
+} = require('./orchestrationObservability.service');
 
 function idOf(value) {
   return String(value?._id || value?.id || value || '').trim();
@@ -770,9 +774,11 @@ async function evaluateSelection(input = {}, caller = {}, options = {}) {
     throw new AppError(403, 'AGENT_SELECTION_CAPABILITY_DENIED', 'The active selection policy does not permit this capability.');
   }
   const constraints = effectiveConstraints(policy, request);
-  const allScoped = await CapabilityCatalogEntry.find({ organizationId: scope.organizationId, workspaceId: scope.workspaceId, availabilityStatus: 'available' })
+  const allScopedRaw = await CapabilityCatalogEntry.find({ organizationId: scope.organizationId, workspaceId: scope.workspaceId, availabilityStatus: 'available' })
     .sort({ passportId: 1, connectionId: 1 })
     .lean();
+  const quarantinedConnectionIds = await listQuarantinedConnectionIds(scope);
+  const allScoped = filterQuarantinedCandidates(allScopedRaw, quarantinedConnectionIds);
   const capabilityScoped = allScoped.filter((candidate) => candidate.capabilityKeys.includes(request.capability));
   if (!capabilityScoped.length) throw new AppError(400, 'AGENT_SELECTION_CAPABILITY_UNKNOWN', 'Requested capability is unavailable in this workspace.');
   const operationScoped = capabilityScoped.filter((candidate) => candidateCapabilityForService(candidate, request));

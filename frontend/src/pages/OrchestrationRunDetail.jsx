@@ -1,4 +1,4 @@
-import { Ban, RefreshCw } from 'lucide-react';
+import { Ban, Download, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { apiClient } from '../api/apiClient.js';
@@ -68,7 +68,7 @@ async function optionalGet(path, fallback) {
 export function OrchestrationRunDetail() {
   const { runId } = useParams();
   const { identity, partnerConfigured, recordEvent } = useAppState();
-  const [state, setState] = useState({ loading: true, error: null, run: null, nodes: [], recovery: null, checkpoints: [] });
+  const [state, setState] = useState({ loading: true, error: null, run: null, nodes: [], recovery: null, checkpoints: [], observability: null });
   const [confirming, setConfirming] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [recoveryAction, setRecoveryAction] = useState(null);
@@ -79,16 +79,17 @@ export function OrchestrationRunDetail() {
   );
   const load = useCallback(async () => {
     if (!partnerConfigured) {
-      setState({ loading: false, error: null, run: null, nodes: [], recovery: null, checkpoints: [] });
+      setState({ loading: false, error: null, run: null, nodes: [], recovery: null, checkpoints: [], observability: null });
       return;
     }
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const [run, nodes, recovery, checkpointData] = await Promise.all([
+      const [run, nodes, recovery, checkpointData, observability] = await Promise.all([
         apiClient.get(`/orchestrations/runs/${runId}?${query}`),
         apiClient.get(`/orchestrations/runs/${runId}/nodes?${query}`),
         optionalGet(`/orchestrations/runs/${runId}/recovery?${query}`, null),
         optionalGet(`/orchestrations/runs/${runId}/checkpoints?${query}`, { items: [] }),
+        optionalGet(`/orchestrations/runs/${runId}/observability?${query}`, null),
       ]);
       setState({
         loading: false,
@@ -97,6 +98,7 @@ export function OrchestrationRunDetail() {
         nodes: nodes.items || [],
         recovery,
         checkpoints: checkpointData.items || recovery?.checkpoints || [],
+        observability,
       });
     } catch (error) {
       setState((current) => ({ ...current, loading: false, error }));
@@ -115,6 +117,19 @@ export function OrchestrationRunDetail() {
       setState((current) => ({ ...current, error }));
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function createDiagnosticExport() {
+    try {
+      const result = await apiClient.post(`/orchestrations/runs/${runId}/diagnostic-export`, {
+        workspaceId: identity.receivingWorkspaceId,
+        safeReasonCode: 'CONSOLE_DIAGNOSTIC_EXPORT',
+      });
+      recordEvent('Diagnostic export created', result.export?.exportId || runId, 'success');
+      load();
+    } catch (error) {
+      setState((current) => ({ ...current, error }));
     }
   }
 
@@ -162,14 +177,47 @@ export function OrchestrationRunDetail() {
   const intervention = recovery.intervention || recovery.currentIntervention;
   const timeline = recovery.timeline || recovery.recoveryTimeline || [];
   const policy = recovery.recoveryPolicy || run?.recoveryPolicy || {};
+  const observability = state.observability || {};
+  const observedTimeline = observability.timeline || [];
+  const observedTrace = observability.trace || [];
+  const observedSummary = observability.summary || {};
+  const criticalPath = observability.criticalPath || {};
+  const bottlenecks = observability.bottlenecks || [];
 
   return (
     <>
-      <PageHeader eyebrow="Orchestration run" title={run ? `${run.definitionName} v${run.definitionVersion}` : 'Run unavailable'} description={run ? `Run ${run.runId} · trace ${run.traceId}` : ''} actions={<div className="flex flex-wrap gap-2"><Link to="/orchestrations/runs" className="inline-flex min-h-10 items-center border border-slate-300 px-4 py-2 text-sm font-medium">All runs</Link><SecondaryButton onClick={load} disabled={state.loading}><RefreshCw className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`} /> Refresh</SecondaryButton>{run && !TERMINAL.has(run.status) ? <SecondaryButton onClick={() => setConfirming(true)} disabled={cancelling}><Ban className="h-4 w-4" /> Cancel</SecondaryButton> : null}</div>} />
+      <PageHeader eyebrow="Orchestration run" title={run ? `${run.definitionName} v${run.definitionVersion}` : 'Run unavailable'} description={run ? `Run ${run.runId} · trace ${run.traceId}` : ''} actions={<div className="flex flex-wrap gap-2"><Link to="/orchestrations/runs" className="inline-flex min-h-10 items-center border border-slate-300 px-4 py-2 text-sm font-medium">All runs</Link><SecondaryButton onClick={load} disabled={state.loading}><RefreshCw className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`} /> Refresh</SecondaryButton>{run ? <SecondaryButton onClick={createDiagnosticExport} disabled={state.loading}><Download className="h-4 w-4" /> Export diagnostics</SecondaryButton> : null}{run && !TERMINAL.has(run.status) ? <SecondaryButton onClick={() => setConfirming(true)} disabled={cancelling}><Ban className="h-4 w-4" /> Cancel</SecondaryButton> : null}</div>} />
       {state.error ? <ErrorAlert error={state.error} title="Run request failed" /> : null}
       {run ? (
         <div className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Status" value={run.status} detail={`Updated ${formatDate(run.updatedAt)}`} tone={run.status === 'succeeded' ? 'emerald' : 'cyan'} /><MetricCard label="Progress" value={`${completed}/${run.progress?.total || 0}`} detail={`${run.activeNodeCount || 0} active nodes`} /><MetricCard label="Recovery status" value={recovery.status || run.recoveryStatus || 'not_required'} detail={`${recovery.recoveryAttemptCount ?? 0} recovery attempts`} tone={recovery.status === 'recovered' ? 'emerald' : 'slate'} /><MetricCard label="Duration" value={formatDuration(run.durationMs)} detail={formatDate(run.startedAt || run.createdAt)} /></div>
+
+          <Panel>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Observability</h2>
+                <p className="mt-1 text-xs text-slate-500">Health, timeline, trace validation, critical path, and bottleneck projection.</p>
+              </div>
+              <StatusBadge tone={observedSummary.healthCategory === 'stuck' ? 'offline' : observedSummary.healthCategory === 'degraded' ? 'pending' : 'ready'}>{observedSummary.healthCategory || 'unavailable'}</StatusBadge>
+            </div>
+            <div className="grid gap-4 md:grid-cols-4">
+              <MetricCard label="Health" value={observedSummary.healthCategory || '-'} detail={`${observedSummary.progressPercent ?? 0}% complete`} tone={observedSummary.healthCategory === 'stuck' ? 'coral' : 'slate'} />
+              <MetricCard label="Timeline" value={observedTimeline.length} detail="safe events" />
+              <MetricCard label="Trace spans" value={observedTrace.length} detail={observability.traceValidation?.valid === false ? 'validation failed' : 'valid lineage'} tone={observability.traceValidation?.valid === false ? 'coral' : 'emerald'} />
+              <MetricCard label="Critical path" value={formatDuration(criticalPath.criticalPathDurationMs)} detail={criticalPath.criticalPathNodeSequence?.join(' > ') || '-'} />
+            </div>
+            <div className="mt-5 grid gap-6 xl:grid-cols-2">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px] text-left text-sm">
+                  <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-2">Time</th><th>Category</th><th>Status</th><th>Summary</th></tr></thead>
+                  <tbody className="divide-y">{observedTimeline.slice(0, 8).map((event) => <tr key={`${event.sourceCollection}_${event.sourceRecordId}_${event.eventType}`}><td className="py-3 text-xs">{formatDate(event.occurredAt)}</td><td>{event.eventCategory}</td><td><StatusBadge tone={tone(event.safeStatus)}>{event.safeStatus || '-'}</StatusBadge></td><td>{event.safeSummary}</td></tr>)}</tbody>
+                </table>
+              </div>
+              <div className="space-y-3">
+                {bottlenecks.length ? bottlenecks.map((item) => <div key={`${item.category}_${item.reasonCode}`} className="border border-slate-200 p-3 text-sm"><div className="flex items-center justify-between gap-3"><p className="font-medium text-slate-950">{item.category}</p><StatusBadge tone={item.confidence === 'confirmed' ? 'offline' : 'pending'}>{item.confidence}</StatusBadge></div><p className="mt-1 font-mono text-xs text-slate-500">{item.reasonCode}</p></div>) : <p className="text-sm text-slate-500">No bottlenecks are projected for this run.</p>}
+              </div>
+            </div>
+          </Panel>
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
             <Panel>

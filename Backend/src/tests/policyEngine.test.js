@@ -318,7 +318,7 @@ test('trusted attributes use server-derived identity and explicit unknown govern
 
 test('attribute registry exposes metadata but not resolver functions', () => {
   const registry = getAttributeRegistry();
-  assert.equal(registry.version, 2);
+  assert.equal(registry.version, 3);
   assert.equal(
     registry.attributes.some((attribute) => attribute.id === 'capability.sideEffect'),
     true,
@@ -333,9 +333,9 @@ test('attribute registry exposes metadata but not resolver functions', () => {
   );
 });
 
-test('permission registry v9 exposes granular governance and orchestration permissions with role mappings', () => {
+test('permission registry v10 exposes granular governance and orchestration permissions with role mappings', () => {
   const registry = getPermissionRegistry();
-  assert.equal(registry.version, 9);
+  assert.equal(registry.version, 10);
   for (const id of [
     'policy.create',
     'policy.update',

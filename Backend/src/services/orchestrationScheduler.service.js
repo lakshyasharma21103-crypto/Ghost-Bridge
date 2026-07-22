@@ -19,6 +19,7 @@ const {
 } = require('./approval.service');
 const { assertAuthorized } = require('./authorization.service');
 const { assertOperationalAccess } = require('./operationalState.service');
+const { assertWorkersNotDraining } = require('./orchestrationObservability.service');
 const { ensureOrchestrationIndexes } = require('./orchestration.service');
 const { reconcileSelectionApprovals } = require('./agentSelection.service');
 const {
@@ -158,6 +159,7 @@ function schedulerDependencies(overrides = {}) {
     expireIfNeeded,
     assertAuthorized,
     assertOperationalAccess,
+    assertWorkersNotDraining,
     createAuditLog,
     ensureOrchestrationIndexes,
     reconcileSelectionApprovals,
@@ -302,8 +304,18 @@ async function claimNextNode(options = {}) {
       workspaceId: run.workspaceId,
       operation: 'WORKER_CLAIM',
     });
+    await dependencies.assertWorkersNotDraining({
+      organizationId: run.organizationId,
+      workspaceId: run.workspaceId,
+    });
   } catch (error) {
-    if ([ErrorCodes.EXECUTION_DRAINING, ErrorCodes.MAINTENANCE_MODE_ACTIVE].includes(error.code)) return null;
+    if (
+      [
+        ErrorCodes.EXECUTION_DRAINING,
+        ErrorCodes.MAINTENANCE_MODE_ACTIVE,
+        'ORCHESTRATION_WORKERS_DRAINING',
+      ].includes(error.code)
+    ) return null;
     throw error;
   }
   const resuming = candidate.resumeAttempt === true;

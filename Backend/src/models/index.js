@@ -67,6 +67,16 @@ const OrchestrationCompensationRun = require('./OrchestrationCompensationRun');
 const OrchestrationInterventionRequest = require('./OrchestrationInterventionRequest');
 const OrchestrationCheckpoint = require('./OrchestrationCheckpoint');
 const OrchestrationCorrectedInput = require('./OrchestrationCorrectedInput');
+const OrchestrationTimelineEvent = require('./OrchestrationTimelineEvent');
+const OrchestrationTraceSpan = require('./OrchestrationTraceSpan');
+const OrchestrationRunHealthSummary = require('./OrchestrationRunHealthSummary');
+const OrchestrationSloPolicy = require('./OrchestrationSloPolicy');
+const OrchestrationSloEvaluation = require('./OrchestrationSloEvaluation');
+const OrchestrationAlertRule = require('./OrchestrationAlertRule');
+const OrchestrationAlert = require('./OrchestrationAlert');
+const OrchestrationOperationalSnapshot = require('./OrchestrationOperationalSnapshot');
+const OrchestrationFleetControl = require('./OrchestrationFleetControl');
+const OrchestrationDiagnosticExport = require('./OrchestrationDiagnosticExport');
 
 module.exports = {
   Partner,
@@ -138,4 +148,14 @@ module.exports = {
   OrchestrationInterventionRequest,
   OrchestrationCheckpoint,
   OrchestrationCorrectedInput,
+  OrchestrationTimelineEvent,
+  OrchestrationTraceSpan,
+  OrchestrationRunHealthSummary,
+  OrchestrationSloPolicy,
+  OrchestrationSloEvaluation,
+  OrchestrationAlertRule,
+  OrchestrationAlert,
+  OrchestrationOperationalSnapshot,
+  OrchestrationFleetControl,
+  OrchestrationDiagnosticExport,
 };

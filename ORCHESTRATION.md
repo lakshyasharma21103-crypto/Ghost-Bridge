@@ -4,6 +4,8 @@ Phase 13D1 adds tenant-scoped directed acyclic graph (DAG) execution for install
 
 Phase 13D4 extends that control plane with versioned recovery policies, explicit compensation, durable human intervention, guarded operator decisions, and verified checkpoints. The complete recovery architecture and its non-atomic limits are documented in [ORCHESTRATION_RECOVERY.md](./ORCHESTRATION_RECOVERY.md).
 
+Phase 13D5 adds orchestration timeline, distributed trace validation, run health, stuck detection, critical path, bottleneck analysis, SLOs, alerts, operations overview, fleet controls, safe diagnostic export, and retention. The operations architecture is documented in [ORCHESTRATION_OBSERVABILITY.md](./ORCHESTRATION_OBSERVABILITY.md).
+
 ## Trust and secret boundaries
 
 The control plane stores graph metadata, immutable safe snapshots, run/node state, explicitly resolved node input, and schema-validated output. Node input/output and run input/final output are private MongoDB fields excluded from normal queries and API serializers.
@@ -158,7 +160,15 @@ npm run verify:orchestration-recovery
 
 Use `npm run migrate:orchestration-recovery` to create the recovery-policy, decision, plan, compensation-run, intervention, checkpoint, and recovery scheduling indexes/backfills idempotently.
 
-## Deferred beyond Phase 13D4
+The deterministic non-billed Phase 13D5 gate is:
+
+```powershell
+npm run verify:orchestration-observability
+```
+
+Use `npm run migrate:orchestration-observability` to create the timeline, trace, health, SLO, alert, snapshot, fleet-control, and diagnostic-export indexes idempotently.
+
+## Deferred beyond Phase 13D5
 
 - atomic external rollback, distributed transaction semantics, and inferred compensating actions;
 - graphical graph editing;

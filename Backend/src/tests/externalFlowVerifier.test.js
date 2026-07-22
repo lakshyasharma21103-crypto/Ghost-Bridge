@@ -10,6 +10,8 @@ const {
   EXTERNAL_AGENT_RUNTIME_TOKEN_ENV,
   EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
   EXTERNAL_STARTUP_PROBE_TIMEOUT_MS,
+  EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS,
+  EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS,
   ExternalFlowVerificationError,
   LOCAL_SPAWNED_AGENT_MODE,
   REMOTE_LIVE_AGENT_MODE,
@@ -22,11 +24,13 @@ const {
   externalAgentEnvironment,
   externalAgentProbeUrl,
   formatVerificationFailure,
+  invokeGatewayWithTransientRetry,
   normalizeExternalAgentBaseUrl,
   request,
   requireExternalRuntimeConfiguration,
   resolveExternalAgentBaseUrl,
   resolveExternalRuntime,
+  retryableGatewayProviderFailure,
   runStartupStage,
   sourceExtractionDiagnostics,
   success,
@@ -1060,6 +1064,133 @@ test('Gemini upstream failures retain only their allowlisted operation diagnosti
   assert.match(output, /Application error code: GEMINI_UPSTREAM_UNAVAILABLE/);
   assert.match(output, /Operation: structured_formatting/);
   assert.equal(output.includes(secret), false);
+});
+
+test('gateway invocation retries one transient Gemini outage with fresh correlation IDs', async () => {
+  const transient = endpointResult(undefined, {
+    status: 502,
+    success: false,
+    error: { code: 'GEMINI_UPSTREAM_UNAVAILABLE', operation: 'grounded_research' },
+  });
+  const completed = endpointResult({ invocationId: 'invocation_123', status: 'completed' });
+  const responses = [transient, completed];
+  const calls = [];
+  const delays = [];
+  const retries = [];
+  const uuids = ['trace-first', 'request-first', 'trace-second', 'request-second'];
+
+  const result = await invokeGatewayWithTransientRetry({
+    baseUrl: 'http://gateway.example.test',
+    body: { capability: 'research_topic', input: { topic: 'Public advisories' } },
+    connectionId: 'connection_123',
+    maxAttempts: 2,
+    retryDelayMs: 25,
+    randomUUID: () => uuids.shift(),
+    requestFn: async (baseUrl, pathname, options) => {
+      calls.push({ baseUrl, pathname, options });
+      return responses.shift();
+    },
+    delayFn: async (delayMs) => delays.push(delayMs),
+    retryReportFn: (details) => retries.push(details),
+    runtimeMode: REMOTE_LIVE_AGENT_MODE,
+  });
+
+  assert.equal(EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS, 2);
+  assert.equal(EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS, 5_000);
+  assert.equal(result.attemptNumber, 2);
+  assert.equal(result.invocation.invocationId, 'invocation_123');
+  assert.equal(result.traceId, 'trace_trace-second');
+  assert.equal(result.requestId, 'req_request-second');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(delays, [25]);
+  assert.equal(calls[0].options.headers['X-Trace-Id'], 'trace_trace-first');
+  assert.equal(calls[1].options.headers['X-Trace-Id'], 'trace_trace-second');
+  assert.notEqual(
+    calls[0].options.headers['X-Request-Id'],
+    calls[1].options.headers['X-Request-Id'],
+  );
+  assert.deepEqual(
+    retries.map(({ code, nextAttempt, maxAttempts, delayMs }) => ({
+      code,
+      nextAttempt,
+      maxAttempts,
+      delayMs,
+    })),
+    [
+      {
+        code: 'GEMINI_UPSTREAM_UNAVAILABLE',
+        nextAttempt: 2,
+        maxAttempts: 2,
+        delayMs: 25,
+      },
+    ],
+  );
+});
+
+test('gateway invocation retries one completed Gemini research timeout', async () => {
+  const timeout = endpointResult(undefined, {
+    status: 502,
+    success: false,
+    error: {
+      code: 'GEMINI_REQUEST_TIMEOUT',
+      operation: 'grounded_research',
+      timeoutReason: 'GEMINI_DEADLINE_EXCEEDED',
+    },
+  });
+  const completed = endpointResult({ invocationId: 'invocation_456', status: 'completed' });
+  const responses = [timeout, completed];
+  let delayCount = 0;
+
+  const result = await invokeGatewayWithTransientRetry({
+    baseUrl: 'http://gateway.example.test',
+    body: { capability: 'research_topic', input: { topic: 'Public advisories' } },
+    connectionId: 'connection_123',
+    maxAttempts: 2,
+    requestFn: async () => responses.shift(),
+    delayFn: async () => {
+      delayCount += 1;
+    },
+    retryReportFn() {},
+    runtimeMode: REMOTE_LIVE_AGENT_MODE,
+  });
+
+  assert.equal(retryableGatewayProviderFailure(timeout), true);
+  assert.equal(result.attemptNumber, 2);
+  assert.equal(result.invocation.invocationId, 'invocation_456');
+  assert.equal(delayCount, 1);
+});
+
+test('gateway invocation does not retry non-transient runtime failures', async () => {
+  const authenticationFailure = endpointResult(undefined, {
+    status: 502,
+    success: false,
+    error: { code: 'RUNTIME_AUTHENTICATION_FAILED' },
+  });
+  let requestCount = 0;
+  let delayCount = 0;
+
+  await assert.rejects(
+    () =>
+      invokeGatewayWithTransientRetry({
+        baseUrl: 'http://gateway.example.test',
+        body: { capability: 'research_topic', input: { topic: 'Public advisories' } },
+        connectionId: 'connection_123',
+        maxAttempts: 2,
+        requestFn: async () => {
+          requestCount += 1;
+          return authenticationFailure;
+        },
+        delayFn: async () => {
+          delayCount += 1;
+        },
+        runtimeMode: REMOTE_LIVE_AGENT_MODE,
+      }),
+    (error) => error.applicationErrorCode === 'RUNTIME_AUTHENTICATION_FAILED',
+  );
+
+  assert.equal(retryableGatewayProviderFailure(authenticationFailure), false);
+  assert.equal(requestCount, 1);
+  assert.equal(delayCount, 0);
 });
 
 test('source-extraction failures report only correlated allowlisted Gemini shape diagnostics', () => {

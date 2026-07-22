@@ -1,5 +1,7 @@
 import {
   Activity,
+  AlertTriangle,
+  BarChart3,
   BookOpen,
   Braces,
   ChevronRight,
@@ -41,6 +43,10 @@ const primaryItems = [
   { label: 'Compliance', path: '/compliance', icon: Scale },
   { label: 'Enterprise Admin', path: '/enterprise-operations', icon: Wrench },
   { label: 'Orchestrations', path: '/orchestrations', icon: Network },
+  { label: 'Orch Operations', path: '/orchestrations/operations', icon: Gauge },
+  { label: 'Orch Analytics', path: '/orchestrations/analytics', icon: BarChart3 },
+  { label: 'Orch SLOs', path: '/orchestrations/slos', icon: ClipboardCheck },
+  { label: 'Orch Alerts', path: '/orchestrations/alerts', icon: AlertTriangle },
   { label: 'Recovery Policies', path: '/recovery-policies', icon: LifeBuoy },
   { label: 'Interventions', path: '/interventions', icon: UserCheck },
   { label: 'Agent Discovery', path: '/agent-discovery', icon: Search },

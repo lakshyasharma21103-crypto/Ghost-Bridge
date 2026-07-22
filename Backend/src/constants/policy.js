@@ -1,5 +1,5 @@
 const POLICY_SCHEMA_VERSION = 1;
-const ATTRIBUTE_REGISTRY_VERSION = 2;
+const ATTRIBUTE_REGISTRY_VERSION = 3;
 
 const POLICY_STATUSES = Object.freeze(['DRAFT', 'ACTIVE', 'RETIRED']);
 const POLICY_EFFECTS = Object.freeze(['ALLOW', 'DENY']);

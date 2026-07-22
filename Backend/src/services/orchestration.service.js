@@ -19,6 +19,10 @@ const { createAuditLog } = require('./auditService');
 const { requestCancellation: cancelInvocation } = require('./invocationControl.service');
 const metrics = require('./orchestrationMetrics.service');
 const {
+  assertDefinitionNotPaused,
+  assertWorkspaceNotPaused,
+} = require('./orchestrationObservability.service');
+const {
   DEFAULT_ORCHESTRATION_SETTINGS,
   ORCHESTRATION_DEFINITION_STATUSES,
   ORCHESTRATION_LIMITS,
@@ -1152,6 +1156,8 @@ async function startRun(definitionId, input = {}, caller = {}) {
   const scope = callerScope(input, caller);
   await authorize('orchestration.run.create', 'OrchestrationDefinition', definitionId, scope, caller);
   await assertOperationalAccess({ ...scope, operation: 'QUEUE_SUBMISSION' });
+  await assertWorkspaceNotPaused(scope);
+  await assertDefinitionNotPaused(definitionId, scope);
   const definition = await scopedDefinition(definitionId, scope);
   if (definition.status !== 'active') {
     throw new AppError(409, ErrorCodes.ORCHESTRATION_DEFINITION_IMMUTABLE, 'Only active definitions may start runs.');

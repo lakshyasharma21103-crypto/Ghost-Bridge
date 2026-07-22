@@ -50,6 +50,16 @@ const DisasterRecoveryStatus = require('../models/DisasterRecoveryStatus');
 const OrchestrationDefinition = require('../models/OrchestrationDefinition');
 const OrchestrationRun = require('../models/OrchestrationRun');
 const OrchestrationNodeRun = require('../models/OrchestrationNodeRun');
+const OrchestrationTimelineEvent = require('../models/OrchestrationTimelineEvent');
+const OrchestrationTraceSpan = require('../models/OrchestrationTraceSpan');
+const OrchestrationRunHealthSummary = require('../models/OrchestrationRunHealthSummary');
+const OrchestrationSloPolicy = require('../models/OrchestrationSloPolicy');
+const OrchestrationSloEvaluation = require('../models/OrchestrationSloEvaluation');
+const OrchestrationAlertRule = require('../models/OrchestrationAlertRule');
+const OrchestrationAlert = require('../models/OrchestrationAlert');
+const OrchestrationOperationalSnapshot = require('../models/OrchestrationOperationalSnapshot');
+const OrchestrationFleetControl = require('../models/OrchestrationFleetControl');
+const OrchestrationDiagnosticExport = require('../models/OrchestrationDiagnosticExport');
 const CapabilityCatalogEntry = require('../models/CapabilityCatalogEntry');
 const AgentSelectionPolicy = require('../models/AgentSelectionPolicy');
 const AgentSelectionDecision = require('../models/AgentSelectionDecision');
@@ -4113,6 +4123,56 @@ const DELETION_COLLECTIONS = Object.freeze([
   {
     name: 'capabilityCatalogEntries',
     model: CapabilityCatalogEntry,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationTimelineEvents',
+    model: OrchestrationTimelineEvent,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationTraceSpans',
+    model: OrchestrationTraceSpan,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationRunHealthSummaries',
+    model: OrchestrationRunHealthSummary,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationSloEvaluations',
+    model: OrchestrationSloEvaluation,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationSloPolicies',
+    model: OrchestrationSloPolicy,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationAlerts',
+    model: OrchestrationAlert,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationAlertRules',
+    model: OrchestrationAlertRule,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationOperationalSnapshots',
+    model: OrchestrationOperationalSnapshot,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationFleetControls',
+    model: OrchestrationFleetControl,
+    filter: (scope) => ({ organizationId: scope.organizationId }),
+  },
+  {
+    name: 'orchestrationDiagnosticExports',
+    model: OrchestrationDiagnosticExport,
     filter: (scope) => ({ organizationId: scope.organizationId }),
   },
   {

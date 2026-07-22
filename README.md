@@ -8,6 +8,7 @@ Phase 13D1 tenant-scoped DAG definitions, secure data mapping, durable multi-age
 Phase 13D2 tenant-safe installed-agent discovery, conservative schema compatibility, versioned selection policy, deterministic scoring, immutable decisions, and governed orchestration targeting are documented in [AGENT_SELECTION.md](./AGENT_SELECTION.md).
 Phase 13D3 versioned data contracts, scoped delegation grants, safe extraction/transformation/redaction/minimization, atomic invocation accounting, and Runtime Gateway execution are documented in [INTER_AGENT_DELEGATION.md](./INTER_AGENT_DELEGATION.md).
 Phase 13D4 durable recovery policies, explicit compensation, human intervention, governed replacement/correction, uncertain-outcome containment, and verified checkpoint resume are documented in [ORCHESTRATION_RECOVERY.md](./ORCHESTRATION_RECOVERY.md).
+Phase 13D5 orchestration timeline, trace validation, health, critical path, bottlenecks, SLOs, alerts, worker/queue operations, fleet controls, safe diagnostics, retention, and verification are documented in [ORCHESTRATION_OBSERVABILITY.md](./ORCHESTRATION_OBSERVABILITY.md).
 
 One key to discover, connect, and invoke any compatible AI agent.
 
@@ -83,3 +84,7 @@ intended.
 ## Orchestration-recovery verification
 
 `npm run verify:orchestration-recovery` runs the deterministic non-billed retry, intervention, compensation, governed-replacement, non-reversible-effect, and checkpoint-resume scenario with local mock agents. Use `npm run migrate:orchestration-recovery` for restart-safe recovery-policy, decision, plan, compensation-run, intervention, checkpoint, and orchestration state indexes/backfills. Compensation is an explicit corrective invocation through the Runtime Gateway, not an atomic rollback of an external action.
+
+## Orchestration-observability verification
+
+`npm run verify:orchestration-observability` runs the deterministic non-billed Phase 13D5 observability and operations scenario. Use `npm run migrate:orchestration-observability` for restart-safe timeline, trace, health, SLO, alert, snapshot, fleet-control, and diagnostic-export indexes.
