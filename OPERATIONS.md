@@ -1,5 +1,7 @@
 # Operations, runtime protection, and durable recovery controls
 
+Phase 14C commercial and GA operations are documented in [GA_COMMERCIAL_OPERATIONS.md](GA_COMMERCIAL_OPERATIONS.md). Automated verification uses only mock/no-op/manual payment, tax, communication, finance, and rollout adapters.
+
 Production candidate validation, build/artifact integrity, mixed-version and migration
 safety, canary simulation, rollback/roll-forward, manual gates, release evidence, and
 support bundles are documented in [RELEASE_READINESS.md](./RELEASE_READINESS.md).

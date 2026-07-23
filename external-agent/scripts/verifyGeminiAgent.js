@@ -68,7 +68,10 @@ function resolveVerifierTimeoutMs(environment = process.env) {
   return verifierTimeout;
 }
 
-const verifierTimeoutMs = resolveVerifierTimeoutMs();
+// Importing the pure verifier helpers must not validate live credentials or local
+// live-gate timeout overrides. The live command still validates them eagerly.
+const verifierTimeoutMs =
+  require.main === module ? resolveVerifierTimeoutMs() : DEFAULT_LIVE_VERIFIER_TIMEOUT_MS;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

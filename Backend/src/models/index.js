@@ -132,6 +132,8 @@ const ReleaseFreeze = require('./ReleaseFreeze');
 const ReleaseOperationalOwnership = require('./ReleaseOperationalOwnership');
 const ReleaseObservationWindow = require('./ReleaseObservationWindow');
 const stagingPilotModels = require('./stagingPilotModels');
+const pilotAnalyticsModels = require('./pilotAnalyticsModels');
+const gaCommercialModels = require('./gaCommercialModels');
 
 module.exports = {
   Partner,
@@ -268,4 +270,6 @@ module.exports = {
   ReleaseOperationalOwnership,
   ReleaseObservationWindow,
   ...stagingPilotModels,
+  ...pilotAnalyticsModels,
+  ...gaCommercialModels,
 };

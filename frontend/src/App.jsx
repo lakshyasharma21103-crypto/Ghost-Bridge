@@ -77,6 +77,32 @@ import {
   PilotPrograms,
   Staging,
 } from './pages/StagingPilotConsole.jsx';
+import {
+  AdoptionFunnels,
+  AnalyticsDataQuality,
+  CapabilityAdoption,
+  CohortsRetention,
+  FeedbackInsights,
+  PilotAnalyticsOverview,
+  PilotExperiments,
+  ProductOpportunities,
+} from './pages/PilotAnalyticsConsole.jsx';
+import {
+  CommercialCustomers,
+  CommercialEvidence,
+  CustomerSuccess,
+  Entitlements,
+  GaDecisions,
+  GaReadiness,
+  GaRollouts,
+  Invoices,
+  Payments,
+  PlansPricing,
+  ProductCatalog,
+  Renewals,
+  Subscriptions,
+  UsageMetering,
+} from './pages/CommercialConsole.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -120,6 +146,28 @@ export default function App() {
         <Route path="/operations/capability-gates" element={<CapabilityGates />} />
         <Route path="/operations/pilot-health" element={<PilotHealth />} />
         <Route path="/operations/pilot-feedback-support" element={<FeedbackSupport />} />
+        <Route path="/operations/pilot-analytics" element={<PilotAnalyticsOverview />} />
+        <Route path="/operations/pilot-analytics/funnels" element={<AdoptionFunnels />} />
+        <Route path="/operations/pilot-analytics/cohorts" element={<CohortsRetention />} />
+        <Route path="/operations/pilot-analytics/capabilities" element={<CapabilityAdoption />} />
+        <Route path="/operations/pilot-analytics/feedback" element={<FeedbackInsights />} />
+        <Route path="/operations/pilot-analytics/experiments" element={<PilotExperiments />} />
+        <Route path="/operations/pilot-analytics/opportunities" element={<ProductOpportunities />} />
+        <Route path="/operations/pilot-analytics/data-quality" element={<AnalyticsDataQuality />} />
+        <Route path="/commercial/products" element={<ProductCatalog />} />
+        <Route path="/commercial/plans" element={<PlansPricing />} />
+        <Route path="/commercial/entitlements" element={<Entitlements />} />
+        <Route path="/commercial/customers" element={<CommercialCustomers />} />
+        <Route path="/commercial/subscriptions" element={<Subscriptions />} />
+        <Route path="/commercial/usage" element={<UsageMetering />} />
+        <Route path="/commercial/invoices" element={<Invoices />} />
+        <Route path="/commercial/payments" element={<Payments />} />
+        <Route path="/commercial/renewals" element={<Renewals />} />
+        <Route path="/commercial/customer-success" element={<CustomerSuccess />} />
+        <Route path="/ga/readiness" element={<GaReadiness />} />
+        <Route path="/ga/rollouts" element={<GaRollouts />} />
+        <Route path="/ga/decisions" element={<GaDecisions />} />
+        <Route path="/ga/evidence" element={<CommercialEvidence />} />
         <Route path="/policies" element={<Policies />} />
         <Route path="/secrets" element={<Secrets />} />
         <Route path="/compliance" element={<Compliance />} />

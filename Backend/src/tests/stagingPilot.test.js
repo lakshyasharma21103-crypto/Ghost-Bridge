@@ -166,7 +166,7 @@ test('graduation can preserve the grounded research restriction', () => {
 });
 
 test('Phase 14A RBAC exists and ordinary developers cannot approve launch operations', () => {
-  assert.equal(PERMISSION_REGISTRY_VERSION, 15);
+  assert.equal(PERMISSION_REGISTRY_VERSION, 16);
   for (const permission of ['stagingDeployment.approve', 'capabilityLaunchGate.waive', 'pilotProgram.approve', 'pilotEnrollment.approve', 'pilotKillSwitch.activate', 'pilotLaunchDecision.create', 'pilotEvidence.export']) assert.ok(getPermission(permission));
   const developer = permissionsForBuiltInRole('developer');
   for (const permission of ['stagingDeployment.approve', 'capabilityLaunchGate.waive', 'pilotProgram.approve', 'pilotKillSwitch.activate']) assert.equal(developer.includes(permission), false);

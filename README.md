@@ -1,5 +1,9 @@
 # Agent Passport Runtime Gateway
 
+Phase 14B pilot analytics, product feedback, governed experiments, and adoption optimization are documented in [PILOT_ANALYTICS_ADOPTION.md](PILOT_ANALYTICS_ADOPTION.md).
+
+Phase 14C General Availability controls and commercial operations are documented in [GA_COMMERCIAL_OPERATIONS.md](GA_COMMERCIAL_OPERATIONS.md). The phase adds versioned products, plans, price books, entitlements, authoritative usage, reconciliation-gated invoices, mock/no-op payment and tax adapters, customer lifecycle controls, GA readiness, rollout guardrails, immutable decisions, and safe evidence. Money uses integer minor units; analytics are not invoice authority; grounded research remains commercially blocked.
+
 Phase 13E5 production release governance, deterministic readiness verification,
 rollout simulation, manual deployment boundaries, and operator runbooks are documented
 in [RELEASE_READINESS.md](./RELEASE_READINESS.md). Phase 13E5 never deploys production
@@ -119,3 +123,9 @@ intended.
 `npm run verify:staging-pilot-readiness` runs the deterministic, bounded, non-billed Phase 14A staging deployment, smoke-test, capability-gate, synthetic enrollment, quota, observation, restricted launch, feedback-redaction, support, kill-switch, and evidence scenario. Use `npm run migrate:staging-pilot` for additive restart-safe indexes.
 
 Phase 14A does not deploy staging, invite users, send communications, invoke Gemini, or approve production. The current Gemini gate remains provider-unavailable/failed-transient, external-flow remains deferred, and grounded research remains disabled. See [STAGING_PILOT_OPERATIONS.md](STAGING_PILOT_OPERATIONS.md).
+
+## GA commercial readiness
+
+`npm run verify:ga-commercial-readiness` runs the deterministic non-billed Phase 14C catalog, entitlement, subscription, metering, reconciliation, invoice, mock payment, manual tax, renewal, customer-success, readiness, rollout, rollback, evidence, export, isolation, and cleanup scenario. Use `npm run migrate:ga-commercial` for additive restart-safe indexes.
+
+The verifier does not call Gemini, another LLM, a payment or tax provider, email, SMS, accounting, or deployment infrastructure. It does not launch production GA or charge a customer. See [GA_COMMERCIAL_OPERATIONS.md](GA_COMMERCIAL_OPERATIONS.md).

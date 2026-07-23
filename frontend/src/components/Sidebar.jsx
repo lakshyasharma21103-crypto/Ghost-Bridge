@@ -35,6 +35,7 @@ import {
   TrafficCone,
   ArchiveX,
   Rocket,
+  RefreshCw,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -72,6 +73,12 @@ const primaryItems = [
   { label: 'Capability Gates', path: '/operations/capability-gates', icon: ShieldCheck },
   { label: 'Pilot Health', path: '/operations/pilot-health', icon: Activity },
   { label: 'Feedback & Support', path: '/operations/pilot-feedback-support', icon: LifeBuoy },
+  { label: 'Pilot Analytics', path: '/operations/pilot-analytics', icon: BarChart3, end: true },
+  { label: 'Adoption Funnels', path: '/operations/pilot-analytics/funnels', icon: GitBranch },
+  { label: 'Cohorts & Retention', path: '/operations/pilot-analytics/cohorts', icon: Activity },
+  { label: 'Feedback Insights', path: '/operations/pilot-analytics/feedback', icon: LifeBuoy },
+  { label: 'Experiments', path: '/operations/pilot-analytics/experiments', icon: FlaskConical },
+  { label: 'Product Opportunities', path: '/operations/pilot-analytics/opportunities', icon: Rocket },
   { label: 'Policies', path: '/policies', icon: ShieldEllipsis },
   { label: 'Secrets', path: '/secrets', icon: LockKeyhole },
   { label: 'Compliance', path: '/compliance', icon: Scale },
@@ -94,6 +101,26 @@ const primaryItems = [
   { label: 'Connections', path: '/connections', icon: Link2 },
   { label: 'Invocations', path: '/invocations', icon: Activity },
   { label: 'Audit Logs', path: '/audit', icon: ScrollText },
+];
+
+const commercialItems = [
+  { label: 'Product Catalog', path: '/commercial/products', icon: Layers3 },
+  { label: 'Plans & Pricing', path: '/commercial/plans', icon: Scale },
+  { label: 'Entitlements', path: '/commercial/entitlements', icon: KeySquare },
+  { label: 'Customers', path: '/commercial/customers', icon: UserCheck },
+  { label: 'Subscriptions', path: '/commercial/subscriptions', icon: ScrollText },
+  { label: 'Usage & Metering', path: '/commercial/usage', icon: BarChart3 },
+  { label: 'Invoices', path: '/commercial/invoices', icon: ClipboardCheck },
+  { label: 'Payments', path: '/commercial/payments', icon: ShieldCheck },
+  { label: 'Renewals', path: '/commercial/renewals', icon: RefreshCw },
+  { label: 'Customer Success', path: '/commercial/customer-success', icon: LifeBuoy },
+];
+
+const gaItems = [
+  { label: 'GA Readiness', path: '/ga/readiness', icon: Gauge },
+  { label: 'GA Rollouts', path: '/ga/rollouts', icon: Rocket },
+  { label: 'Launch Decisions', path: '/ga/decisions', icon: GitBranch },
+  { label: 'Commercial Evidence', path: '/ga/evidence', icon: FileKey2 },
 ];
 
 export function Sidebar() {
@@ -160,6 +187,26 @@ export function Sidebar() {
                   )
                 }
               >
+                <item.icon className="sidebar-nav-icon" aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+
+          <div className="sidebar-nav-group">
+            <p className="sidebar-section-label">Commercial</p>
+            {commercialItems.map((item) => (
+              <NavLink key={item.path} to={item.path} onClick={closeNavigation} className={({ isActive }) => navClassName(isActive)}>
+                <item.icon className="sidebar-nav-icon" aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+
+          <div className="sidebar-nav-group">
+            <p className="sidebar-section-label">General Availability</p>
+            {gaItems.map((item) => (
+              <NavLink key={item.path} to={item.path} onClick={closeNavigation} className={({ isActive }) => navClassName(isActive)}>
                 <item.icon className="sidebar-nav-icon" aria-hidden="true" />
                 <span>{item.label}</span>
               </NavLink>

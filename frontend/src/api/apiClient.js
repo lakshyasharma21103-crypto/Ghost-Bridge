@@ -139,6 +139,9 @@ export async function apiRequest(path, options = {}) {
     path.startsWith('/performance') ||
     path.startsWith('/releases') ||
     path.startsWith('/launch') ||
+    path.startsWith('/pilot-analytics') ||
+    path.startsWith('/commercial') ||
+    path.startsWith('/ga') ||
     isPhase13B3Control(path, options.method);
   if (requiresPartnerAuthentication && !headers.has('X-Partner-Api-Key')) {
     if (!partnerApiKey) {

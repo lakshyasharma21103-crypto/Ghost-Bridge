@@ -158,7 +158,7 @@ test('readiness is strict while liveness tolerates non-critical degradation', ()
 });
 
 test('release RBAC is versioned and normal users lack production execution privileges', () => {
-  assert.equal(PERMISSION_REGISTRY_VERSION, 15);
+  assert.equal(PERMISSION_REGISTRY_VERSION, 16);
   for (const permission of [
     'releaseCandidate.approve',
     'releaseRollout.execute',

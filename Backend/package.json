@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "dev:worker": "node --watch src/worker.js",
-    "build": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/verifyComplianceGovernance.js && node --check scripts/verifyEnterpriseOperations.js && node --check scripts/verifyOrchestration.js && node --check scripts/verifyAgentSelection.js && node --check scripts/verifyInterAgentDelegation.js && node --check scripts/verifyOrchestrationRecovery.js && node --check scripts/verifyOrchestrationObservability.js && node --check scripts/verifyProductionScale.js && node --check scripts/verifyDataAccessPerformance.js && node --check scripts/verifyMultiRegionDr.js && node --check scripts/verifyPerformanceCapacity.js && node --check scripts/verifyReleaseReadiness.js && node --check scripts/runPerformanceLoad.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js && node --check scripts/migrateComplianceGovernance.js && node --check scripts/migrateEnterpriseOperations.js && node --check scripts/migrateOrchestration.js && node --check scripts/migrateAgentSelection.js && node --check scripts/migrateInterAgentDelegation.js && node --check scripts/migrateOrchestrationRecovery.js && node --check scripts/migrateOrchestrationObservability.js && node --check scripts/migrateProductionScale.js && node --check scripts/migrateDataAccessPerformance.js && node --check scripts/migrateRegionalResilience.js && node --check scripts/migratePerformanceCapacity.js && node --check scripts/migrateReleaseReadiness.js",
+    "build": "node --check src/server.js && node --check src/worker.js && node --check src/app.js && node --check scripts/seedDemo.js && node --check scripts/verifyDemo.js && node --check scripts/seedSandbox.js && node --check scripts/verifySandbox.js && node --check scripts/verifyExternalFlow.js && node --check scripts/verifyDurableRecovery.js && node --check scripts/verifyPolicyEngine.js && node --check scripts/verifySecretGovernance.js && node --check scripts/verifyComplianceGovernance.js && node --check scripts/verifyEnterpriseOperations.js && node --check scripts/verifyOrchestration.js && node --check scripts/verifyAgentSelection.js && node --check scripts/verifyInterAgentDelegation.js && node --check scripts/verifyOrchestrationRecovery.js && node --check scripts/verifyOrchestrationObservability.js && node --check scripts/verifyProductionScale.js && node --check scripts/verifyDataAccessPerformance.js && node --check scripts/verifyMultiRegionDr.js && node --check scripts/verifyPerformanceCapacity.js && node --check scripts/verifyReleaseReadiness.js && node --check scripts/verifyPilotAnalyticsAdoption.js && node --check scripts/verifyGaCommercialReadiness.js && node --check scripts/runPerformanceLoad.js && node --check scripts/migratePolicyEngine.js && node --check scripts/migrateSecretGovernance.js && node --check scripts/migrateComplianceGovernance.js && node --check scripts/migrateEnterpriseOperations.js && node --check scripts/migrateOrchestration.js && node --check scripts/migrateAgentSelection.js && node --check scripts/migrateInterAgentDelegation.js && node --check scripts/migrateOrchestrationRecovery.js && node --check scripts/migrateOrchestrationObservability.js && node --check scripts/migrateProductionScale.js && node --check scripts/migrateDataAccessPerformance.js && node --check scripts/migrateRegionalResilience.js && node --check scripts/migratePerformanceCapacity.js && node --check scripts/migrateReleaseReadiness.js && node --check scripts/migratePilotAnalytics.js && node --check scripts/migrateGaCommercial.js",
     "start": "node src/server.js",
     "worker": "node src/worker.js",
     "typecheck": "node --check src/server.js && node --check src/worker.js && node --check src/app.js",
@@ -33,6 +33,8 @@
     "verify:performance-capacity": "node scripts/verifyPerformanceCapacity.js",
     "verify:release-readiness": "node scripts/verifyReleaseReadiness.js",
     "verify:staging-pilot-readiness": "node scripts/verifyStagingPilotReadiness.js",
+    "verify:pilot-analytics-adoption": "node scripts/verifyPilotAnalyticsAdoption.js",
+    "verify:ga-commercial-readiness": "node scripts/verifyGaCommercialReadiness.js",
     "perf:local-load": "node scripts/runPerformanceLoad.js --mode=local_load",
     "perf:local-spike": "node scripts/runPerformanceLoad.js --mode=local_load --traffic=spike",
     "perf:local-stress": "node scripts/runPerformanceLoad.js --mode=simulation --traffic=stress",
@@ -53,7 +55,9 @@
     "migrate:multi-region-dr": "node scripts/migrateRegionalResilience.js",
     "migrate:performance-capacity": "node scripts/migratePerformanceCapacity.js",
     "migrate:release-readiness": "node scripts/migrateReleaseReadiness.js",
-    "migrate:staging-pilot": "node scripts/migrateStagingPilot.js"
+    "migrate:staging-pilot": "node scripts/migrateStagingPilot.js",
+    "migrate:pilot-analytics": "node scripts/migratePilotAnalytics.js",
+    "migrate:ga-commercial": "node scripts/migrateGaCommercial.js"
   },
   "dependencies": {
     "ajv": "^8.17.1",

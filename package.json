@@ -45,6 +45,8 @@
     "verify:performance-capacity": "npm run verify:performance-capacity --workspace backend",
     "verify:release-readiness": "npm run verify:release-readiness --workspace backend",
     "verify:staging-pilot-readiness": "npm run verify:staging-pilot-readiness --workspace backend",
+    "verify:pilot-analytics-adoption": "npm run verify:pilot-analytics-adoption --workspace backend",
+    "verify:ga-commercial-readiness": "npm run verify:ga-commercial-readiness --workspace backend",
     "perf:local-load": "npm run perf:local-load --workspace backend",
     "perf:local-spike": "npm run perf:local-spike --workspace backend",
     "perf:local-stress": "npm run perf:local-stress --workspace backend",
@@ -66,6 +68,8 @@
     "migrate:performance-capacity": "npm run migrate:performance-capacity --workspace backend",
     "migrate:release-readiness": "npm run migrate:release-readiness --workspace backend",
     "migrate:staging-pilot": "npm run migrate:staging-pilot --workspace backend",
+    "migrate:pilot-analytics": "npm run migrate:pilot-analytics --workspace backend",
+    "migrate:ga-commercial": "npm run migrate:ga-commercial --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"

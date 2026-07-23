@@ -28,6 +28,8 @@ const { regionalResilienceRouter } = require('./regionalResilienceRoutes');
 const { performanceCapacityRouter } = require('./performanceCapacityRoutes');
 const { releaseReadinessRouter } = require('./releaseReadinessRoutes');
 const { stagingPilotRouter } = require('./stagingPilotRoutes');
+const { pilotAnalyticsRouter } = require('./pilotAnalyticsRoutes');
+const { commercialRouter, gaRouter } = require('./gaCommercialRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -72,6 +74,12 @@ router.use(`${API_PREFIX}/releases`, releaseReadinessRouter);
 router.use('/api/releases', releaseReadinessRouter);
 router.use(`${API_PREFIX}/launch`, stagingPilotRouter);
 router.use('/api/launch', stagingPilotRouter);
+router.use(`${API_PREFIX}/pilot-analytics`, pilotAnalyticsRouter);
+router.use('/api/pilot-analytics', pilotAnalyticsRouter);
+router.use(`${API_PREFIX}/commercial`, commercialRouter);
+router.use('/api/commercial', commercialRouter);
+router.use(`${API_PREFIX}/ga`, gaRouter);
+router.use('/api/ga', gaRouter);
 if (env.NODE_ENV === 'development') {
   router.use(`${API_PREFIX}/demo`, demoRouter);
   router.use(`${API_PREFIX}/developer-sandbox`, developerSandboxRouter);

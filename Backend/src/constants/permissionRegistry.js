@@ -1,4 +1,6 @@
-const PERMISSION_REGISTRY_VERSION = 15;
+const { COMMERCIAL_PERMISSION_IDS } = require('./gaCommercial');
+
+const PERMISSION_REGISTRY_VERSION = 16;
 const PERMISSION_REGISTRY_ID = `permission-registry.v${PERMISSION_REGISTRY_VERSION}`;
 
 const RiskLevels = Object.freeze({
@@ -1751,6 +1753,87 @@ const permissionDefinitions = [
     defaultRoles,
     auditRequired: true,
   })),
+  ...[
+    ['pilotAnalytics.read', 'Read tenant-scoped pilot analytics summaries.', 'MEDIUM', ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor']],
+    ['pilotAnalytics.readDetails', 'Read detailed bounded pilot analytics.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotAnalytics.export', 'Export aggregated tenant-scoped pilot analytics.', 'CRITICAL', ['organization_owner', 'security_admin', 'auditor']],
+    ['analyticsTrackingPlan.read', 'Read analytics tracking plans.', 'MEDIUM', ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor']],
+    ['analyticsTrackingPlan.create', 'Create analytics tracking-plan drafts.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['analyticsTrackingPlan.update', 'Update draft analytics tracking plans.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['analyticsTrackingPlan.validate', 'Validate analytics tracking plans.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['analyticsTrackingPlan.activate', 'Activate an immutable analytics tracking plan.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['analyticsTrackingPlan.archive', 'Archive an analytics tracking-plan version.', 'HIGH', ['organization_owner', 'security_admin']],
+    ['analyticsEventDefinition.read', 'Read the code-defined analytics event registry.', 'MEDIUM', ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor', 'developer']],
+    ['analyticsEvent.ingest', 'Ingest schema-governed pilot analytics events.', 'MEDIUM', ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'developer']],
+    ['analyticsDataQuality.read', 'Read analytics data-quality findings.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['analyticsInstrumentation.read', 'Read analytics instrumentation coverage.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotMetricDefinition.read', 'Read versioned pilot metric definitions.', 'MEDIUM', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotMetricDefinition.create', 'Create pilot metric-definition drafts.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotMetricDefinition.update', 'Update pilot metric-definition drafts.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotMetricDefinition.validate', 'Validate deterministic pilot metrics.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotMetricDefinition.activate', 'Activate an immutable pilot metric definition.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotMetricDefinition.archive', 'Archive a pilot metric definition.', 'HIGH', ['organization_owner', 'security_admin']],
+    ['pilotFunnel.read', 'Read bounded pilot funnel definitions and results.', 'MEDIUM', ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor']],
+    ['pilotFunnel.create', 'Create a code-governed pilot funnel.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotFunnel.evaluate', 'Evaluate a deterministic pilot funnel.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator']],
+    ['pilotCohort.read', 'Read privacy-safe pilot cohorts.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotCohort.create', 'Create a bounded behavioral cohort.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotCohort.evaluate', 'Evaluate a privacy-safe behavioral cohort.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotRetention.read', 'Read suppressed pilot retention analytics.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotAdoption.read', 'Read aggregated pilot adoption analytics.', 'MEDIUM', ['organization_owner', 'organization_admin', 'security_admin', 'workspace_admin', 'operator', 'auditor']],
+    ['pilotAdoption.readDetails', 'Read detailed bounded adoption analytics.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotExpansionReadiness.read', 'Read advisory pilot expansion readiness.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotFeedbackAnalytics.read', 'Read aggregated feedback and support analytics.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotFeedbackTheme.create', 'Create deterministic feedback themes.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotProductOpportunity.read', 'Read evidence-linked product opportunities.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotProductOpportunity.create', 'Create an evidence-linked product opportunity.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotProductOpportunity.update', 'Update a product opportunity.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotProductOpportunity.approve', 'Approve an advisory product opportunity.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotProductOpportunity.archive', 'Archive a product opportunity.', 'HIGH', ['organization_owner', 'security_admin']],
+    ['pilotHypothesis.read', 'Read versioned product hypotheses.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotHypothesis.create', 'Create a bounded product hypothesis.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotHypothesis.validate', 'Validate a product hypothesis.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotHypothesis.approve', 'Approve a product hypothesis.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotExperiment.read', 'Read governed pilot experiments.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotExperiment.create', 'Create a governed pilot experiment draft.', 'CRITICAL', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotExperiment.validate', 'Validate a governed pilot experiment.', 'CRITICAL', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotExperiment.approve', 'Approve a governed pilot experiment.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotExperiment.start', 'Start an approved bounded pilot experiment.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotExperiment.pause', 'Pause a pilot experiment.', 'CRITICAL', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotExperiment.resume', 'Resume a pilot experiment after approval.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotExperiment.stop', 'Stop a pilot experiment.', 'CRITICAL', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotExperiment.evaluate', 'Evaluate a deterministic pilot experiment.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotAnalyticsSnapshot.read', 'Read immutable analytics snapshots.', 'HIGH', ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']],
+    ['pilotAnalyticsSnapshot.create', 'Create an immutable analytics snapshot.', 'CRITICAL', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotProductEvidence.read', 'Read product-learning evidence packages.', 'HIGH', ['organization_owner', 'security_admin', 'auditor']],
+    ['pilotProductEvidence.create', 'Create product-learning evidence packages.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotAnalyticsBackfill.read', 'Read bounded analytics backfills.', 'HIGH', ['organization_owner', 'security_admin', 'operator', 'auditor']],
+    ['pilotAnalyticsBackfill.create', 'Create a governed bounded analytics backfill or deletion.', 'CRITICAL', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotAnalyticsBackfill.pause', 'Pause an analytics backfill.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+    ['pilotAnalyticsBackfill.resume', 'Resume an approved analytics backfill.', 'CRITICAL', ['organization_owner', 'security_admin']],
+    ['pilotAnalyticsBackfill.cancel', 'Cancel an analytics backfill.', 'HIGH', ['organization_owner', 'security_admin', 'operator']],
+  ].map(([id, description, riskLevel, defaultRoles]) => ({
+    id,
+    description,
+    category: 'Pilot Analytics and Adoption',
+    riskLevel: RiskLevels[riskLevel],
+    defaultRoles,
+    auditRequired: true,
+  })),
+  ...COMMERCIAL_PERMISSION_IDS.map((id) => {
+    const readOnly = /\.(?:read|readDetails)$/.test(id);
+    const evaluation = /\.(?:evaluate|preview|validate)$/.test(id);
+    return {
+      id,
+      description: `${readOnly ? 'Read' : evaluation ? 'Evaluate' : 'Govern'} ${id.replace(/([A-Z])/g, ' $1').replace('.', ' ')}.`,
+      category: id.startsWith('ga') ? 'General Availability' : 'Commercial Operations',
+      riskLevel: readOnly ? RiskLevels.HIGH : evaluation ? RiskLevels.HIGH : RiskLevels.CRITICAL,
+      defaultRoles: readOnly
+        ? ['organization_owner', 'organization_admin', 'security_admin', 'operator', 'auditor']
+        : ['organization_owner', 'security_admin'],
+      auditRequired: true,
+    };
+  }),
 ].map((permission) =>
   Object.freeze({
     registryId: PERMISSION_REGISTRY_ID,

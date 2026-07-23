@@ -15,7 +15,7 @@
     "lint": "node --check src/server.js && node --check src/app.js && node --check scripts/verify.js && node --check scripts/verifyGeminiAgent.js",
     "test": "node --test",
     "verify": "node scripts/verify.js",
-    "verify:gemini-agent": "node scripts/verifyGeminiAgent.js"
+    "verify:gemini-agent": "node --env-file=.env scripts/verifyGeminiAgent.js"
   },
   "dependencies": {
     "@google/genai": "^2.11.0",

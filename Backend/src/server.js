@@ -17,6 +17,8 @@ const { ensureProductionScaleIndexes } = require('./services/productionScaleOper
 const dataAccessPerformance = require('./services/dataAccessPerformance.service');
 const { ensureReleaseReadinessIndexes } = require('./services/releaseReadiness.service');
 const { ensureStagingPilotIndexes } = require('./services/stagingPilot.service');
+const { ensurePilotAnalyticsIndexes } = require('./services/pilotAnalytics.service');
+const { ensureGaCommercialIndexes } = require('./services/gaCommercial.service');
 const { assertStartupConfiguration } = require('./config/productionProfile');
 
 async function start(options = {}) {
@@ -167,6 +169,8 @@ async function start(options = {}) {
       await ensureProductionScaleIndexes();
       await ensureReleaseReadinessIndexes();
       await ensureStagingPilotIndexes();
+      await ensurePilotAnalyticsIndexes();
+      await ensureGaCommercialIndexes();
       dataAccessPerformance.timeoutHierarchy();
       await dataAccessPerformance.recordIndexDriftSnapshot();
       lifecycle.markReady();
