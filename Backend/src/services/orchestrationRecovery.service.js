@@ -92,6 +92,7 @@ const {
 } = require('../utils/idempotency');
 const { decryptPayload } = require('../utils/crypto');
 const { AppError } = require('../utils/AppError');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const { ErrorCodes } = require('../utils/errorCodes');
 const metrics = require('./orchestrationMetrics.service');
 const { resolveWorkloadRoute } = require('./productionScale.service');
@@ -493,6 +494,7 @@ async function validateRecoveryPolicy(policyId, input = {}, caller = {}) {
 
 async function activateRecoveryPolicy(policyId, input = {}, caller = {}) {
   const scope = callerScope(input, caller);
+  await assertRegionalWriteAuthority({ ...scope, scope: 'workspace', regionId: input.regionId, authorityEpoch: input.authorityEpoch, authorityLeaseEpoch: input.authorityLeaseEpoch });
   await authorize('orchestrationRecoveryPolicy.activate', 'OrchestrationRecoveryPolicy', policyId, scope, caller);
   await assertOperationalAccess({ ...scope, operation: 'PRIVILEGED_CONFIGURATION' });
   const policy = await scopedPolicy(policyId, scope);
@@ -692,6 +694,12 @@ function serializeCheckpoint(checkpointInput) {
     invalidationReasonCode: checkpoint.invalidationReasonCode || null,
     resumedAt: checkpoint.resumedAt || null,
     resumedByDecisionId: idOf(checkpoint.resumedByDecisionId) || null,
+    sourceRegionId: checkpoint.sourceRegionId || null,
+    authorityEpoch: checkpoint.authorityEpoch ?? null,
+    queueOwnershipEpoch: checkpoint.queueOwnershipEpoch ?? null,
+    routingVersion: checkpoint.routingVersion ?? null,
+    lastDurableSequence: checkpoint.lastDurableSequence ?? null,
+    projectionSequence: checkpoint.projectionSequence ?? null,
     createdAt: checkpoint.createdAt,
   };
 }
@@ -1139,6 +1147,12 @@ async function applyOperatorRetry(run, node, decision, scope) {
   });
   await createCheckpointForRun(run._id, `recovery-decision-${idOf(applied)}`, scope, {
     createdBy: scope.actorId,
+    sourceRegionId: run.executionRegionId,
+    authorityEpoch: run.authorityEpoch,
+    queueOwnershipEpoch: Math.max(0, ...nodes.map((node) => Number(node.regionalOwnershipEpoch || 0))),
+    routingVersion: run.routingVersion || 1,
+    lastDurableSequence: counter.checkpointSequence,
+    projectionSequence: 0,
   });
   return { decision: applied, node: updated, run: currentRun };
 }
@@ -1724,6 +1738,10 @@ async function resumeCheckpoint(runId, checkpointId, input = {}, caller = {}) {
   const run = await scopedRun(runId, scope, { privateFields: true });
   const checkpoint = await OrchestrationCheckpoint.findOne({ _id: checkpointId, orchestrationRunId: run._id, organizationId: scope.organizationId, workspaceId: scope.workspaceId });
   if (!checkpoint) throw new AppError(404, 'ORCHESTRATION_CHECKPOINT_NOT_FOUND', 'Checkpoint was not found.');
+  const regionalAuthority = await assertRegionalWriteAuthority({ ...scope, scope: 'workspace', regionId: input.regionId, authorityEpoch: input.authorityEpoch, authorityLeaseEpoch: input.authorityLeaseEpoch });
+  if (regionalAuthority.enforced && Number(checkpoint.authorityEpoch || 0) >= Number(regionalAuthority.authority.authorityEpoch)) {
+    throw new AppError(409, 'REGION_AUTHORITY_EPOCH_STALE', 'Checkpoint must resume under a newer failover authority epoch.');
+  }
   const validation = validateCheckpoint(checkpoint);
   if (!validation.valid || !['verified', 'superseded'].includes(checkpoint.status)) {
     if (checkpoint.status !== 'invalidated') {

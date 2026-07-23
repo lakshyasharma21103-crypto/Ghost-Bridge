@@ -1,5 +1,8 @@
 const path = require('node:path');
 const dotenv = require('dotenv');
+const {
+  validateStartupConfiguration,
+} = require('./productionProfile');
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -27,6 +30,14 @@ function booleanFromEnv(name, fallback) {
   const raw = process.env[name];
   if (raw == null || raw === '') return fallback;
   return String(raw).toLowerCase() === 'true';
+}
+
+function safeIdentifierFromEnv(name, fallback) {
+  const value = String(process.env[name] || fallback || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)) {
+    throw new Error(`${name} must be a bounded safe identifier`);
+  }
+  return value;
 }
 
 function validateEncryptionKey(raw, nodeEnv) {
@@ -96,7 +107,7 @@ const credentialEncryptionKeyVersion = validateEncryptionKeyVersion(
 );
 const allowPrivateRuntimeUrlsInDev =
   nodeEnv === 'development' && booleanFromEnv('ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV', false);
-const runtimeInvocationTimeoutMs = integerFromEnv('RUNTIME_INVOCATION_TIMEOUT_MS', 430_000);
+const runtimeInvocationTimeoutMs = integerFromEnv('RUNTIME_INVOCATION_TIMEOUT_MS', 550_000);
 const runtimeRetryMaxAttempts = integerInRangeFromEnv('RUNTIME_RETRY_MAX_ATTEMPTS', 2, 1, 5);
 const runtimeRetryBaseDelayMs = integerInRangeFromEnv(
   'RUNTIME_RETRY_BASE_DELAY_MS',
@@ -286,6 +297,7 @@ const env = {
   MONGODB_URI: process.env.MONGODB_URI || '',
   MONGODB_DB_NAME: process.env.MONGODB_DB_NAME || 'agent_passport_runtime_gateway',
   MONGODB_AUTH_SOURCE: process.env.MONGODB_AUTH_SOURCE || 'admin',
+  JWT_SECRET: process.env.JWT_SECRET || '',
   MONGODB_MIN_POOL_SIZE: mongodbMinPoolSize,
   MONGODB_MAX_POOL_SIZE: mongodbMaxPoolSize,
   MONGODB_MAX_CONNECTING: integerInRangeFromEnv('MONGODB_MAX_CONNECTING', 4, 1, 32),
@@ -307,6 +319,9 @@ const env = {
   CACHE_MEMORY_MAX_ENTRIES: integerInRangeFromEnv('CACHE_MEMORY_MAX_ENTRIES', 1_000, 1, 100_000),
   CACHE_MEMORY_MAX_BYTES: integerInRangeFromEnv('CACHE_MEMORY_MAX_BYTES', 33_554_432, 1_024, 268_435_456),
   CACHE_COMMAND_TIMEOUT_MS: integerInRangeFromEnv('CACHE_COMMAND_TIMEOUT_MS', 500, 10, 5_000),
+  MULTI_REGION_ENABLED: booleanFromEnv('MULTI_REGION_ENABLED', false),
+  SERVICE_REGION_ID: safeIdentifierFromEnv('SERVICE_REGION_ID', 'local-primary'),
+  REGIONAL_SERVICE_ID: safeIdentifierFromEnv('REGIONAL_SERVICE_ID', 'ghost-bridge-backend'),
   CREDENTIAL_ENCRYPTION_KEY: credentialEncryptionKey,
   CREDENTIAL_ENCRYPTION_KEY_VERSION: credentialEncryptionKeyVersion,
   CREDENTIAL_ENCRYPTION_KEYS: encryptionKeyRing(
@@ -410,6 +425,13 @@ const env = {
   ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV: allowPrivateRuntimeUrlsInDev,
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   COOKIE_SECURE: booleanFromEnv('COOKIE_SECURE', false),
+  TRUST_PROXY: process.env.TRUST_PROXY || '',
+  CORS_ORIGINS: process.env.CORS_ORIGINS || process.env.CLIENT_URL || 'http://localhost:5174',
+  WRITE_AUTHORITY_MODE: process.env.WRITE_AUTHORITY_MODE || '',
+  ENABLE_TEST_FAULT_INJECTION: booleanFromEnv('ENABLE_TEST_FAULT_INJECTION', false),
+  ENABLE_PRODUCTION_LOAD_TARGET: booleanFromEnv('ENABLE_PRODUCTION_LOAD_TARGET', false),
+  SOURCE_MAP_POLICY: process.env.SOURCE_MAP_POLICY || 'disabled',
+  LOG_REDACTION_ENABLED: booleanFromEnv('LOG_REDACTION_ENABLED', nodeEnv !== 'production'),
   OPS_ALERT_FAILURE_RATE_MIN_INVOCATIONS: integerFromEnv(
     'OPS_ALERT_FAILURE_RATE_MIN_INVOCATIONS',
     10,
@@ -447,8 +469,8 @@ const env = {
   ),
 };
 
-if (!['development', 'test', 'production'].includes(env.NODE_ENV)) {
-  throw new Error('NODE_ENV must be development, test, or production');
+if (!['development', 'test', 'ci', 'integration', 'staging', 'production'].includes(env.NODE_ENV)) {
+  throw new Error('NODE_ENV must be development, test, ci, integration, staging, or production');
 }
 
 if (env.NODE_ENV === 'production' && !env.MONGODB_URI) {
@@ -467,9 +489,14 @@ if (Buffer.byteLength(env.CACHE_KEY_DIGEST_SECRET, 'utf8') < 16) {
   throw new Error('CACHE_KEY_DIGEST_SECRET must contain at least 16 bytes');
 }
 
+const startupConfiguration = validateStartupConfiguration(process.env, {
+  defaultEnvironment: nodeEnv,
+});
 module.exports = {
   booleanFromEnv,
   env,
   integerFromEnv,
   integerInRangeFromEnv,
+  safeIdentifierFromEnv,
+  startupConfiguration,
 };

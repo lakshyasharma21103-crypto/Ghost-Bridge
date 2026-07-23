@@ -7,6 +7,7 @@ const SAFE_GEMINI_OPERATIONS = new Set(['grounded_research', 'structured_formatt
 const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
+  'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
 ]);
 const SAFE_CANCELLATION_STATES = new Set([
   'not_requested',
@@ -47,7 +48,9 @@ function toApiErrorResponse(error, identifiers = {}) {
   const context = typeof identifiers === 'string' ? { requestId: identifiers } : identifiers;
   const appError = normalizeError(error);
   appError.retryable = isRetryableError(appError);
-  const isGeminiTimeout = appError.code === 'GEMINI_REQUEST_TIMEOUT';
+  const isGeminiTimeout =
+    appError.code === 'GEMINI_REQUEST_TIMEOUT' ||
+    appError.code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED';
   const hasSafeGeminiOperation =
     typeof appError.code === 'string' &&
     appError.code.startsWith('GEMINI_') &&

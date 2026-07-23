@@ -94,6 +94,10 @@ test('authoritative circuit failure classification excludes caller failures and 
   const limited = classifyCircuitFailure({ providerHttpStatus: 429 });
   assert.equal(limited.countsTowardCircuit, false);
   assert.equal(limited.rateLimited, true);
+  const exhausted = classifyCircuitFailure({ code: 'GEMINI_RESEARCH_BUDGET_EXHAUSTED' });
+  assert.equal(exhausted.countsTowardCircuit, true);
+  assert.equal(exhausted.category, 'UPSTREAM_TIMEOUT');
+  assert.equal(isRetryableError({ code: 'GEMINI_RESEARCH_BUDGET_EXHAUSTED' }), false);
 });
 
 test('breaker scope is tenant and connection isolated and stores only a runtime identity hash', () => {
@@ -636,6 +640,24 @@ test('Gemini timeout metadata crosses the REST and API boundaries through strict
       },
     }),
     { code: 'GEMINI_UPSTREAM_UNAVAILABLE', operation: 'grounded_research' },
+  );
+  assert.deepEqual(
+    safeRemoteError({
+      error: {
+        code: 'GEMINI_RESEARCH_BUDGET_EXHAUSTED',
+        operation: 'grounded_research',
+        timeoutReason: 'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
+        configuredTimeoutMs: 180_000,
+        retryable: false,
+      },
+    }),
+    {
+      code: 'GEMINI_RESEARCH_BUDGET_EXHAUSTED',
+      operation: 'grounded_research',
+      timeoutReason: 'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
+      configuredTimeoutMs: 180_000,
+      remoteRetryable: false,
+    },
   );
 
   const restore = patch(safeFetchUtility, 'safeFetch', async () => ({

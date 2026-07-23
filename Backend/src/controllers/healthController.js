@@ -1,5 +1,5 @@
 const { databaseStatus } = require('../config/db');
-const { env } = require('../config/env');
+const { env, startupConfiguration } = require('../config/env');
 const { serviceLifecycle } = require('../services/serviceLifecycle.service');
 
 function getHealth(_request, response) {
@@ -7,9 +7,10 @@ function getHealth(_request, response) {
     success: true,
     data: {
       service: 'agent-passport-runtime-gateway',
-      environment: env.NODE_ENV,
-      status: 'ok',
-      timestamp: new Date().toISOString(),
+      status: serviceLifecycle.snapshot().phase === 'stopped' ? 'fatal' : 'ok',
+      liveness: serviceLifecycle.snapshot().phase === 'stopped' ? 'fatal' : 'live',
+      protocolVersion: '1',
+      generatedAt: new Date().toISOString(),
     },
   });
 }
@@ -30,7 +31,8 @@ function getReadiness(_request, response) {
     lifecycle.ready &&
     !lifecycle.draining &&
     database === 'connected' &&
-    runtimeConfiguration === 'valid';
+    runtimeConfiguration === 'valid' &&
+    startupConfiguration.valid;
   response.status(ready ? 200 : 503).json({
     success: ready,
     data: {
@@ -38,12 +40,18 @@ function getReadiness(_request, response) {
       status: ready ? 'ready' : 'not_ready',
       database: { status: database },
       runtimeConfiguration: { status: runtimeConfiguration },
+      startupConfiguration: {
+        status: startupConfiguration.valid ? 'valid' : 'invalid',
+        safeReasonCodes: startupConfiguration.issues.map((issue) => issue.code),
+      },
       lifecycle: { status: lifecycle.phase },
       orchestrationWorker: {
         status: env.ORCHESTRATION_WORKER_ENABLED ? 'external_worker_required' : 'disabled',
         enabled: env.ORCHESTRATION_WORKER_ENABLED,
       },
-      timestamp: new Date().toISOString(),
+      regionId: env.SERVICE_REGION_ID,
+      protocolVersion: '1',
+      generatedAt: new Date().toISOString(),
     },
   });
 }

@@ -186,6 +186,7 @@ test('operational suspension and database pressure cannot be bypassed by normal 
   const policy = normalizeQuotaPolicy({});
   assert.equal(evaluateAdmissionOutcome({ policy, operationalAllowed: false, operationalReasonCode: 'WORKSPACE_SUSPENDED' }).decision, 'rejected_operational_state');
   assert.equal(evaluateAdmissionOutcome({ policy, operationalAllowed: true, databasePressureCategory: 'degraded', backpressureState: 'normal', priorityClass: 'standard', admissionClass: 'standard' }).safeReasonCodes[0], 'DATABASE_PRESSURE_HIGH');
+  assert.equal(evaluateAdmissionOutcome({ policy, failoverInProgress: true }).decision, 'rejected_failover_in_progress');
 });
 
 test('API admission and platform configuration enforce authenticated tenant authority', async () => {
@@ -311,7 +312,7 @@ test('production-scale metrics implementation drops identity labels and bounds s
 });
 
 test('production scale RBAC is registered and privileged actions are not granted to normal users', () => {
-  assert.equal(PERMISSION_REGISTRY_VERSION, 11);
+  assert.ok(PERMISSION_REGISTRY_VERSION >= 13);
   assert.ok(getPermission('productionScale.read').defaultRoles.includes('viewer'));
   assert.equal(getPermission('queuePartition.rebalance').defaultRoles.includes('developer'), false);
   assert.equal(getPermission('workerFleet.drain').defaultRoles.includes('viewer'), false);

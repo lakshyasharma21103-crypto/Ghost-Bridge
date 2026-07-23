@@ -25,10 +25,23 @@ const PRIORITY_RANK = Object.freeze({
 const ADMISSION_CLASSES = Object.freeze(['protected', 'interactive', 'standard', 'deferred', 'optional']);
 const ADMISSION_DECISIONS = Object.freeze([
   'accepted',
+  'accepted_primary',
   'accepted_deferred',
+  'accepted_degraded',
   'rejected_capacity',
   'rejected_quota',
   'rejected_operational_state',
+  'rejected_region_unavailable',
+  'rejected_residency',
+  'rejected_failover_in_progress',
+  'rejected_no_write_authority',
+  'rejected_not_enrolled',
+  'rejected_capability_disabled',
+  'rejected_gate_blocked',
+  'rejected_pilot_quota',
+  'rejected_platform_quota',
+  'rejected_classification',
+  'rejected_provider_unavailable',
   'approval_required',
 ]);
 const BACKPRESSURE_STATES = Object.freeze(['normal', 'elevated', 'saturated', 'shedding', 'paused']);

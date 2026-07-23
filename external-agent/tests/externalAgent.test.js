@@ -154,17 +154,18 @@ test('Gemini attempt defaults leave room for every retry and request-level overh
   });
 
   assert.equal(parsed.gemini.researchTimeoutMs, 120_000);
+  assert.equal(parsed.gemini.researchFallbackTimeoutMs, 180_000);
   assert.equal(parsed.gemini.formattingTimeoutMs, 60_000);
   assert.equal(parsed.gemini.researchMaxAttempts, 2);
   assert.equal(parsed.gemini.formattingMaxAttempts, 2);
-  assert.equal(parsed.gemini.researchOperationTimeoutMs, 241_499);
-  assert.equal(parsed.gemini.formattingOperationTimeoutMs, 121_499);
-  assert.equal(parsed.gemini.retryDelayBudgetMs, 2_998);
-  assert.equal(parsed.gemini.researchMaxOutputTokens, 2_048);
-  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 2_048);
+  assert.equal(parsed.gemini.researchOperationTimeoutMs, 340_000);
+  assert.equal(parsed.gemini.formattingOperationTimeoutMs, 150_000);
+  assert.equal(parsed.gemini.retryDelayBudgetMs, 60_000);
+  assert.equal(parsed.gemini.researchMaxOutputTokens, 512);
+  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 256);
   assert.equal(parsed.gemini.formattingMaxOutputTokens, 1_500);
-  assert.equal(parsed.requestTimeoutMs, 500_000);
-  assert.ok(parsed.requestTimeoutMs > 241_499 + 121_499 + GEMINI_PROCESSING_OVERHEAD_MS);
+  assert.equal(parsed.requestTimeoutMs, 510_000);
+  assert.ok(parsed.requestTimeoutMs > 340_000 + 150_000 + GEMINI_PROCESSING_OVERHEAD_MS);
 });
 
 test('request timeout must exceed all Gemini attempts, maximum retry delays, and overhead', () => {
@@ -194,7 +195,7 @@ test('legacy Gemini timeout is used only for absent stage-specific settings', ()
     GEMINI_MODEL: 'gemini-2.5-flash',
     GEMINI_REQUEST_TIMEOUT_MS: '40000',
     GEMINI_RESEARCH_TIMEOUT_MS: '50000',
-    REQUEST_TIMEOUT_MS: '200000',
+    REQUEST_TIMEOUT_MS: '260000',
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
 
@@ -214,7 +215,7 @@ test('stale legacy 115000 stage fallback is rejected when its retry budget excee
         REQUEST_TIMEOUT_MS: '300000',
         EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
       }),
-    /REQUEST_TIMEOUT_MS.*472998 milliseconds/,
+    /REQUEST_TIMEOUT_MS.*540000 milliseconds/,
   );
 });
 
@@ -225,18 +226,19 @@ test('calculated legacy retry budget fits inside the revised external request ti
     GEMINI_API_KEY: 'test-placeholder-not-a-real-key',
     GEMINI_MODEL: 'gemini-2.5-flash',
     GEMINI_REQUEST_TIMEOUT_MS: '115000',
-    REQUEST_TIMEOUT_MS: '500000',
+    REQUEST_TIMEOUT_MS: '550000',
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
   const budget = providerRequestBudget({
     researchTimeoutMs: parsed.gemini.researchTimeoutMs,
+    researchFallbackTimeoutMs: parsed.gemini.researchFallbackTimeoutMs,
     formattingTimeoutMs: parsed.gemini.formattingTimeoutMs,
     researchMaxAttempts: parsed.gemini.researchMaxAttempts,
     formattingMaxAttempts: parsed.gemini.formattingMaxAttempts,
   });
 
-  assert.equal(budget.totalTimeoutMs, 472_998);
-  assert.equal(parsed.requestTimeoutMs, 500_000);
+  assert.equal(budget.totalTimeoutMs, 540_000);
+  assert.equal(parsed.requestTimeoutMs, 550_000);
   assert.ok(budget.totalTimeoutMs < parsed.requestTimeoutMs);
 });
 
@@ -263,37 +265,38 @@ test('stage-specific deadlines override a stale 115000 legacy fallback', () => {
 test('maximum two-attempt retry budget fits beneath the default request deadline', () => {
   const budget = providerRequestBudget({
     researchTimeoutMs: 120_000,
+    researchFallbackTimeoutMs: 180_000,
     formattingTimeoutMs: 60_000,
     researchMaxAttempts: 2,
     formattingMaxAttempts: 2,
   });
   assert.deepEqual(budget, {
-    researchOperationTimeoutMs: 241_499,
-    formattingOperationTimeoutMs: 121_499,
-    retryDelayBudgetMs: 2_998,
-    totalTimeoutMs: 372_998,
+    researchOperationTimeoutMs: 340_000,
+    formattingOperationTimeoutMs: 150_000,
+    retryDelayBudgetMs: 60_000,
+    totalTimeoutMs: 500_000,
   });
-  assert.ok(budget.totalTimeoutMs < 500_000);
+  assert.ok(budget.totalTimeoutMs < 510_000);
 });
 
 test('live verifier timeout is above the external request and remains explicitly bounded', () => {
-  assert.equal(resolveVerifierTimeoutMs({ REQUEST_TIMEOUT_MS: '500000' }), 520_000);
-  assert.equal(DEFAULT_LIVE_VERIFIER_TIMEOUT_MS, 520_000);
-  assert.equal(DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS, 540_000);
+  assert.equal(resolveVerifierTimeoutMs({ REQUEST_TIMEOUT_MS: '510000' }), 530_000);
+  assert.equal(DEFAULT_LIVE_VERIFIER_TIMEOUT_MS, 530_000);
+  assert.equal(DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS, 550_000);
   assert.throws(
     () =>
       resolveVerifierTimeoutMs({
-        REQUEST_TIMEOUT_MS: '500000',
-        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '500000',
+        REQUEST_TIMEOUT_MS: '510000',
+        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '510000',
       }),
     /must exceed REQUEST_TIMEOUT_MS/,
   );
   assert.throws(
     () =>
       resolveVerifierTimeoutMs({
-        REQUEST_TIMEOUT_MS: '500000',
-        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '540000',
-        RUNTIME_INVOCATION_TIMEOUT_MS: '540000',
+        REQUEST_TIMEOUT_MS: '510000',
+        EXTERNAL_AGENT_VERIFY_TIMEOUT_MS: '550000',
+        RUNTIME_INVOCATION_TIMEOUT_MS: '550000',
       }),
     /must be less than RUNTIME_INVOCATION_TIMEOUT_MS/,
   );
@@ -365,7 +368,7 @@ test('grounded research attempts remain configurable within the one-retry bound'
   }
 });
 
-test('grounded research output budgets are independently bounded at 2048', () => {
+test('fallback grounded research uses a smaller independent output budget', () => {
   const parsed = readEnvironment({
     NODE_ENV: 'test',
     AI_PROVIDER: 'gemini',
@@ -375,8 +378,8 @@ test('grounded research output budgets are independently bounded at 2048', () =>
     EXTERNAL_AGENT_RUNTIME_TOKEN: RUNTIME_TOKEN,
   });
 
-  assert.equal(parsed.gemini.researchMaxOutputTokens, 2_048);
-  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 2_048);
+  assert.equal(parsed.gemini.researchMaxOutputTokens, 512);
+  assert.equal(parsed.gemini.researchFallbackMaxOutputTokens, 256);
   assert.equal(parsed.gemini.formattingMaxOutputTokens, 1_800);
   const equalCaps = readEnvironment({
     NODE_ENV: 'test',

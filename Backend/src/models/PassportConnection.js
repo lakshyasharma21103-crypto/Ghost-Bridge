@@ -69,6 +69,9 @@ const passportConnectionSchema = new mongoose.Schema(
     lastHealthSuccessAt: { type: Date },
     lastHealthFailureAt: { type: Date },
     lastHealthReasonCode: { type: String, trim: true, match: /^[A-Z][A-Z0-9_]{0,127}$/ },
+    connectionRegionId: { type: String, trim: true, match: /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/, index: true },
+    residencyTags: [{ type: String, trim: true, maxlength: 64 }],
+    allowedDataClassifications: [{ type: String, enum: ['public', 'internal', 'confidential', 'restricted'] }],
     // Internal-only until a future Agent Passport protocol version declares these capabilities.
     runtimeControl: { type: runtimeControlSchema, default: () => ({}) },
   },
@@ -81,6 +84,7 @@ passportConnectionSchema.index({ receivingWorkspaceId: 1, status: 1, updatedAt: 
 passportConnectionSchema.index({ receivingWorkspaceId: 1, lastHealthStatus: 1, updatedAt: -1 });
 passportConnectionSchema.index({ receivingWorkspaceId: 1, healthStatus: 1, updatedAt: -1 });
 passportConnectionSchema.index({ organizationId: 1, credentialBindingId: 1 });
+passportConnectionSchema.index({ receivingWorkspaceId: 1, connectionRegionId: 1, status: 1 });
 
 module.exports =
   mongoose.models.PassportConnection ||

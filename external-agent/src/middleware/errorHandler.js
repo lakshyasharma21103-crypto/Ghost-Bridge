@@ -27,7 +27,9 @@ const SAFE_GEMINI_STEP_TYPES = new Set([
 const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
+  'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
 ]);
+const SAFE_RETRY_DELAY_CATEGORIES = new Set(['exponential_jitter', 'none', 'retry_after']);
 const SAFE_RECOVERY_REASONS = new Set([
   'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
   'SHUTDOWN_DURING_EXTERNAL_INVOCATION',
@@ -39,8 +41,11 @@ const SAFE_LIFECYCLE_REASONS = Object.freeze({
 const SAFE_RETRY_REASONS = new Set([
   'GROUNDING_EVIDENCE_MISSING',
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  'NONE',
   'NOT_RETRYABLE',
+  'INCOMPLETE_RESEARCH_RESPONSE',
   'PROVIDER_DEADLINE_EXCEEDED',
+  'PROVIDER_RATE_LIMITED',
   'PROVIDER_UNAVAILABLE',
   'TRANSIENT_TRANSPORT_FAILURE',
 ]);
@@ -85,6 +90,49 @@ function safeAttemptDurations(value) {
 
 function safeUsageCount(value, maximum = 10_000_000) {
   return Number.isInteger(value) && value >= 0 && value <= maximum ? value : undefined;
+}
+
+function safeResearchAttempts(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 2) return undefined;
+  const safe = value.map((attempt) => {
+    if (
+      !attempt ||
+      !Number.isInteger(attempt.attemptNumber) ||
+      !['primary', 'fallback'].includes(attempt.profile) ||
+      !Number.isInteger(attempt.configuredTimeoutMs) ||
+      !Number.isInteger(attempt.durationMs) ||
+      !SAFE_FINAL_PROVIDER_STATUSES.has(attempt.providerStatus) ||
+      !['none', 'local', 'provider', 'overall'].includes(attempt.timeoutSource) ||
+      typeof attempt.retryable !== 'boolean' ||
+      !SAFE_RETRY_REASONS.has(attempt.retryReason) ||
+      !['none', 'exponential_jitter', 'retry_after', 'grounding_fallback'].includes(
+        attempt.retryDelayCategory,
+      )
+    ) {
+      return undefined;
+    }
+    return {
+      attemptNumber: attempt.attemptNumber,
+      profile: attempt.profile,
+      configuredTimeoutMs: attempt.configuredTimeoutMs,
+      durationMs: attempt.durationMs,
+      ...(Number.isInteger(attempt.providerHttpStatus)
+        ? { providerHttpStatus: attempt.providerHttpStatus }
+        : {}),
+      providerStatus: attempt.providerStatus,
+      timeoutSource: attempt.timeoutSource,
+      retryable: attempt.retryable,
+      retryReason: attempt.retryReason,
+      retryDelayMs: attempt.retryDelayMs,
+      retryDelayCategory: attempt.retryDelayCategory,
+      remainingTotalBudgetMs: attempt.remainingTotalBudgetMs,
+      groundingMetadataCount: attempt.groundingMetadataCount,
+      groundingChunkCount: attempt.groundingChunkCount,
+      searchQueryCount: attempt.searchQueryCount,
+      citationAnnotationCount: attempt.citationAnnotationCount,
+    };
+  });
+  return safe.every(Boolean) ? safe : undefined;
 }
 
 function normalizeError(error) {
@@ -199,16 +247,19 @@ function errorHandler(logger) {
         ? normalized.recoveryReason
         : undefined;
     const timeoutReason =
-      normalized.code === 'GEMINI_REQUEST_TIMEOUT' &&
+      (normalized.code === 'GEMINI_REQUEST_TIMEOUT' ||
+        normalized.code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED') &&
       SAFE_TIMEOUT_REASONS.has(normalized.timeoutReason || normalized.reason)
         ? normalized.timeoutReason || normalized.reason
         : undefined;
     const configuredTimeoutMs =
-      normalized.code === 'GEMINI_REQUEST_TIMEOUT'
+      normalized.code === 'GEMINI_REQUEST_TIMEOUT' ||
+      normalized.code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED'
         ? safeConfiguredTimeoutMs(normalized.configuredTimeoutMs)
         : undefined;
     const operationTimeoutMs =
-      normalized.code === 'GEMINI_REQUEST_TIMEOUT'
+      normalized.code === 'GEMINI_REQUEST_TIMEOUT' ||
+      normalized.code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED'
         ? safeOperationTimeoutMs(normalized.operationTimeoutMs)
         : undefined;
     const lifecycleReason =
@@ -251,8 +302,11 @@ function errorHandler(logger) {
           : {}),
         ...(Number.isInteger(normalized.retryDelayMs) &&
         normalized.retryDelayMs >= 0 &&
-        normalized.retryDelayMs <= 10_000
+        normalized.retryDelayMs <= 30_000
           ? { retryDelayMs: normalized.retryDelayMs }
+          : {}),
+        ...(SAFE_RETRY_DELAY_CATEGORIES.has(normalized.retryDelayCategory)
+          ? { retryDelayCategory: normalized.retryDelayCategory }
           : {}),
         ...(SAFE_RETRY_REASONS.has(normalized.retryReason)
           ? { retryReason: normalized.retryReason }
@@ -266,6 +320,9 @@ function errorHandler(logger) {
         ...(safeAttemptDurations(normalized.researchAttemptDurationsMs)
           ? { researchAttemptDurationsMs: normalized.researchAttemptDurationsMs }
           : {}),
+        ...(safeResearchAttempts(normalized.researchAttempts)
+          ? { researchAttempts: safeResearchAttempts(normalized.researchAttempts) }
+          : {}),
         ...(typeof normalized.fallbackResearchProfileUsed === 'boolean'
           ? { fallbackResearchProfileUsed: normalized.fallbackResearchProfileUsed }
           : {}),
@@ -274,6 +331,14 @@ function errorHandler(logger) {
           : {}),
         ...(SAFE_FINAL_PROVIDER_STATUSES.has(normalized.finalProviderStatus)
           ? { finalProviderStatus: normalized.finalProviderStatus }
+          : {}),
+        ...(Number.isInteger(normalized.providerHttpStatus) &&
+        normalized.providerHttpStatus >= 100 &&
+        normalized.providerHttpStatus <= 599
+          ? { providerHttpStatus: normalized.providerHttpStatus }
+          : {}),
+        ...(SAFE_FINAL_PROVIDER_STATUSES.has(normalized.providerStatus)
+          ? { providerStatus: normalized.providerStatus }
           : {}),
         ...(Number.isInteger(normalized.groundingMetadataCount) &&
         normalized.groundingMetadataCount >= 0

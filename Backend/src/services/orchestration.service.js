@@ -54,6 +54,7 @@ const {
 } = require('../utils/idempotency');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const {
   assertAdmissionAccepted,
   releaseQuotaReservation,
@@ -1094,6 +1095,7 @@ async function validateDefinition(definitionId, input = {}, caller = {}) {
 
 async function activateDefinition(definitionId, input = {}, caller = {}) {
   const scope = callerScope(input, caller);
+  await assertRegionalWriteAuthority({ ...scope, scope: 'workspace', regionId: input.regionId, authorityEpoch: input.authorityEpoch, authorityLeaseEpoch: input.authorityLeaseEpoch });
   await authorize('orchestration.definition.activate', 'OrchestrationDefinition', definitionId, scope, caller);
   await assertOperationalAccess({ ...scope, operation: 'MUTATION' });
   const definition = await scopedDefinition(definitionId, scope);
@@ -1186,7 +1188,13 @@ async function startRun(definitionId, input = {}, caller = {}) {
   const idempotencyKeyHash = secureDigest('orchestration-run-key', normalizedKey.value);
   const requestFingerprint = secureDigest(
     'orchestration-run-request',
-    canonicalize({ definitionId: idOf(definition), version: definition.version, input: runInput }),
+    canonicalize({
+      definitionId: idOf(definition),
+      version: definition.version,
+      input: runInput,
+      pilotProgramId: input.pilotProgramId,
+      pilotUserId: input.pilotUserId || input.receivingUserId,
+    }),
   );
   const existing = await OrchestrationRun.findOne({
     organizationId: scope.organizationId,
@@ -1199,6 +1207,13 @@ async function startRun(definitionId, input = {}, caller = {}) {
     }
     return { ...serializeRun(existing), idempotencyReplayed: true };
   }
+  const regionalAuthority = await assertRegionalWriteAuthority({
+    ...scope,
+    scope: 'workspace',
+    regionId: input.regionId,
+    authorityEpoch: input.authorityEpoch,
+    authorityLeaseEpoch: input.authorityLeaseEpoch,
+  });
   const selectionResults = [];
   for (const node of plain.nodes.filter((item) => item.targetingMode === 'governed_selection')) {
     const childRequestId = `req_${secureDigest('orchestration-selection-request', `${scope.requestId || normalizedKey.value}:${node.nodeKey}`).slice(-48)}`;
@@ -1306,6 +1321,15 @@ async function startRun(definitionId, input = {}, caller = {}) {
       idempotencyKey: idempotencyKeyHash,
       payloadBytesEstimate: Buffer.byteLength(canonicalize(runInput), 'utf8'),
       reservationExpiresAt: new Date(Date.now() + snapshot.maxRunDurationMs),
+      regionId: regionalAuthority.context?.regionId,
+      authorityEpoch: regionalAuthority.context?.authorityEpoch,
+      authorityLeaseEpoch: regionalAuthority.context?.authorityLeaseEpoch,
+      pilotProgramId: input.pilotProgramId,
+      pilotUserId: input.pilotUserId || input.receivingUserId,
+      receivingUserId: input.receivingUserId,
+      capabilityKey: input.capabilityKey || 'orchestration.basic',
+      dataClassification: input.dataClassification,
+      residencyTag: input.residencyTag,
     },
     caller,
   );
@@ -1317,6 +1341,9 @@ async function startRun(definitionId, input = {}, caller = {}) {
       routingKey: `${idOf(runId)}:${node.nodeKey}`,
       workloadCategory: 'orchestration_node',
       routingVersion: admission.routingVersion,
+      homeRegionId: regionalAuthority.context?.regionId,
+      executionRegionId: regionalAuthority.context?.regionId,
+      authorityEpoch: regionalAuthority.context?.authorityEpoch,
     });
     routesByNodeKey.set(
       node.nodeKey,
@@ -1326,6 +1353,9 @@ async function startRun(definitionId, input = {}, caller = {}) {
         partitionNumber: route.partitionNumber,
         partitionKey: route.partitionKey,
         workerPool: route.workerPool,
+        executionRegionId: regionalAuthority.context?.regionId,
+        authorityEpoch: regionalAuthority.context?.authorityEpoch,
+        authorityLeaseEpoch: regionalAuthority.context?.authorityLeaseEpoch,
       },
     );
   }
@@ -1350,6 +1380,9 @@ async function startRun(definitionId, input = {}, caller = {}) {
       admissionDecisionId: admission.decisionId,
       quotaReservationId: admission.quotaReservationId,
       routingVersion: admission.routingVersion,
+      homeRegionId: regionalAuthority.context?.regionId,
+      executionRegionId: regionalAuthority.context?.regionId,
+      authorityEpoch: regionalAuthority.context?.authorityEpoch,
       concurrencyLimit: snapshot.concurrencyLimit,
       maxRunDurationMs: snapshot.maxRunDurationMs,
       maxNodeExecutions: snapshot.maxNodeExecutions,
@@ -1781,6 +1814,7 @@ async function cancelRun(runId, input = {}, caller = {}) {
   if (TERMINAL_RUN_STATUSES.includes(run.status)) {
     return { ...serializeRun(run), idempotent: true };
   }
+  await assertRegionalWriteAuthority({ ...scope, scope: 'workspace', regionId: input.regionId, authorityEpoch: input.authorityEpoch, authorityLeaseEpoch: input.authorityLeaseEpoch });
   const now = new Date();
   if (run.status !== 'cancel_requested') {
     run = await OrchestrationRun.findOneAndUpdate(

@@ -18,6 +18,7 @@ const {
 } = require('./approval.service');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const { redactSecrets } = require('../utils/redact');
 const { createObserver, errorFields } = require('../utils/observability');
 const { isRetryableError } = require('../utils/retryability');
@@ -1567,6 +1568,9 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
   });
   observer.emit('info', 'runtime.invocation.started', { status: 'started' });
   try {
+    if (actor.restoreValidation === true || actor.externalInvocationsEnabled === false) {
+      throw new AppError(409, 'REGION_RESTORE_EXTERNAL_INVOCATION_DISABLED', 'External invocation is disabled during isolated restore validation.');
+    }
     const normalizedCapabilityName = await observer.stage('request_validation', async () =>
       requireString(capabilityName, 'capability'),
     );
@@ -1579,6 +1583,22 @@ async function invoke(connectionId, capabilityName, input, actor = {}) {
       observer,
       connection,
     );
+    const regionalAuthority = await assertRegionalWriteAuthority({
+      organizationId: idOf(connection.organizationId || connection.partnerId),
+      workspaceId: connection.receivingWorkspaceId,
+      scope: 'workspace',
+      regionId: actor.executionRegionId,
+      authorityEpoch: actor.authorityEpoch,
+      authorityLeaseEpoch: actor.authorityLeaseEpoch,
+    });
+    if (
+      regionalAuthority.enforced &&
+      connection.connectionRegionId &&
+      connection.connectionRegionId !== regionalAuthority.context.regionId &&
+      actor.crossRegionInvocationAllowed !== true
+    ) {
+      throw new AppError(409, 'REGION_AGENT_LOCATION_DENIED', 'Agent connection region is not permitted for this execution.');
+    }
     await assertConnectionNotQuarantined(connectionId, {
       organizationId: idOf(connection.organizationId || connection.partnerId),
       partnerId: idOf(connection.partnerId),

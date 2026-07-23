@@ -8,6 +8,7 @@ const { corsOptions, helmetOptions } = require('./config/security');
 const { errorHandler } = require('./middleware/errorHandler');
 const { notFound } = require('./middleware/notFound');
 const { requestId } = require('./middleware/requestId');
+const { rejectTestFaultControls } = require('./middleware/rejectTestFaultControls');
 const { router } = require('./routes');
 const { createObserver } = require('./utils/observability');
 const { performance } = require('node:perf_hooks');
@@ -20,8 +21,10 @@ function createApp(options = {}) {
   if (!options.lifecycle) lifecycle.markReady();
   const app = express();
   app.locals.serviceLifecycle = lifecycle;
+  app.locals.startupConfiguration = require('./config/env').startupConfiguration;
 
   app.disable('x-powered-by');
+  if (env.TRUST_PROXY) app.set('trust proxy', env.TRUST_PROXY === '1' ? 1 : env.TRUST_PROXY);
   app.use(helmet(helmetOptions));
   app.use(cors(corsOptions));
   app.use(compression());
@@ -29,6 +32,7 @@ function createApp(options = {}) {
   app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }));
   app.use(express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT }));
   app.use(requestId);
+  app.use(rejectTestFaultControls);
   app.use((request, response, next) => {
     const started = performance.now();
     request.observer = createObserver({ traceId: request.traceId, requestId: request.requestId });

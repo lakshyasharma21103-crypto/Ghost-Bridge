@@ -4,7 +4,10 @@ const { z } = require('zod');
 const { resolveGeminiThinkingConfiguration, safeModelName } = require('../config/geminiThinking');
 const {
   DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
+  DEFAULT_GEMINI_RESEARCH_FALLBACK_TIMEOUT_MS,
   DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
+  GEMINI_RESEARCH_VALIDATION_MARGIN_MS,
+  GEMINI_RETRY_MAX_DELAY_MS,
   operationBudgetMs,
   retryDelayMs,
 } = require('../config/timeoutBudget');
@@ -29,8 +32,8 @@ const { SERVICE_VERSION } = require('../constants');
 
 const DEFAULT_RESEARCH_MAX_ATTEMPTS = 2;
 const DEFAULT_FORMATTING_MAX_ATTEMPTS = 2;
-const DEFAULT_RESEARCH_MAX_OUTPUT_TOKENS = 2_048;
-const DEFAULT_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 2_048;
+const DEFAULT_RESEARCH_MAX_OUTPUT_TOKENS = 512;
+const DEFAULT_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 256;
 const DEFAULT_FORMATTING_MAX_OUTPUT_TOKENS = 1_500;
 const ATTEMPT_SCHEDULING_GRACE_MS = 100;
 const GEMINI_API_MODE = GEMINI_API_MODES.GENERATE_CONTENT;
@@ -92,6 +95,36 @@ const researchResultSchema = z
         groundingFallbackUsed: z.boolean(),
         finalProviderStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
         groundingMetadataCount: z.number().int().nonnegative(),
+        attempts: z
+          .array(
+            z
+              .object({
+                attemptNumber: z.number().int().min(1).max(2),
+                profile: z.enum(['primary', 'fallback']),
+                configuredTimeoutMs: z.number().int().positive(),
+                durationMs: z.number().int().nonnegative(),
+                providerHttpStatus: z.number().int().min(100).max(599).optional(),
+                providerStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+                timeoutSource: z.enum(['none', 'local', 'provider', 'overall']),
+                retryable: z.boolean(),
+                retryReason: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+                retryDelayMs: z.number().int().nonnegative(),
+                retryDelayCategory: z.enum([
+                  'none',
+                  'exponential_jitter',
+                  'retry_after',
+                  'grounding_fallback',
+                ]),
+                remainingTotalBudgetMs: z.number().int().nonnegative(),
+                groundingMetadataCount: z.number().int().nonnegative(),
+                groundingChunkCount: z.number().int().nonnegative(),
+                searchQueryCount: z.number().int().nonnegative(),
+                citationAnnotationCount: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(2),
       })
       .strict(),
   })
@@ -114,6 +147,7 @@ const SAFE_ERRORS = Object.freeze({
   GEMINI_AUTHENTICATION_FAILED: [502, 'The research provider rejected its credentials.'],
   GEMINI_RATE_LIMITED: [503, 'The research provider is temporarily rate limited.'],
   GEMINI_REQUEST_TIMEOUT: [504, 'The research provider request timed out.'],
+  GEMINI_RESEARCH_BUDGET_EXHAUSTED: [504, 'The grounded research time budget was exhausted.'],
   GEMINI_UPSTREAM_UNAVAILABLE: [503, 'The research provider is temporarily unavailable.'],
   GEMINI_WEB_SEARCH_FAILED: [502, 'The research provider could not complete web search.'],
   GEMINI_INVALID_STRUCTURED_OUTPUT: [
@@ -148,6 +182,7 @@ const FORMATTING_RECOVERY_CODES = new Set([
 const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
+  'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
 ]);
 
 function geminiError(code, configuration) {
@@ -229,7 +264,12 @@ function attachOperationDiagnostics(error, context = {}) {
 }
 
 function attachTimeoutDiagnostics(error, timeoutMs, operationTimeoutMs) {
-  if (error.code !== 'GEMINI_REQUEST_TIMEOUT') return error;
+  if (
+    error.code !== 'GEMINI_REQUEST_TIMEOUT' &&
+    error.code !== 'GEMINI_RESEARCH_BUDGET_EXHAUSTED'
+  ) {
+    return error;
+  }
   if (SAFE_TIMEOUT_REASONS.has(error.reason)) error.timeoutReason = error.reason;
   if (Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 1_800_000) {
     error.configuredTimeoutMs = timeoutMs;
@@ -351,7 +391,52 @@ function mapGeminiError(error, context = {}) {
     mapped = geminiError('GEMINI_WEB_SEARCH_FAILED');
   } else mapped = geminiError('GEMINI_UNKNOWN_ERROR');
 
-  return attachOperationDiagnostics(mapped, diagnosticContext);
+  const normalized = attachOperationDiagnostics(mapped, diagnosticContext);
+  if (status === 429) {
+    const retryAfterMs = parseRetryAfterMs(error);
+    if (retryAfterMs !== undefined) normalized.retryAfterMs = retryAfterMs;
+  }
+  return normalized;
+}
+
+function headerValue(headers, name) {
+  if (!headers) return undefined;
+  if (typeof headers.get === 'function') return headers.get(name);
+  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+  return match?.[1];
+}
+
+function parseRetryAfterMs(error, nowMs = Date.now()) {
+  const raw =
+    headerValue(error?.response?.headers, 'retry-after') ??
+    headerValue(error?.headers, 'retry-after') ??
+    error?.retryAfter;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if ((typeof value !== 'string' && typeof value !== 'number') || String(value).length > 128) {
+    return undefined;
+  }
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(GEMINI_RETRY_MAX_DELAY_MS, Math.ceil(seconds * 1_000));
+  }
+  const date = Date.parse(String(value));
+  if (!Number.isFinite(date)) return undefined;
+  return Math.min(GEMINI_RETRY_MAX_DELAY_MS, Math.max(0, date - nowMs));
+}
+
+function chooseRetryDelay(error, attemptNumber, randomValue, nowMs = Date.now()) {
+  const retryAfterMs = parseRetryAfterMs(error, nowMs);
+  const exponentialDelayMs = retryDelayMs(attemptNumber, randomValue);
+  if (retryAfterMs !== undefined) {
+    return Object.freeze({
+      delayMs: Math.max(retryAfterMs, exponentialDelayMs),
+      category: 'retry_after',
+    });
+  }
+  return Object.freeze({
+    delayMs: exponentialDelayMs,
+    category: 'exponential_jitter',
+  });
 }
 
 function attachFormattingRecovery(error) {
@@ -379,7 +464,7 @@ function retryDecision(error) {
   const status = numericStatus(error);
   const providerStatus = safeProviderStatus(error);
   if (
-    [400, 401, 403, 404, 409, 422, 429].includes(status) ||
+    [400, 401, 403, 404, 409, 422].includes(status) ||
     [
       'ALREADY_EXISTS',
       'FAILED_PRECONDITION',
@@ -387,14 +472,16 @@ function retryDecision(error) {
       'NOT_FOUND',
       'OUT_OF_RANGE',
       'PERMISSION_DENIED',
-      'RESOURCE_EXHAUSTED',
       'UNAUTHENTICATED',
       'UNIMPLEMENTED',
     ].includes(providerStatus)
   ) {
     return Object.freeze({ retryable: false, reason: 'NOT_RETRYABLE' });
   }
-  if (status === 503 || providerStatus === 'UNAVAILABLE') {
+  if (status === 429 || providerStatus === 'RESOURCE_EXHAUSTED') {
+    return Object.freeze({ retryable: true, reason: 'PROVIDER_RATE_LIMITED' });
+  }
+  if ([500, 502, 503].includes(status) || ['INTERNAL', 'UNAVAILABLE'].includes(providerStatus)) {
     return Object.freeze({ retryable: true, reason: 'PROVIDER_UNAVAILABLE' });
   }
   if (status === 504 || providerStatus === 'DEADLINE_EXCEEDED') {
@@ -461,6 +548,11 @@ function researchTelemetry(attemptState) {
     groundingFallbackUsed: attemptState.attempts.some((attempt) => attempt.groundingFallback),
     finalProviderStatus: attemptState.finalProviderStatus || 'UNKNOWN',
     groundingMetadataCount: attemptState.groundingMetadataCount || 0,
+    attempts: Object.freeze(
+      attemptState.attempts.map(({ fallbackProfileUsed, groundingFallback, ...attempt }) =>
+        Object.freeze(attempt),
+      ),
+    ),
   });
 }
 
@@ -472,6 +564,7 @@ function attachResearchTelemetry(error, telemetry) {
   error.groundingFallbackUsed = telemetry.groundingFallbackUsed;
   error.finalProviderStatus = telemetry.finalProviderStatus;
   error.groundingMetadataCount = telemetry.groundingMetadataCount;
+  error.researchAttempts = telemetry.attempts;
   return error;
 }
 
@@ -571,6 +664,11 @@ class GeminiProvider extends AIProvider {
       this.config.researchTimeoutMs ??
       this.config.requestTimeoutMs ??
       DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS;
+    this.researchFallbackTimeoutMs =
+      this.config.researchFallbackTimeoutMs ??
+      this.config.researchTimeoutMs ??
+      this.config.requestTimeoutMs ??
+      DEFAULT_GEMINI_RESEARCH_FALLBACK_TIMEOUT_MS;
     this.formattingTimeoutMs =
       this.config.formattingTimeoutMs ??
       this.config.requestTimeoutMs ??
@@ -591,7 +689,11 @@ class GeminiProvider extends AIProvider {
         : DEFAULT_FORMATTING_MAX_ATTEMPTS;
     this.researchOperationTimeoutMs =
       this.config.researchOperationTimeoutMs ??
-      operationBudgetMs(this.researchTimeoutMs, this.researchMaxAttempts);
+      operationBudgetMs(
+        [this.researchTimeoutMs, this.researchFallbackTimeoutMs],
+        this.researchMaxAttempts,
+        GEMINI_RESEARCH_VALIDATION_MARGIN_MS,
+      );
     this.formattingOperationTimeoutMs =
       this.config.formattingOperationTimeoutMs ??
       operationBudgetMs(this.formattingTimeoutMs, this.formattingMaxAttempts);
@@ -623,6 +725,7 @@ class GeminiProvider extends AIProvider {
     maxAttempts,
     signal,
     attemptTimeoutMs,
+    fallbackAttemptTimeoutMs,
     operationTimeoutMs,
     operationStartedAt,
     operation,
@@ -637,20 +740,33 @@ class GeminiProvider extends AIProvider {
       throwIfParentAborted(signal);
       const remainingOperationMs = Math.floor(operationDeadlineAt - this.now());
       if (remainingOperationMs <= 0) {
-        const deadline = new Error('Provider operation deadline was exhausted.');
+        const deadline =
+          operation === 'grounded_research'
+            ? attachOperationDiagnostics(geminiError('GEMINI_RESEARCH_BUDGET_EXHAUSTED'), {
+                operation,
+                reason: 'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
+              })
+            : new Error('Provider operation deadline was exhausted.');
         deadline.name = 'TimeoutError';
-        deadline.localProviderTimedOut = true;
+        deadline.overallResearchTimedOut = operation === 'grounded_research';
         deadline.retryBudgetExhausted = true;
         throw deadline;
       }
 
       attemptState.count = attemptNumber;
+      const desiredAttemptTimeoutMs =
+        attemptNumber === 2 && fallbackAttemptTimeoutMs
+          ? fallbackAttemptTimeoutMs
+          : attemptTimeoutMs;
       const configuredAttemptTimeoutMs = Math.max(
         1,
-        remainingOperationMs >= attemptTimeoutMs - ATTEMPT_SCHEDULING_GRACE_MS
-          ? attemptTimeoutMs
+        remainingOperationMs >= desiredAttemptTimeoutMs - ATTEMPT_SCHEDULING_GRACE_MS
+          ? desiredAttemptTimeoutMs
           : remainingOperationMs,
       );
+      const overallBudgetLimited =
+        operation === 'grounded_research' &&
+        configuredAttemptTimeoutMs < desiredAttemptTimeoutMs - ATTEMPT_SCHEDULING_GRACE_MS;
       attemptState.lastConfiguredTimeoutMs = configuredAttemptTimeoutMs;
       const fallbackProfileUsed = operation === 'grounded_research' && attemptNumber === 2;
       const groundingFallback =
@@ -706,7 +822,8 @@ class GeminiProvider extends AIProvider {
         if (attempt.timedOut()) {
           failure = new Error('Provider attempt timed out.');
           failure.name = 'TimeoutError';
-          failure.localProviderTimedOut = true;
+          if (overallBudgetLimited) failure.overallResearchTimedOut = true;
+          else failure.localProviderTimedOut = true;
         } else if (attempt.abortedByParent()) {
           failure = attempt.signal.reason || parentAbortReason(signal);
         }
@@ -735,7 +852,8 @@ class GeminiProvider extends AIProvider {
           forbiddenValues: [this.config.apiKey],
         }).length === 0;
       const groundingFallbackAllowed =
-        (groundingEvidenceMissing || INCOMPLETE_RESEARCH_FINISH_REASONS.has(shape?.finishReason)) &&
+        !groundingEvidenceMissing &&
+        INCOMPLETE_RESEARCH_FINISH_REASONS.has(shape?.finishReason) &&
         attemptNumber === 1 &&
         attemptNumber < boundedMaxAttempts;
 
@@ -746,6 +864,19 @@ class GeminiProvider extends AIProvider {
         attemptState.attempts.push({
           attemptNumber,
           durationMs,
+          profile: fallbackProfileUsed ? 'fallback' : 'primary',
+          configuredTimeoutMs: configuredAttemptTimeoutMs,
+          providerStatus: 'OK',
+          timeoutSource: 'none',
+          retryable: true,
+          retryReason: fallbackReason,
+          retryDelayMs: 0,
+          retryDelayCategory: 'grounding_fallback',
+          remainingTotalBudgetMs: Math.max(0, Math.floor(operationDeadlineAt - this.now())),
+          groundingMetadataCount,
+          groundingChunkCount: shape?.groundingChunkCount || 0,
+          searchQueryCount: shape?.webSearchQueryCount || 0,
+          citationAnnotationCount: shape?.citationAnnotationCount || 0,
           fallbackProfileUsed,
           groundingFallback,
         });
@@ -786,6 +917,19 @@ class GeminiProvider extends AIProvider {
         attemptState.attempts.push({
           attemptNumber,
           durationMs,
+          profile: fallbackProfileUsed ? 'fallback' : 'primary',
+          configuredTimeoutMs: configuredAttemptTimeoutMs,
+          providerStatus: 'OK',
+          timeoutSource: 'none',
+          retryable: false,
+          retryReason: 'NONE',
+          retryDelayMs: 0,
+          retryDelayCategory: 'none',
+          remainingTotalBudgetMs: Math.max(0, Math.floor(operationDeadlineAt - this.now())),
+          groundingMetadataCount,
+          groundingChunkCount: shape?.groundingChunkCount || 0,
+          searchQueryCount: shape?.webSearchQueryCount || 0,
+          citationAnnotationCount: shape?.citationAnnotationCount || 0,
           fallbackProfileUsed,
           groundingFallback,
         });
@@ -822,15 +966,52 @@ class GeminiProvider extends AIProvider {
       const decision = retryDecision(failure);
       const retryCandidate =
         attemptNumber < boundedMaxAttempts && decision.retryable && !signal?.aborted;
-      if (retryCandidate) delayMs = retryDelayMs(attemptNumber, this.random());
+      let retryDelayCategory = 'none';
+      if (retryCandidate) {
+        const chosenDelay = chooseRetryDelay(failure, attemptNumber, this.random(), this.now());
+        delayMs = chosenDelay.delayMs;
+        retryDelayCategory = chosenDelay.category;
+      }
       const remainingForRetryMs = Math.floor(operationDeadlineAt - this.now());
-      const retryBudgetExhausted = retryCandidate && remainingForRetryMs <= delayMs;
+      const nextAttemptTimeoutMs =
+        attemptNumber === 1 && fallbackAttemptTimeoutMs
+          ? fallbackAttemptTimeoutMs
+          : attemptTimeoutMs;
+      const reservedValidationMarginMs =
+        operation === 'grounded_research' ? GEMINI_RESEARCH_VALIDATION_MARGIN_MS : 0;
+      const retryBudgetExhausted =
+        retryCandidate &&
+        remainingForRetryMs + ATTEMPT_SCHEDULING_GRACE_MS <
+          delayMs + nextAttemptTimeoutMs + reservedValidationMarginMs;
       const retryAllowed = retryCandidate && !retryBudgetExhausted;
       const providerStatus = attemptProviderStatus(failure);
 
       attemptState.attempts.push({
         attemptNumber,
         durationMs,
+        profile: fallbackProfileUsed ? 'fallback' : 'primary',
+        configuredTimeoutMs: configuredAttemptTimeoutMs,
+        ...(numericStatus(failure) !== undefined
+          ? { providerHttpStatus: numericStatus(failure) }
+          : {}),
+        providerStatus,
+        timeoutSource:
+          failure.overallResearchTimedOut === true
+            ? 'overall'
+            : failure.localProviderTimedOut === true
+              ? 'local'
+              : providerStatus === 'DEADLINE_EXCEEDED'
+                ? 'provider'
+                : 'none',
+        retryable: retryAllowed,
+        retryReason: decision.reason,
+        retryDelayMs: retryAllowed ? delayMs : 0,
+        retryDelayCategory: retryAllowed ? retryDelayCategory : 'none',
+        remainingTotalBudgetMs: Math.max(0, remainingForRetryMs),
+        groundingMetadataCount: 0,
+        groundingChunkCount: 0,
+        searchQueryCount: 0,
+        citationAnnotationCount: 0,
         fallbackProfileUsed,
         groundingFallback,
       });
@@ -852,7 +1033,18 @@ class GeminiProvider extends AIProvider {
           configuredTimeoutMs: configuredAttemptTimeoutMs,
           retryReason: decision.reason,
           retryDelayMs: retryAllowed ? delayMs : 0,
+          retryDelayCategory: retryAllowed ? retryDelayCategory : 'none',
           retryBudgetExhausted,
+          remainingTotalBudgetMs: Math.max(0, remainingForRetryMs),
+          retryable: retryAllowed,
+          timeoutSource:
+            failure.overallResearchTimedOut === true
+              ? 'overall'
+              : failure.localProviderTimedOut === true
+                ? 'local'
+                : providerStatus === 'DEADLINE_EXCEEDED'
+                  ? 'provider'
+                  : 'none',
           providerStatus,
           groundingMetadataAvailable: false,
           groundingMetadataCount: 0,
@@ -864,8 +1056,22 @@ class GeminiProvider extends AIProvider {
         'Gemini attempt completed',
       );
 
-      if (!retryAllowed) throw failure;
+      if (!retryAllowed) {
+        if (retryBudgetExhausted && operation === 'grounded_research') {
+          const budgetError = attachOperationDiagnostics(
+            geminiError('GEMINI_RESEARCH_BUDGET_EXHAUSTED'),
+            {
+              operation,
+              reason: 'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
+            },
+          );
+          budgetError.retryBudgetExhausted = true;
+          throw budgetError;
+        }
+        throw failure;
+      }
       attemptState.retryDelayMs += delayMs;
+      attemptState.retryDelayCategory = retryDelayCategory;
       await this.delay(delayMs, signal);
     }
     throw new Error('Gemini generation exited without an attempt result.');
@@ -877,6 +1083,7 @@ class GeminiProvider extends AIProvider {
     invocationId,
     operation,
     attemptTimeoutMs,
+    fallbackAttemptTimeoutMs,
     operationTimeoutMs,
     parentSignal,
     maxAttempts = 1,
@@ -887,6 +1094,7 @@ class GeminiProvider extends AIProvider {
     const attemptState = {
       count: 0,
       retryDelayMs: 0,
+      retryDelayCategory: 'none',
       attempts: [],
       attemptIds: new Set(),
       finalProviderStatus: undefined,
@@ -916,6 +1124,7 @@ class GeminiProvider extends AIProvider {
         maxAttempts,
         signal: parentSignal,
         attemptTimeoutMs,
+        fallbackAttemptTimeoutMs,
         operationTimeoutMs,
         operationStartedAt: startedAt,
         operation,
@@ -932,8 +1141,15 @@ class GeminiProvider extends AIProvider {
     } catch (error) {
       operationError = error;
       const operationFailure = parentSignal?.aborted ? parentAbortReason(parentSignal) : error;
+      const normalizedOperationFailure =
+        operationFailure?.overallResearchTimedOut === true && operation === 'grounded_research'
+          ? attachOperationDiagnostics(geminiError('GEMINI_RESEARCH_BUDGET_EXHAUSTED'), {
+              operation,
+              reason: 'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
+            })
+          : operationFailure;
       const mapped = attachTimeoutDiagnostics(
-        mapGeminiError(operationFailure, {
+        mapGeminiError(normalizedOperationFailure, {
           locallyAborted: operationFailure?.localProviderTimedOut === true,
           operation,
           webSearchEnabled: operation === 'grounded_research' && this.config.webSearchEnabled,
@@ -945,6 +1161,7 @@ class GeminiProvider extends AIProvider {
       mapped.providerAttemptCount = attemptState.count;
       mapped.providerMaxAttempts = maxAttempts;
       mapped.retryDelayMs = attemptState.retryDelayMs;
+      mapped.retryDelayCategory = attemptState.retryDelayCategory;
       mapped.retryReason = attemptState.retryReason;
       mapped.retryBudgetExhausted = error?.retryBudgetExhausted === true;
       if (operation === 'grounded_research') {
@@ -970,6 +1187,7 @@ class GeminiProvider extends AIProvider {
         providerAttemptCount: attemptState.count,
         providerMaxAttempts: maxAttempts,
         retryDelayMs: attemptState.retryDelayMs,
+        retryDelayCategory: attemptState.retryDelayCategory || 'none',
         retryReason: attemptState.retryReason,
         providerStatus: attemptState.finalProviderStatus || 'UNKNOWN',
         groundingMetadataAvailable: attemptState.groundingMetadataCount > 0,
@@ -1025,6 +1243,7 @@ class GeminiProvider extends AIProvider {
         invocationId,
         operation: 'grounded_research',
         attemptTimeoutMs: this.researchTimeoutMs,
+        fallbackAttemptTimeoutMs: this.researchFallbackTimeoutMs,
         operationTimeoutMs: this.researchOperationTimeoutMs,
         parentSignal: signal,
         maxAttempts: this.researchMaxAttempts,
@@ -1219,9 +1438,11 @@ class GeminiProvider extends AIProvider {
 module.exports = {
   GeminiProvider,
   SUMMARY_JSON_SCHEMA,
+  chooseRetryDelay,
   geminiError,
   isBlockedResponse,
   mapGeminiError,
+  parseRetryAfterMs,
   safeProviderStatus,
   researchResultSchema,
   visibleResponseText,

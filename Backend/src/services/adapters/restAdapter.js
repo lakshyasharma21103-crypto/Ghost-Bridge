@@ -15,6 +15,7 @@ const SAFE_REMOTE_OPERATIONS = new Set(['grounded_research', 'structured_formatt
 const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
+  'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
 ]);
 const SAFE_RECOVERY_REASONS = new Set([
   'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
@@ -70,12 +71,12 @@ function safeRemoteError(parsedBody) {
   const code =
     typeof remote.code === 'string' && SAFE_REMOTE_CODE.test(remote.code) ? remote.code : undefined;
   const timeoutReason =
-    code === 'GEMINI_REQUEST_TIMEOUT' &&
+    (code === 'GEMINI_REQUEST_TIMEOUT' || code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED') &&
     SAFE_TIMEOUT_REASONS.has(remote.timeoutReason || remote.reason)
       ? remote.timeoutReason || remote.reason
       : undefined;
   const configuredTimeoutMs =
-    code === 'GEMINI_REQUEST_TIMEOUT'
+    code === 'GEMINI_REQUEST_TIMEOUT' || code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED'
       ? safeConfiguredTimeoutMs(remote.configuredTimeoutMs)
       : undefined;
   return {

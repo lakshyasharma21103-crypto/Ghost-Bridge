@@ -1,12 +1,19 @@
 const { env } = require('./env');
 
-const allowedOrigins = new Set([
-  env.CLIENT_URL,
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174',
-]);
+const allowedOrigins = new Set(
+  env.NODE_ENV === 'production'
+    ? String(env.CORS_ORIGINS || env.CLIENT_URL)
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    : [
+        env.CLIENT_URL,
+        'http://localhost:5173',
+        'http://localhost:5174',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:5174',
+      ],
+);
 
 const corsOptions = {
   origin(origin, callback) {

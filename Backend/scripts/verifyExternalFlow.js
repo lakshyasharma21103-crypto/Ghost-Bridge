@@ -66,8 +66,8 @@ function applyExternalRuntimeEnvironment(configuration, environment = process.en
 
 const {
   DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS,
+  DEFAULT_EXTERNAL_FLOW_VERIFIER_TIMEOUT_MS,
   DEFAULT_EXTERNAL_REQUEST_TIMEOUT_MS: EXTERNAL_AGENT_REQUEST_TIMEOUT_MS,
-  DEFAULT_LIVE_VERIFIER_TIMEOUT_MS,
   providerRequestBudget,
 } = require('../../external-agent/src/config/timeoutBudget');
 
@@ -75,14 +75,15 @@ const EXTERNAL_STARTUP_PROBE_TIMEOUT_MS = 30_000;
 const VERIFICATION_REQUEST_TIMEOUT_MS = configuredTimeoutMs(
   process.env,
   'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS',
-  DEFAULT_LIVE_VERIFIER_TIMEOUT_MS,
+  DEFAULT_EXTERNAL_FLOW_VERIFIER_TIMEOUT_MS,
 );
 const RUNTIME_INVOCATION_TIMEOUT_MS = configuredTimeoutMs(
   process.env,
   'RUNTIME_INVOCATION_TIMEOUT_MS',
   DEFAULT_BACKEND_RUNTIME_GATEWAY_TIMEOUT_MS,
 );
-const EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS = 2;
+// Gemini owns the only bounded fallback; the verifier must not replay the logical research request.
+const EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS = 1;
 const EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS = 5_000;
 const RETRYABLE_GATEWAY_PROVIDER_CODES = new Set([
   'GEMINI_REQUEST_TIMEOUT',
@@ -194,8 +195,8 @@ const SAFE_AUTHENTICATION_STAGES = new Set(['environment_validation', 'runtime_a
 const SAFE_TIMEOUT_BUDGET_VALIDATION_MESSAGES = new Set([
   'Timeout values must be positive integers.',
   'Calculated Gemini retry budget must be less than EXTERNAL_AGENT_REQUEST_TIMEOUT_MS.',
-  'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
-  'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
+  'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
+  'RUNTIME_INVOCATION_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
   'REQUEST_TIMEOUT_MS must exceed the calculated Gemini retry budget.',
 ]);
 const SAFE_NETWORK_ERROR_NAMES = new Set(['AbortError', 'Error', 'TimeoutError', 'TypeError']);
@@ -789,6 +790,7 @@ function requireExternalRuntimeConfiguration(bootstrap = externalRuntimeBootstra
 function calculatedGeminiRetryBudgetMs(agentConfig) {
   return providerRequestBudget({
     researchTimeoutMs: agentConfig?.gemini?.researchTimeoutMs,
+    researchFallbackTimeoutMs: agentConfig?.gemini?.researchFallbackTimeoutMs,
     formattingTimeoutMs: agentConfig?.gemini?.formattingTimeoutMs,
     researchMaxAttempts: agentConfig?.gemini?.researchMaxAttempts,
     formattingMaxAttempts: agentConfig?.gemini?.formattingMaxAttempts,
@@ -815,14 +817,14 @@ function validateVerifierTimeoutHierarchy(options = {}) {
   ) {
     timeoutHierarchyFailure('Timeout values must be positive integers.');
   }
-  if (hierarchy.externalAgentRequestTimeoutMs >= hierarchy.verificationRequestTimeoutMs) {
+  if (hierarchy.externalAgentRequestTimeoutMs >= hierarchy.runtimeInvocationTimeoutMs) {
     timeoutHierarchyFailure(
-      'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
+      'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
     );
   }
-  if (hierarchy.verificationRequestTimeoutMs >= hierarchy.runtimeInvocationTimeoutMs) {
+  if (hierarchy.runtimeInvocationTimeoutMs >= hierarchy.verificationRequestTimeoutMs) {
     timeoutHierarchyFailure(
-      'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS must be less than RUNTIME_INVOCATION_TIMEOUT_MS.',
+      'RUNTIME_INVOCATION_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
     );
   }
   return Object.freeze(hierarchy);

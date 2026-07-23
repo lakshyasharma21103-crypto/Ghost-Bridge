@@ -22,6 +22,7 @@ const {
 const { getAttributeRegistry } = require('../constants/policyAttributeRegistry');
 const { getPermission, hasPermission } = require('../constants/permissionRegistry');
 const { AppError } = require('../utils/AppError');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { assertOperationalAccess } = require('./operationalState.service');
 const metrics = require('./policyMetrics.service');
@@ -703,6 +704,7 @@ async function simulateDraft(stablePolicyId, version, input = {}, actor = {}) {
     status: 'DRAFT',
   }).lean();
   if (!draft) throw new AppError(404, ErrorCodes.POLICY_NOT_FOUND, 'Draft policy was not found.');
+  await assertRegionalWriteAuthority({ organizationId: scope.organizationId, workspaceId: draft.workspaceId, scope: draft.workspaceId ? 'workspace' : 'organization', regionId: input.regionId, authorityEpoch: input.authorityEpoch, authorityLeaseEpoch: input.authorityLeaseEpoch });
   throwIfInvalid(draft);
   await validateTenantReferences(draft, scope);
   const resolved = await resolveSimulationResource(input, scope);

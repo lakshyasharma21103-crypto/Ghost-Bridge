@@ -48,6 +48,11 @@ const selectionDecisionSchema = new mongoose.Schema(
     decisionStatus: { type: String, enum: SELECTION_DECISION_STATUSES, required: true, index: true },
     approvalRequestId: { type: String, trim: true, maxlength: 128 },
     approvalResolvedAt: { type: Date },
+    selectedConnectionRegionId: { type: String, trim: true, maxlength: 128, immutable: true },
+    executionRegionId: { type: String, trim: true, maxlength: 128, immutable: true },
+    regionalEligibilityCategory: { type: String, enum: ['eligible', 'ineligible', 'degraded', 'unknown'], immutable: true },
+    residencyEvaluationCategory: { type: String, enum: ['allowed', 'denied', 'approval_required', 'unknown'], immutable: true },
+    failoverPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'RegionalFailoverPlan', immutable: true },
   },
   { timestamps: { createdAt: true, updatedAt: false }, strict: 'throw' },
 );

@@ -40,6 +40,7 @@ const NETWORK_CODES = new Set([
   'SAFE_FETCH_FAILED',
   'GEMINI_REQUEST_TIMEOUT',
   'GEMINI_UPSTREAM_UNAVAILABLE',
+  'GEMINI_RESEARCH_BUDGET_EXHAUSTED',
   'RUNTIME_UNAVAILABLE',
   'RUNTIME_READINESS_FAILED',
 ]);
@@ -90,7 +91,10 @@ function classifyCircuitFailure(errorMetadata = {}) {
     return {
       countsTowardCircuit: true,
       rateLimited: false,
-      category: errorCode.includes('TIMEOUT') ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_UNAVAILABLE',
+      category:
+        errorCode.includes('TIMEOUT') || errorCode.includes('BUDGET_EXHAUSTED')
+          ? 'UPSTREAM_TIMEOUT'
+          : 'UPSTREAM_UNAVAILABLE',
       weight: 1,
       reason: errorCode,
     };

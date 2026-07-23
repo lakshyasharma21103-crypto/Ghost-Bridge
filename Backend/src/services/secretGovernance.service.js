@@ -34,6 +34,7 @@ const metrics = require('./secretMetrics.service');
 const { decryptPayload, hashKey } = require('../utils/crypto');
 const { redactSecrets } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { assertOperationalAccess } = require('./operationalState.service');
 const { enforceApproval, consumeApprovalGrants } = require('./approval.service');
@@ -807,6 +808,7 @@ async function activateVersionInternal(secret, versionId, actorId, options = {})
 
 async function activateVersion(secretId, versionId, input = {}, actor = {}) {
   const scope = actorScope(actor, input);
+  await assertRegionalWriteAuthority({ organizationId: scope.organizationId, workspaceId: scope.workspaceId, scope: scope.workspaceId ? 'workspace' : 'organization', regionId: input.regionId, authorityEpoch: input.authorityEpoch, authorityLeaseEpoch: input.authorityLeaseEpoch });
   const secret = await ownedSecret(secretId, scope);
   await authorizeAction('secret.rotate', input, actor, secret);
   await enforceSecretApproval(

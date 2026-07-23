@@ -33,6 +33,12 @@ const orchestrationCheckpointSchema = new mongoose.Schema(
     safeStateHash: { type: String, required: true, trim: true, match: SAFE_HASH, immutable: true },
     traceId: { type: String, required: true, trim: true, maxlength: 128, immutable: true, index: true },
     requestId: { type: String, required: true, trim: true, maxlength: 128, immutable: true, index: true },
+    sourceRegionId: { type: String, trim: true, match: SAFE_KEY, immutable: true },
+    authorityEpoch: { type: Number, min: 0, immutable: true },
+    queueOwnershipEpoch: { type: Number, min: 0, immutable: true },
+    routingVersion: { type: Number, min: 1, max: 1_000, immutable: true },
+    lastDurableSequence: { type: Number, min: 0, immutable: true },
+    projectionSequence: { type: Number, min: 0, immutable: true },
     createdBy: { type: String, required: true, trim: true, maxlength: 128, immutable: true },
     verifiedAt: { type: Date },
     invalidatedAt: { type: Date },
@@ -66,6 +72,7 @@ orchestrationCheckpointSchema.index(
 );
 orchestrationCheckpointSchema.index({ organizationId: 1, workspaceId: 1, status: 1, createdAt: -1 });
 orchestrationCheckpointSchema.index({ orchestrationRunId: 1, createdAt: -1 });
+orchestrationCheckpointSchema.index({ sourceRegionId: 1, authorityEpoch: 1, createdAt: -1 });
 
 module.exports =
   mongoose.models.OrchestrationCheckpoint ||

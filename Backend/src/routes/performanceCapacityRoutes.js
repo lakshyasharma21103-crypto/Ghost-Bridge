@@ -1,0 +1,341 @@
+const express = require('express');
+const controller = require('../controllers/performanceCapacityController');
+const { authenticatePartner } = require('../middleware/authenticatePartner');
+const { requiresPermission } = require('../middleware/requiresPermission');
+
+const performanceCapacityRouter = express.Router();
+performanceCapacityRouter.use(authenticatePartner);
+
+function protect(method, path, permission, resourceType, handler) {
+  performanceCapacityRouter[method](
+    path,
+    requiresPermission(permission, { resourceType }),
+    handler,
+  );
+}
+
+function executionPermission(request) {
+  const mode = String(request.body?.mode || request.query?.mode || '').trim();
+  if (['staging_load', 'staging_stress', 'staging_soak'].includes(mode)) {
+    return 'performanceRun.executeStaging';
+  }
+  if (mode === 'integration_load') return 'performanceRun.executeIntegration';
+  return 'performanceRun.executeLocal';
+}
+
+protect(
+  'post',
+  '/scenarios',
+  'performanceScenario.create',
+  'PerformanceLoadScenario',
+  controller.createScenario,
+);
+protect(
+  'get',
+  '/scenarios',
+  'performanceScenario.read',
+  'PerformanceLoadScenario',
+  controller.listScenarios,
+);
+protect(
+  'get',
+  '/scenarios/:scenarioId',
+  'performanceScenario.read',
+  'PerformanceLoadScenario',
+  controller.getScenario,
+);
+protect(
+  'patch',
+  '/scenarios/:scenarioId',
+  'performanceScenario.update',
+  'PerformanceLoadScenario',
+  controller.updateScenario,
+);
+protect(
+  'post',
+  '/scenarios/:scenarioId/validate',
+  'performanceScenario.validate',
+  'PerformanceLoadScenario',
+  controller.validateScenario,
+);
+protect(
+  'post',
+  '/scenarios/:scenarioId/activate',
+  'performanceScenario.activate',
+  'PerformanceLoadScenario',
+  controller.activateScenario,
+);
+protect(
+  'post',
+  '/scenarios/:scenarioId/archive',
+  'performanceScenario.archive',
+  'PerformanceLoadScenario',
+  controller.archiveScenario,
+);
+
+protect(
+  'post',
+  '/budgets',
+  'performanceBudget.create',
+  'PerformanceBudgetPolicy',
+  controller.createBudget,
+);
+protect(
+  'get',
+  '/budgets',
+  'performanceBudget.read',
+  'PerformanceBudgetPolicy',
+  controller.listBudgets,
+);
+protect(
+  'get',
+  '/budgets/:budgetId',
+  'performanceBudget.read',
+  'PerformanceBudgetPolicy',
+  controller.getBudget,
+);
+protect(
+  'patch',
+  '/budgets/:budgetId',
+  'performanceBudget.update',
+  'PerformanceBudgetPolicy',
+  controller.updateBudget,
+);
+protect(
+  'post',
+  '/budgets/:budgetId/validate',
+  'performanceBudget.validate',
+  'PerformanceBudgetPolicy',
+  controller.validateBudget,
+);
+protect(
+  'post',
+  '/budgets/:budgetId/activate',
+  'performanceBudget.activate',
+  'PerformanceBudgetPolicy',
+  controller.activateBudget,
+);
+protect(
+  'post',
+  '/budgets/:budgetId/archive',
+  'performanceBudget.archive',
+  'PerformanceBudgetPolicy',
+  controller.archiveBudget,
+);
+
+protect(
+  'post',
+  '/runs',
+  'performanceRun.create',
+  'PerformanceTestRun',
+  controller.createRun,
+);
+protect(
+  'get',
+  '/runs',
+  'performanceRun.read',
+  'PerformanceTestRun',
+  controller.listRuns,
+);
+protect(
+  'get',
+  '/runs/:runId',
+  'performanceRun.read',
+  'PerformanceTestRun',
+  controller.getRun,
+);
+protect(
+  'post',
+  '/runs/:runId/execute',
+  executionPermission,
+  'PerformanceTestRun',
+  controller.executeRun,
+);
+protect(
+  'post',
+  '/runs/:runId/cancel',
+  'performanceRun.cancel',
+  'PerformanceTestRun',
+  controller.cancelRun,
+);
+protect(
+  'post',
+  '/runs/:runId/abort',
+  'performanceRun.abort',
+  'PerformanceTestRun',
+  controller.abortRun,
+);
+protect(
+  'post',
+  '/runs/:runId/cleanup',
+  'performanceRun.cleanup',
+  'PerformanceTestRun',
+  controller.cleanupRun,
+);
+protect(
+  'get',
+  '/runs/:runId/windows',
+  'performanceRun.read',
+  'PerformanceMeasurementWindow',
+  controller.listMeasurementWindows,
+);
+protect(
+  'get',
+  '/runs/:runId/budget-evaluation',
+  'performanceRun.read',
+  'PerformanceTestRun',
+  controller.getBudgetEvaluation,
+);
+protect(
+  'get',
+  '/runs/:runId/regression',
+  'performanceRun.read',
+  'PerformanceRegressionEvaluation',
+  controller.getRegressionEvaluation,
+);
+protect(
+  'get',
+  '/runs/:runId/export',
+  'performanceTesting.export',
+  'PerformanceTestRun',
+  controller.exportRun,
+);
+
+protect(
+  'post',
+  '/baselines',
+  'performanceBaseline.create',
+  'PerformanceBaseline',
+  controller.createBaseline,
+);
+protect(
+  'get',
+  '/baselines',
+  'performanceBaseline.read',
+  'PerformanceBaseline',
+  controller.listBaselines,
+);
+protect(
+  'get',
+  '/baselines/:baselineId',
+  'performanceBaseline.read',
+  'PerformanceBaseline',
+  controller.getBaseline,
+);
+protect(
+  'post',
+  '/baselines/:baselineId/promote',
+  'performanceBaseline.promote',
+  'PerformanceBaseline',
+  controller.promoteBaseline,
+);
+protect(
+  'post',
+  '/baselines/:baselineId/archive',
+  'performanceBaseline.archive',
+  'PerformanceBaseline',
+  controller.archiveBaseline,
+);
+
+protect(
+  'get',
+  '/capacity-models',
+  'capacityModel.read',
+  'CapacityModel',
+  controller.listCapacityModels,
+);
+protect(
+  'get',
+  '/capacity-models/:modelId',
+  'capacityModel.read',
+  'CapacityModel',
+  controller.getCapacityModel,
+);
+protect(
+  'post',
+  '/runs/:runId/capacity-model',
+  'capacityModel.create',
+  'CapacityModel',
+  controller.createCapacityModel,
+);
+
+protect(
+  'post',
+  '/capacity-plans',
+  'capacityPlan.create',
+  'CapacityPlan',
+  controller.createCapacityPlan,
+);
+protect(
+  'get',
+  '/capacity-plans',
+  'capacityPlan.read',
+  'CapacityPlan',
+  controller.listCapacityPlans,
+);
+protect(
+  'get',
+  '/capacity-plans/:planId',
+  'capacityPlan.read',
+  'CapacityPlan',
+  controller.getCapacityPlan,
+);
+protect(
+  'patch',
+  '/capacity-plans/:planId',
+  'capacityPlan.update',
+  'CapacityPlan',
+  controller.updateCapacityPlan,
+);
+protect(
+  'post',
+  '/capacity-plans/:planId/validate',
+  'capacityPlan.validate',
+  'CapacityPlan',
+  controller.validateCapacityPlan,
+);
+protect(
+  'post',
+  '/capacity-plans/:planId/activate',
+  'capacityPlan.activate',
+  'CapacityPlan',
+  controller.activateCapacityPlan,
+);
+protect(
+  'post',
+  '/capacity-plans/:planId/archive',
+  'capacityPlan.archive',
+  'CapacityPlan',
+  controller.archiveCapacityPlan,
+);
+
+protect(
+  'get',
+  '/targets',
+  'performanceTesting.readDetails',
+  'PerformanceTarget',
+  controller.listTargets,
+);
+protect(
+  'get',
+  '/environment',
+  'performanceEnvironment.read',
+  'PerformanceEnvironmentFingerprint',
+  controller.getEnvironment,
+);
+protect(
+  'get',
+  '/capacity',
+  'performanceTesting.read',
+  'CapacityModel',
+  controller.getCapacityOverview,
+);
+protect(
+  'get',
+  '/recommendations',
+  'performanceRecommendation.read',
+  'CapacityRecommendation',
+  controller.getRecommendations,
+);
+
+module.exports = { performanceCapacityRouter };

@@ -135,6 +135,10 @@ export async function apiRequest(path, options = {}) {
     path.startsWith('/orchestration-interventions') ||
     path.startsWith('/production-scale') ||
     path.startsWith('/data-performance') ||
+    path.startsWith('/regional-resilience') ||
+    path.startsWith('/performance') ||
+    path.startsWith('/releases') ||
+    path.startsWith('/launch') ||
     isPhase13B3Control(path, options.method);
   if (requiresPartnerAuthentication && !headers.has('X-Partner-Api-Key')) {
     if (!partnerApiKey) {

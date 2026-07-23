@@ -22,6 +22,11 @@ const workerRegistrationSchema = new mongoose.Schema(
     softwareVersion: { type: String, trim: true, match: SAFE_VERSION_PATTERN },
     protocolVersion: { type: String, trim: true, match: SAFE_VERSION_PATTERN },
     safeRegion: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN },
+    regionId: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN, index: true },
+    supportedRegionalOwnershipEpochs: { type: [{ type: Number, min: 0 }], default: [] },
+    writeAuthorityEpoch: { type: Number, min: 0, default: 0 },
+    authorityLeaseEpoch: { type: Number, min: 0, default: 0 },
+    regionalStatus: { type: String, enum: ['active', 'standby', 'fenced', 'isolated'], default: 'active', index: true },
     safeZone: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN },
   },
   { timestamps: true, strict: 'throw' },
@@ -30,5 +35,6 @@ const workerRegistrationSchema = new mongoose.Schema(
 workerRegistrationSchema.index({ workerPool: 1, status: 1, heartbeatAt: -1 });
 workerRegistrationSchema.index({ heartbeatAt: 1, status: 1 });
 workerRegistrationSchema.index({ supportedRoutingVersions: 1, status: 1 });
+workerRegistrationSchema.index({ regionId: 1, regionalStatus: 1, workerPool: 1 });
 
 module.exports = mongoose.models.WorkerRegistration || mongoose.model('WorkerRegistration', workerRegistrationSchema);

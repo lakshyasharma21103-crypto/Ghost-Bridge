@@ -25,6 +25,8 @@ const schema = new mongoose.Schema(
     completedAt: { type: Date },
     safeFailureCode: { type: String, trim: true, maxlength: 128 },
     legalHoldProtected: { type: Boolean, required: true, default: false },
+    targetRegionId: { type: String, trim: true, maxlength: 128, immutable: true },
+    invalidationScope: { type: String, enum: ['region_specific', 'all_regions', 'active_alias', 'tenant_region', 'projection'], default: 'region_specific', immutable: true },
   },
   { timestamps: true, strict: 'throw' },
 );
@@ -36,6 +38,7 @@ schema.index({ organizationId: 1, workspaceId: 1, sequence: 1 }, { name: 'dap_in
 schema.index({ organizationId: 1, idempotencyKeyHash: 1 }, { unique: true, name: 'dap_invalidation_idempotency' });
 schema.index({ requestId: 1 }, { sparse: true, name: 'dap_invalidation_request' });
 schema.index({ traceId: 1 }, { sparse: true, name: 'dap_invalidation_trace' });
+schema.index({ targetRegionId: 1, status: 1, sequence: 1 }, { sparse: true, name: 'regional_invalidation_region_status' });
 schema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, partialFilterExpression: { legalHoldProtected: false }, name: 'dap_invalidation_expiry' });
 
 module.exports = mongoose.models.CacheInvalidationEvent || mongoose.model('CacheInvalidationEvent', schema);

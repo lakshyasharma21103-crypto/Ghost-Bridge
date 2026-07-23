@@ -19,6 +19,8 @@ const operationalIncidentSchema = new mongoose.Schema(
     workspaceId: { type: String, trim: true, index: true },
     severity: { type: String, enum: INCIDENT_SEVERITIES, required: true, index: true },
     category: { type: String, required: true, trim: true, index: true },
+    origin: { type: String, enum: ['simulated', 'staging', 'pilot_real'], index: true },
+    pilotProgramId: { type: String, trim: true, maxlength: 128, index: true },
     title: { type: String, required: true, trim: true, maxlength: 200 },
     safeDescription: { type: String, required: true, trim: true, maxlength: 2_000 },
     status: { type: String, enum: INCIDENT_STATUSES, default: 'OPEN', index: true },
@@ -49,6 +51,10 @@ operationalIncidentSchema.index({
   severity: 1,
   detectedAt: -1,
 });
+operationalIncidentSchema.index({ pilotProgramId: 1, origin: 1, status: 1, detectedAt: -1 });
+operationalIncidentSchema.path('origin').validate(function pilotOriginRequired(value) {
+  return !this.pilotProgramId || Boolean(value);
+}, 'Pilot incidents require an explicit simulated, staging, or pilot_real origin.');
 
 module.exports =
   mongoose.models.OperationalIncident ||

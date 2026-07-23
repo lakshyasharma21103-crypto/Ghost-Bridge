@@ -20,6 +20,7 @@ const {
 const { approvalFingerprint, canonicalDigest } = require('../utils/complianceCanonical');
 const { redactString } = require('../utils/redact');
 const { AppError } = require('../utils/AppError');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { assertOperationalAccess } = require('./operationalState.service');
 const metrics = require('./complianceMetrics.service');
@@ -1234,6 +1235,7 @@ async function decideApprovalRequest(approvalRequestId, decision, input = {}, ca
       APPROVAL_REASON_CODES.NOT_FOUND,
       'Approval request was not found.',
     );
+  await assertRegionalWriteAuthority({ organizationId: scope.organizationId, workspaceId: request.workspaceId || scope.workspaceId, scope: request.workspaceId || scope.workspaceId ? 'workspace' : 'organization', regionId: input.regionId, authorityEpoch: input.authorityEpoch, authorityLeaseEpoch: input.authorityLeaseEpoch });
   if (!['PENDING', 'PARTIALLY_APPROVED'].includes(request.status)) {
     const code =
       request.status === 'EXPIRED'

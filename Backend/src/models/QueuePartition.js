@@ -20,6 +20,11 @@ const queuePartitionSchema = new mongoose.Schema(
     queuedCountEstimate: { type: Number, default: 0, min: 0 },
     activeCountEstimate: { type: Number, default: 0, min: 0 },
     oldestQueuedAt: { type: Date },
+    homeRegionId: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN, index: true },
+    activeRegionId: { type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN, index: true },
+    fallbackRegionIds: [{ type: String, trim: true, match: SAFE_IDENTIFIER_PATTERN }],
+    regionalOwnershipEpoch: { type: Number, required: true, default: 0, min: 0 },
+    regionalStatus: { type: String, enum: ['active', 'standby', 'transferring', 'fenced', 'paused'], default: 'active', required: true, index: true },
   },
   { timestamps: true, strict: 'throw' },
 );
@@ -30,5 +35,6 @@ queuePartitionSchema.index(
 );
 queuePartitionSchema.index({ status: 1, leaseExpiresAt: 1 });
 queuePartitionSchema.index({ ownerWorkerId: 1, leaseExpiresAt: 1 });
+queuePartitionSchema.index({ activeRegionId: 1, regionalStatus: 1, workloadCategory: 1 });
 
 module.exports = mongoose.models.QueuePartition || mongoose.model('QueuePartition', queuePartitionSchema);

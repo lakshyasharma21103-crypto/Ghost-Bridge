@@ -25,6 +25,8 @@ function assertInvalidationReplay(record, expected) {
     String(record.entityType) === expected.entityType &&
     String(record.entityId) === expected.entityId &&
     String(record.entityVersion || '') === String(expected.entityVersion || '') &&
+    String(record.targetRegionId || '') === String(expected.targetRegionId || '') &&
+    String(record.invalidationScope || 'region_specific') === String(expected.invalidationScope || 'region_specific') &&
     String(record.invalidationReasonCode) === expected.invalidationReasonCode &&
     JSON.stringify([...(record.invalidationTags || [])].map(String).sort()) === JSON.stringify([...expected.invalidationTags].sort());
   if (!same) throw dataAccessError('IDEMPOTENCY_CONFLICT', 'The idempotency key is bound to another cache invalidation.', [], 409);
@@ -59,8 +61,8 @@ async function createInvalidationEvent(input, options = {}) {
   const invalidationReasonCode = safeIdentifier(input.invalidationReasonCode || 'ENTITY_CHANGED', 'invalidationReasonCode');
   const requestId = input.requestId ? safeIdentifier(input.requestId, 'requestId') : undefined;
   const traceId = input.traceId ? safeIdentifier(input.traceId, 'traceId') : undefined;
-  const idempotencyKeyHash = idempotencyHash(input.idempotencyKey || `${namespace}:${organizationId}:${workspaceId || 'none'}:${entityType}:${entityId}:${input.entityVersion || 'unversioned'}:${input.invalidationReasonCode}`);
-  const expected = { organizationId, workspaceId, namespace, entityType, entityId, entityVersion, invalidationTags, invalidationReasonCode };
+  const idempotencyKeyHash = idempotencyHash(input.idempotencyKey || `${namespace}:${input.targetRegionId || 'all'}:${organizationId}:${workspaceId || 'none'}:${entityType}:${entityId}:${input.entityVersion || 'unversioned'}:${input.invalidationReasonCode}`);
+  const expected = { organizationId, workspaceId, namespace, entityType, entityId, entityVersion, invalidationTags, invalidationReasonCode, targetRegionId: input.targetRegionId, invalidationScope: input.invalidationScope || (input.targetRegionId ? 'region_specific' : 'all_regions') };
   const existing = await Model.findOne({ organizationId, idempotencyKeyHash });
   if (existing) return assertInvalidationReplay(existing, expected);
   const sequence = Number(input.sequence || Date.now());
@@ -81,6 +83,8 @@ async function createInvalidationEvent(input, options = {}) {
       idempotencyKeyHash,
       requestId,
       traceId,
+      targetRegionId: input.targetRegionId,
+      invalidationScope: input.invalidationScope || (input.targetRegionId ? 'region_specific' : 'all_regions'),
       expiresAt: new Date(new Date(input.now || Date.now()).getTime() + Math.max(86_400_000, Number(input.retentionMs || 7 * 86_400_000))),
     }], options.session ? { session: options.session } : undefined).then((records) => records[0]);
   } catch (error) {

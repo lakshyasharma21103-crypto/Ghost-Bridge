@@ -52,6 +52,31 @@ import { DatabaseCache } from './pages/DatabaseCache.jsx';
 import { QueryPerformance } from './pages/QueryPerformance.jsx';
 import { DatabaseIndexes } from './pages/DatabaseIndexes.jsx';
 import { DataProjections } from './pages/DataProjections.jsx';
+import { Regions } from './pages/Regions.jsx';
+import { RegionalFailover } from './pages/RegionalFailover.jsx';
+import { DisasterRecovery } from './pages/DisasterRecovery.jsx';
+import { BackupsRestores } from './pages/BackupsRestores.jsx';
+import { DrDrills } from './pages/DrDrills.jsx';
+import { LoadTests } from './pages/LoadTests.jsx';
+import { LoadTestDetail } from './pages/LoadTestDetail.jsx';
+import { PerformanceBudgets } from './pages/PerformanceBudgets.jsx';
+import { PerformanceBaselines } from './pages/PerformanceBaselines.jsx';
+import { CapacityPlanning } from './pages/CapacityPlanning.jsx';
+import { ReleaseReadiness } from './pages/ReleaseReadiness.jsx';
+import { ReleaseCandidates } from './pages/ReleaseCandidates.jsx';
+import { ReleaseCandidateDetail } from './pages/ReleaseCandidateDetail.jsx';
+import { ReleaseRollouts } from './pages/ReleaseRollouts.jsx';
+import { ReleaseRolloutDetail } from './pages/ReleaseRolloutDetail.jsx';
+import { ReleaseMigrations } from './pages/ReleaseMigrations.jsx';
+import { ReleaseFeatureFlags } from './pages/ReleaseFeatureFlags.jsx';
+import {
+  CapabilityGates,
+  FeedbackSupport,
+  PilotHealth,
+  PilotProgramDetail,
+  PilotPrograms,
+  Staging,
+} from './pages/StagingPilotConsole.jsx';
 import { useAppState } from './app/AppState.jsx';
 
 export default function App() {
@@ -72,6 +97,29 @@ export default function App() {
         <Route path="/operations/query-performance" element={<QueryPerformance />} />
         <Route path="/operations/database-indexes" element={<DatabaseIndexes />} />
         <Route path="/operations/data-projections" element={<DataProjections />} />
+        <Route path="/operations/regions" element={<Regions />} />
+        <Route path="/operations/failover" element={<RegionalFailover />} />
+        <Route path="/operations/disaster-recovery" element={<DisasterRecovery />} />
+        <Route path="/operations/backups-restores" element={<BackupsRestores />} />
+        <Route path="/operations/dr-drills" element={<DrDrills />} />
+        <Route path="/operations/load-tests" element={<LoadTests />} />
+        <Route path="/operations/load-tests/:runId" element={<LoadTestDetail />} />
+        <Route path="/operations/performance-budgets" element={<PerformanceBudgets />} />
+        <Route path="/operations/baselines" element={<PerformanceBaselines />} />
+        <Route path="/operations/capacity-planning" element={<CapacityPlanning />} />
+        <Route path="/operations/release-readiness" element={<ReleaseReadiness />} />
+        <Route path="/operations/release-candidates" element={<ReleaseCandidates />} />
+        <Route path="/operations/release-candidates/:candidateId" element={<ReleaseCandidateDetail />} />
+        <Route path="/operations/release-rollouts" element={<ReleaseRollouts />} />
+        <Route path="/operations/release-rollouts/:rolloutId" element={<ReleaseRolloutDetail />} />
+        <Route path="/operations/release-migrations" element={<ReleaseMigrations />} />
+        <Route path="/operations/release-feature-flags" element={<ReleaseFeatureFlags />} />
+        <Route path="/operations/staging" element={<Staging />} />
+        <Route path="/operations/pilot-programs" element={<PilotPrograms />} />
+        <Route path="/operations/pilot-programs/:programId" element={<PilotProgramDetail />} />
+        <Route path="/operations/capability-gates" element={<CapabilityGates />} />
+        <Route path="/operations/pilot-health" element={<PilotHealth />} />
+        <Route path="/operations/pilot-feedback-support" element={<FeedbackSupport />} />
         <Route path="/policies" element={<Policies />} />
         <Route path="/secrets" element={<Secrets />} />
         <Route path="/compliance" element={<Compliance />} />

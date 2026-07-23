@@ -38,6 +38,7 @@ const {
 } = require('./interAgentContractValidation.service');
 const { secureDigest, isDuplicateKeyError } = require('../utils/idempotency');
 const { AppError } = require('../utils/AppError');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const { ErrorCodes } = require('../utils/errorCodes');
 const {
   DATA_CLASSIFICATIONS,
@@ -929,6 +930,14 @@ async function prepareDelegatedInvocation(input = {}, options = {}) {
   let grant = await scopedGrant(input.grantId, scope, { private: true }, dependencies);
   const idempotencyKeyHash = secureDigest('inter-agent-invocation-idempotency', String(input.idempotencyKey || `${idOf(grant.orchestrationRunId)}:${idOf(grant.sourceNodeRunId)}:${idOf(grant.targetNodeRunId)}:${idOf(grant.contractId)}`));
   const existing = await InvocationModel.findOne({ delegationGrantId: grant._id, idempotencyKeyHash }).select('+idempotencyKeyHash').lean();
+  const regionalAuthority = await (dependencies.assertRegionalWriteAuthority || assertRegionalWriteAuthority)({
+    organizationId: scope.organizationId,
+    workspaceId: scope.workspaceId,
+    scope: 'workspace',
+    regionId: input.executionRegionId,
+    authorityEpoch: input.authorityEpoch,
+    authorityLeaseEpoch: input.authorityLeaseEpoch,
+  }, { dependencies, now });
   if (grant.status === 'pending') grant = await activateApprovedGrant(grant, scope, dependencies);
   const replayAllowed = Boolean(existing);
   if (!replayAllowed && grant.status !== 'active') throw new AppError(409, grant.status === 'revoked' ? 'INTER_AGENT_GRANT_REVOKED' : grant.status === 'expired' ? 'INTER_AGENT_GRANT_EXPIRED' : grant.status === 'exhausted' ? 'INTER_AGENT_GRANT_EXHAUSTED' : 'INTER_AGENT_GRANT_INACTIVE', 'Delegation grant is not active.');
@@ -1006,7 +1015,7 @@ async function prepareDelegatedInvocation(input = {}, options = {}) {
     metrics.increment('inter_agent_minimized_fields', { classification: effectiveDataClassification }, processed.statistics.removedFieldCount);
   }
   const reference = await issueDelegationReference(reservation.grant, invocation, { ...options, dependencies });
-  return { grant: reservation.grant, contract, invocation, payload, processed, reference, idempotencyReplayed: Boolean(existing || reservation.replayed), actors };
+  return { grant: reservation.grant, contract, invocation, payload, processed, reference, idempotencyReplayed: Boolean(existing || reservation.replayed), actors, regionalAuthority };
 }
 
 function safeFailure(error) {
@@ -1043,6 +1052,14 @@ async function completeDelegatedInvocation(prepared, runtimeInvocation, outputSc
   const dependencies = options.dependencies || {};
   const Model = dependencies.InterAgentDelegationInvocation || InterAgentDelegationInvocation;
   const scope = systemScope({ organizationId: prepared.grant.organizationId, workspaceId: prepared.grant.workspaceId, requestId: prepared.invocation.requestId, traceId: prepared.invocation.traceId });
+  await (dependencies.assertRegionalWriteAuthority || assertRegionalWriteAuthority)({
+    organizationId: scope.organizationId,
+    workspaceId: scope.workspaceId,
+    scope: 'workspace',
+    regionId: prepared.regionalAuthority?.context?.regionId,
+    authorityEpoch: prepared.regionalAuthority?.context?.authorityEpoch,
+    authorityLeaseEpoch: prepared.regionalAuthority?.context?.authorityLeaseEpoch,
+  }, { dependencies });
   const result = options.preprocessedOutput || processRuntimeDelegatedOutput(prepared, runtimeInvocation.output, outputSchema);
   const { processed } = result;
   const orchestrationOutput = result.output;
@@ -1070,6 +1087,9 @@ async function executeDelegatedInvocation(input = {}, options = {}) {
       skipPersistentRoles: true, requestId: prepared.invocation.requestId, traceId: prepared.invocation.traceId,
       idempotencyKey: `inter-agent:${idOf(prepared.grant)}:${idOf(prepared.invocation)}`,
       approvalRequestId: prepared.grant.approvalRequestId, signal: input.signal,
+      executionRegionId: prepared.regionalAuthority?.context?.regionId,
+      authorityEpoch: prepared.regionalAuthority?.context?.authorityEpoch,
+      authorityLeaseEpoch: prepared.regionalAuthority?.context?.authorityLeaseEpoch,
       orchestrationContext: input.orchestrationContext,
       delegationContext: {
         delegationGrantId: idOf(prepared.grant), delegationInvocationId: idOf(prepared.invocation), contractId: idOf(prepared.contract), contractVersion: prepared.contract.version,

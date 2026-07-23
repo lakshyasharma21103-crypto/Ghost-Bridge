@@ -1,6 +1,16 @@
 # Operations, runtime protection, and durable recovery controls
 
+Production candidate validation, build/artifact integrity, mixed-version and migration
+safety, canary simulation, rollback/roll-forward, manual gates, release evidence, and
+support bundles are documented in [RELEASE_READINESS.md](./RELEASE_READINESS.md).
+
+Regional outage and disaster-recovery controls are documented in [MULTI_REGION_RESILIENCE.md](MULTI_REGION_RESILIENCE.md). The Operations console includes Regions, Failover, Disaster Recovery, Backups & Restores, and DR Drills. Those controls record provider-neutral intent and evidence; they do not mutate DNS, load balancers, Atlas topology, or cloud deployments.
+
 Phase 13E1 production-scale capacity, partitions, worker pools, admission/quota policy, durable backpressure, and safe dead-letter controls are documented in [PRODUCTION_SCALE.md](./PRODUCTION_SCALE.md). Their authenticated console routes live under `/operations/*` and their API routes under `/api/v1/production-scale`.
+
+Phase 13E4 performance operations are documented in [PERFORMANCE_CAPACITY.md](./PERFORMANCE_CAPACITY.md). The compact console adds Load Tests, Performance Budgets, Baselines, and Capacity Planning under `/operations/*`; authenticated APIs live under `/api/v1/performance`. Production is observation-only, staging is disabled by default and requires manual confirmation plus governed approval, and all capacity recommendations are advisory.
+
+Run `npm run verify:performance-capacity` for the bounded non-billed smoke verifier and `npm run migrate:performance-capacity` for additive indexes. `perf:local-load`, `perf:local-spike`, `perf:local-stress`, `perf:local-soak`, `perf:regional-simulation`, and `perf:staging-load` are manual-only and must never be included in automated operational verification.
 
 The Operations page and `/api/v1/operations` APIs provide receiving-workspace metrics from persisted
 gateway records. Every request requires `X-Partner-Api-Key` plus the current receiving identity fields
@@ -201,6 +211,8 @@ input, model/runtime response content, source URLs, request headers, cookies, ke
 or decrypted credentials, connection strings, execution-controller data, or raw logs.
 
 ## Known limitations and future integration
+
+Phase 14A staging and closed-pilot operations, including the manual deployment boundary, capability gates, provider-outage behavior, enrollment, admission, observation, launch decisions, redacted feedback/support, kill switches, evidence, and graduation workflow, are documented in [STAGING_PILOT_OPERATIONS.md](STAGING_PILOT_OPERATIONS.md).
 
 - The current receiving-platform API uses its existing explicit workspace/user identity convention;
   Phase 13A2 does not introduce a new account/session protocol. A future authenticated tenant

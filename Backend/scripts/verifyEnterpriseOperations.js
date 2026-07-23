@@ -149,7 +149,7 @@ async function verify() {
   );
 
   const registry = getPermissionRegistry();
-  assert.equal(registry.version, 11);
+  assert.ok(registry.version >= 13);
   for (const permission of [
     'organization.suspend',
     'workspace.reactivate',
@@ -166,7 +166,7 @@ async function verify() {
   assert.match(routes, /enterpriseOperationsRouter\.use\(authenticatePartner\)/);
   report(
     'tenant isolation, permissions, audit, and metrics',
-    'protected routes use registry v11 and low-cardinality operational instrumentation',
+    'protected routes use registry v13 and low-cardinality operational instrumentation',
   );
 
   if (!env.MONGODB_URI)

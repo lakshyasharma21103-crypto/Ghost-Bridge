@@ -13,11 +13,13 @@ const OrchestrationRun = require('../models/OrchestrationRun');
 const OrchestrationNodeRun = require('../models/OrchestrationNodeRun');
 const OrchestrationCompensationRun = require('../models/OrchestrationCompensationRun');
 const RuntimeWorkItem = require('../models/RuntimeWorkItem');
+const RegionalFailoverPlan = require('../models/RegionalFailoverPlan');
 const { assertAuthorized } = require('./authorization.service');
 const { assertOperationalAccess } = require('./operationalState.service');
 const { createAuditLog } = require('./auditService');
 const scaleMetrics = require('./productionScaleMetrics.service');
 const { AppError } = require('../utils/AppError');
+const { assertRegionalWriteAuthority, registerRegionalService } = require('./regionalAuthority.service');
 const { ErrorCodes } = require('../utils/errorCodes');
 const {
   ADMISSION_CLASSES,
@@ -632,6 +634,9 @@ function validateQuotaPolicy(input = {}) {
 function evaluateAdmissionOutcome(input = {}) {
   const priorityClass = enumValue(input.priorityClass, PRIORITY_CLASSES, 'priorityClass', 'standard');
   const admissionClass = enumValue(input.admissionClass, ADMISSION_CLASSES, 'admissionClass', 'standard');
+  if (input.failoverInProgress === true && input.controlOperation !== true) {
+    return { decision: 'rejected_failover_in_progress', safeReasonCodes: ['REGION_FAILOVER_IN_PROGRESS'], httpStatus: 409 };
+  }
   if (input.operationalAllowed === false) {
     return { decision: 'rejected_operational_state', safeReasonCodes: [safeReasonCode(input.operationalReasonCode, 'OPERATIONAL_STATE_BLOCKED')], httpStatus: 409 };
   }
@@ -751,10 +756,15 @@ function productionScaleDependencies(overrides = {}) {
     OrchestrationNodeRun,
     OrchestrationCompensationRun,
     RuntimeWorkItem,
+    RegionalFailoverPlan,
     readDatabasePressureCategory: () => mongoose.connection.readyState === 1 ? 'healthy' : 'unavailable',
     assertOperationalAccess,
     authorize,
     audit,
+    assertRegionalWriteAuthority,
+    registerRegionalService,
+    evaluatePilotAdmissionBoundary: (input, caller, options) =>
+      require('./stagingPilot.service').evaluatePilotAdmissionBoundary(input, caller, options),
     ...overrides,
   };
 }
@@ -834,6 +844,14 @@ async function firstFreeSlot(Model, filter, field, maximum) {
 
 async function reserveQuota(input = {}, options = {}) {
   const dependencies = productionScaleDependencies(options.dependencies);
+  await dependencies.assertRegionalWriteAuthority({
+    organizationId: input.scope?.organizationId || input.organizationId,
+    workspaceId: input.scope?.workspaceId || input.workspaceId,
+    scope: input.scope?.workspaceId || input.workspaceId ? 'workspace' : 'organization',
+    regionId: input.regionId,
+    authorityEpoch: input.authorityEpoch,
+    authorityLeaseEpoch: input.authorityLeaseEpoch,
+  }, { dependencies, now: options.now });
   const scope = input.scope;
   const idempotencyKey = String(input.idempotencyKey || '');
   if (!/^sha256:[a-f0-9]{64}$/.test(idempotencyKey)) throw validationError('idempotencyKey', 'idempotencyKey must be a safe SHA-256 digest.');
@@ -991,7 +1009,87 @@ async function evaluateAdmission(input = {}, caller = {}, options = {}) {
   assertNoSensitiveData(input);
   const dependencies = productionScaleDependencies(options.dependencies);
   const scope = scopeFrom(input, caller, { trustedSystem: options.trustedSystem });
+  let regionalAuthority;
+  try {
+    regionalAuthority = await dependencies.assertRegionalWriteAuthority({
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      scope: 'workspace',
+      regionId: input.regionId,
+      authorityEpoch: input.authorityEpoch,
+      authorityLeaseEpoch: input.authorityLeaseEpoch,
+    }, { dependencies, now: options.now });
+  } catch (error) {
+    const decision = await dependencies.WorkloadAdmissionDecision.create({
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      workloadCategory: input.workloadCategory || 'orchestration_node',
+      decision: error.code === 'REGION_NOT_WRITE_AUTHORITY' ? 'rejected_no_write_authority' : 'rejected_failover_in_progress',
+      safeReasonCodes: [error.code || 'REGION_WRITE_FROZEN'],
+      admissionClass: input.admissionClass || 'standard',
+      priorityClass: input.priorityClass || 'standard',
+      systemLoadCategory: 'paused',
+      workerCapacityCategory: 'unavailable',
+      queueAgeCategory: 'fresh',
+      requestedRegionId: input.regionId,
+      activeWriteRegionId: error.activeWriteRegionId,
+      authorityEpoch: input.authorityEpoch,
+      regionalHealthCategory: 'unknown',
+      residencyEvaluationCategory: 'unknown',
+      degradedMode: input.degradedMode || 'disabled',
+      requestId: scope.requestId,
+      traceId: scope.traceId,
+      requestedBy: scope.actorId,
+    });
+    return { decisionId: idOf(decision), decision: decision.decision, safeReasonCodes: decision.safeReasonCodes, httpStatus: error.statusCode || 409, retryable: true, loadCategory: 'paused' };
+  }
   if (!scope.trustedSystem) await dependencies.authorize('workloadAdmission.evaluate', 'WorkloadAdmissionDecision', null, scope, caller, { requestedOperationalAction: 'admission_evaluate', workloadCategory: input.workloadCategory });
+  let pilotAdmission;
+  if (input.pilotProgramId) {
+    pilotAdmission = await dependencies.evaluatePilotAdmissionBoundary(
+      { ...input, organizationId: scope.organizationId, workspaceId: scope.workspaceId },
+      caller,
+      { dependencies },
+    );
+    if (pilotAdmission.applies && !pilotAdmission.accepted) {
+      const pilotDecision = await dependencies.WorkloadAdmissionDecision.create({
+        organizationId: scope.organizationId,
+        workspaceId: scope.workspaceId,
+        workloadCategory: input.workloadCategory || 'orchestration_node',
+        orchestrationDefinitionId: input.orchestrationDefinitionId,
+        orchestrationRunId: input.orchestrationRunId,
+        pilotProgramId: pilotAdmission.pilotProgramId,
+        pilotAdmissionOutcome: pilotAdmission.outcome,
+        decision: pilotAdmission.outcome,
+        safeReasonCodes: pilotAdmission.safeReasonCodes,
+        admissionClass: input.admissionClass || 'standard',
+        priorityClass: input.priorityClass || 'standard',
+        systemLoadCategory: 'paused',
+        workerCapacityCategory: 'unavailable',
+        queueAgeCategory: 'fresh',
+        requestedRegionId: input.regionId,
+        regionalHealthCategory: input.regionHealthy === false ? 'unavailable' : 'unknown',
+        residencyEvaluationCategory: pilotAdmission.outcome === 'rejected_residency' ? 'denied' : 'unknown',
+        degradedMode: input.degradedMode || 'disabled',
+        requestId: scope.requestId,
+        traceId: scope.traceId,
+        requestedBy: scope.actorId,
+      });
+      await dependencies.audit('pilot.admission.rejected', 'WorkloadAdmissionDecision', pilotDecision, scope, {
+        capabilityKey: pilotAdmission.capabilityKey,
+        outcome: pilotAdmission.outcome,
+        safeReasonCodes: pilotAdmission.safeReasonCodes,
+      });
+      return {
+        decisionId: idOf(pilotDecision),
+        decision: pilotAdmission.outcome,
+        safeReasonCodes: pilotAdmission.safeReasonCodes,
+        httpStatus: ['rejected_pilot_quota', 'rejected_platform_quota'].includes(pilotAdmission.outcome) ? 429 : 403,
+        retryable: ['rejected_pilot_quota', 'rejected_platform_quota', 'rejected_provider_unavailable'].includes(pilotAdmission.outcome),
+        loadCategory: 'paused',
+      };
+    }
+  }
   let operationalAllowed = true;
   let operationalReasonCode;
   try {
@@ -1003,10 +1101,18 @@ async function evaluateAdmission(input = {}, caller = {}, options = {}) {
   const workloadCategory = enumValue(input.workloadCategory, WORKLOAD_CATEGORIES, 'workloadCategory', 'orchestration_node');
   const priorityClass = enumValue(input.priorityClass, PRIORITY_CLASSES, 'priorityClass', WORKLOAD_DEFINITIONS[workloadCategory].defaultPriority);
   const admissionClass = enumValue(input.admissionClass, ADMISSION_CLASSES, 'admissionClass', priorityClass === 'critical_recovery' ? 'protected' : 'standard');
-  const [configuration, policies, usage] = await Promise.all([
+  const [configuration, policies, usage, activeFailover] = await Promise.all([
     activeConfiguration(scope, dependencies),
     activeQuotaPolicies(scope, dependencies),
     quotaUsage(scope, dependencies),
+    regionalAuthority?.enforced
+      ? dependencies.RegionalFailoverPlan.findOne({
+          organizationId: scope.organizationId,
+          workspaceId: scope.workspaceId,
+          admissionFrozen: true,
+          status: { $nin: ['succeeded', 'failed', 'cancelled'] },
+        }).select('_id').lean()
+      : null,
   ]);
   const backpressure = await currentBackpressure(scope, WORKLOAD_DEFINITIONS[workloadCategory].workerPool, configuration, dependencies);
   let protectedCapacityAvailable = true;
@@ -1049,6 +1155,7 @@ async function evaluateAdmission(input = {}, caller = {}, options = {}) {
     databasePressureCategory: backpressure.databasePressureCategory,
     protectedCapacityAvailable,
     controlOperation: scope.trustedSystem && input.controlOperation === true,
+    failoverInProgress: Boolean(activeFailover) || input.failoverInProgress === true,
   });
   let reservation;
   const idempotencyKey = input.idempotencyKey?.startsWith('sha256:') ? input.idempotencyKey : `sha256:${stableHash(`admission:${scope.organizationId}:${scope.workspaceId}:${input.idempotencyKey || scope.requestId}`)}`;
@@ -1094,6 +1201,8 @@ async function evaluateAdmission(input = {}, caller = {}, options = {}) {
       workloadCategory,
       orchestrationDefinitionId: input.orchestrationDefinitionId,
       orchestrationRunId: input.orchestrationRunId,
+      pilotProgramId: pilotAdmission?.pilotProgramId,
+      pilotAdmissionOutcome: pilotAdmission?.outcome,
       decision: outcome.decision,
       safeReasonCodes: outcome.safeReasonCodes.slice(0, PRODUCTION_SCALE_LIMITS.maximumSafeReasonCodes),
       admissionClass,
@@ -1108,6 +1217,13 @@ async function evaluateAdmission(input = {}, caller = {}, options = {}) {
       requestId: scope.requestId,
       traceId: scope.traceId,
       requestedBy: scope.actorId,
+      requestedRegionId: input.regionId,
+      selectedRegionId: regionalAuthority?.authority?.activeRegionId,
+      activeWriteRegionId: regionalAuthority?.authority?.activeRegionId,
+      authorityEpoch: regionalAuthority?.authority?.authorityEpoch,
+      regionalHealthCategory: input.regionalHealthCategory,
+      residencyEvaluationCategory: input.residencyEvaluationCategory,
+      degradedMode: input.degradedMode,
     });
   } catch (error) {
     if (reservation) await releaseQuotaReservation(reservation._id, { scope }, { dependencies }).catch(() => undefined);
@@ -1209,6 +1325,11 @@ async function registerWorker(input = {}, options = {}) {
       maximumConcurrency, activeClaimCount, availableCapacity: ['draining', 'unhealthy', 'stopped'].includes(status) ? 0 : maximumConcurrency - activeClaimCount,
       heartbeatAt: now, softwareVersion: input.softwareVersion, protocolVersion: input.protocolVersion || '1',
       safeRegion: input.safeRegion, safeZone: input.safeZone,
+      regionId: input.regionId || input.safeRegion,
+      supportedRegionalOwnershipEpochs: input.supportedRegionalOwnershipEpochs || [],
+      writeAuthorityEpoch: Number(input.writeAuthorityEpoch || 0),
+      authorityLeaseEpoch: Number(input.authorityLeaseEpoch || 0),
+      regionalStatus: input.regionalStatus || 'active',
       ...(status === 'draining' ? { drainRequestedAt: existing?.drainRequestedAt || now } : {}),
       ...(status === 'stopped' ? { stoppedAt: now } : {}),
     },
@@ -1232,6 +1353,32 @@ async function registerWorker(input = {}, options = {}) {
     if (!worker) throw new AppError(409, 'WORKER_IDENTITY_CONFLICT', 'Worker ID is already registered to another live instance.');
   }
   scaleMetrics.increment('production_scale_worker_registrations', { workerPool, status: worker.status });
+  const regionId = input.regionId || input.safeRegion;
+  if (regionId) {
+    await dependencies.registerRegionalService({
+      serviceId: workerId,
+      instanceId,
+      regionId,
+      serviceType: {
+        execution: 'execution_worker',
+        recovery: 'recovery_worker',
+        control_plane: 'control_plane_worker',
+        evaluation: 'control_plane_worker',
+        maintenance: 'control_plane_worker',
+      }[workerPool],
+      supportedWorkloadCategories,
+      supportedRoutingVersions,
+      softwareVersion: input.softwareVersion,
+      protocolVersion: input.protocolVersion || '1',
+      state: status,
+      writeAuthorityEpoch: Number(input.writeAuthorityEpoch || 0),
+      maximumConcurrency,
+      activeClaimCount,
+      safeZone: input.safeZone,
+      safeDeploymentCategory: input.safeDeploymentCategory,
+      startedAt: input.startedAt,
+    }, { dependencies, now });
+  }
   return worker;
 }
 
@@ -1266,6 +1413,14 @@ async function heartbeatWorker(input = {}, options = {}) {
 async function claimPartition(input = {}, options = {}) {
   const dependencies = productionScaleDependencies(options.dependencies);
   const now = options.now || new Date();
+  const regionalAuthority = await dependencies.assertRegionalWriteAuthority({
+    scope: input.organizationId ? (input.workspaceId ? 'workspace' : 'organization') : 'platform',
+    organizationId: input.organizationId,
+    workspaceId: input.workspaceId,
+    regionId: input.regionId,
+    authorityEpoch: input.authorityEpoch,
+    authorityLeaseEpoch: input.authorityLeaseEpoch,
+  }, { dependencies, now });
   const leaseMs = boundedInteger(input.leaseMs, 'leaseMs', 5_000, 3_600_000, 60_000);
   const workerHeartbeatTimeoutMs = boundedInteger(input.workerHeartbeatTimeoutMs, 'workerHeartbeatTimeoutMs', 5_000, 3_600_000, 120_000);
   const worker = await dependencies.WorkerRegistration.findOne({
@@ -1280,6 +1435,16 @@ async function claimPartition(input = {}, options = {}) {
   const key = input.partitionKey || partitionKey(input.workloadCategory, input.routingVersion, input.partitionNumber);
   let partition = await dependencies.QueuePartition.findOne({ partitionKey: key });
   if (!partition || ['paused', 'disabled'].includes(partition.status)) return null;
+  if (regionalAuthority.enforced && (partition.activeRegionId !== regionalAuthority.authority.activeRegionId || partition.regionalStatus !== 'active')) {
+    throw new AppError(409, 'REGION_QUEUE_OWNERSHIP_LOST', 'Queue partition is not owned by this region.');
+  }
+  if (regionalAuthority.enforced && (
+    worker.regionId !== regionalAuthority.authority.activeRegionId ||
+    worker.regionalStatus !== 'active' ||
+    !(worker.supportedRegionalOwnershipEpochs || []).map(Number).includes(Number(partition.regionalOwnershipEpoch))
+  )) {
+    throw new AppError(409, 'REGION_WORKER_NOT_ELIGIBLE', 'Worker is not eligible for the current regional ownership epoch.');
+  }
   if (partition.ownerWorkerId === input.workerId && partition.ownerInstanceId === input.instanceId && new Date(partition.leaseExpiresAt || 0) > now) {
     const renewed = await dependencies.QueuePartition.findOneAndUpdate(
       { _id: partition._id, ownershipEpoch: partition.ownershipEpoch, ownerWorkerId: input.workerId, ownerInstanceId: input.instanceId, leaseExpiresAt: { $gt: now } },
@@ -1293,6 +1458,11 @@ async function claimPartition(input = {}, options = {}) {
     {
       _id: partition._id,
       ownershipEpoch: partition.ownershipEpoch,
+      ...(regionalAuthority.enforced ? {
+        activeRegionId: regionalAuthority.authority.activeRegionId,
+        regionalStatus: 'active',
+        regionalOwnershipEpoch: partition.regionalOwnershipEpoch,
+      } : {}),
       status: { $in: ['active', 'draining', 'recovering'] },
       $or: [{ ownerWorkerId: { $exists: false } }, { leaseExpiresAt: { $lte: now } }, { ownerWorkerId: input.workerId, ownerInstanceId: input.instanceId }],
     },
@@ -1320,12 +1490,21 @@ async function assertPartitionFence(claim = {}, options = {}) {
   if (!claim.partitionKey) return true;
   const dependencies = productionScaleDependencies(options.dependencies);
   const now = options.now || new Date();
+  const regionalAuthority = await dependencies.assertRegionalWriteAuthority({
+    scope: claim.organizationId ? (claim.workspaceId ? 'workspace' : 'organization') : 'platform',
+    organizationId: claim.organizationId,
+    workspaceId: claim.workspaceId,
+    regionId: claim.executionRegionId || claim.regionId,
+    authorityEpoch: claim.authorityEpoch,
+    authorityLeaseEpoch: claim.authorityLeaseEpoch,
+  }, { dependencies, now });
   const filter = {
     partitionKey: claim.partitionKey,
     ownerWorkerId: claim.leaseOwner || claim.workerId,
     ownershipEpoch: Number(claim.partitionOwnershipEpoch),
     leaseExpiresAt: { $gt: now },
     status: { $in: ['active', 'draining'] },
+    ...(regionalAuthority.enforced ? { activeRegionId: regionalAuthority.authority.activeRegionId, regionalStatus: 'active', regionalOwnershipEpoch: Number(claim.regionalOwnershipEpoch) } : {}),
   };
   const partition = options.extendLeaseMs
     ? await dependencies.QueuePartition.findOneAndUpdate(

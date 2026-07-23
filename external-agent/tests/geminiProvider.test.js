@@ -5,8 +5,10 @@ const { test } = require('node:test');
 const { createApp } = require('../src/app');
 const {
   GeminiProvider,
+  chooseRetryDelay,
   isBlockedResponse,
   mapGeminiError,
+  parseRetryAfterMs,
 } = require('../src/providers/gemini.provider');
 const {
   GEMINI_API_MODES,
@@ -123,7 +125,7 @@ test('Gemini provider uses grounded research then strict formatting', async () =
   assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
   assert.equal(client.calls[0].config.httpOptions.retryOptions.attempts, 1);
   assert.equal(client.calls[0].config.httpOptions.timeout, TEST_CONFIG.requestTimeoutMs);
-  assert.equal(client.calls[0].config.maxOutputTokens, 2_048);
+  assert.equal(client.calls[0].config.maxOutputTokens, 512);
   assert.equal(client.calls[1].config.tools, undefined);
   assert.equal(client.calls[1].config.httpOptions.retryOptions.attempts, 1);
   assert.equal(client.calls[1].config.httpOptions.timeout, TEST_CONFIG.requestTimeoutMs);
@@ -353,8 +355,8 @@ test('grounded research local timeout is stage-aware and does not begin formatti
   assert.equal(calls.length, 2);
   assert.equal(calls[0].config.httpOptions.timeout, 10);
   assert.equal(calls[1].config.httpOptions.timeout, 10);
-  assert.equal(calls[0].config.maxOutputTokens, 2_048);
-  assert.equal(calls[1].config.maxOutputTokens, 2_048);
+  assert.equal(calls[0].config.maxOutputTokens, 512);
+  assert.equal(calls[1].config.maxOutputTokens, 256);
   const completion = logger.entries.find((entry) => entry.message === 'Gemini operation completed');
   assert.deepEqual(
     {
@@ -419,10 +421,10 @@ test('structured formatting local timeout is identified with a fresh controller'
       error.reason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' &&
       error.timeoutReason === 'LOCAL_PROVIDER_DEADLINE_EXCEEDED' &&
       error.configuredTimeoutMs === 10 &&
-      error.operationTimeoutMs === 1_519 &&
+      error.operationTimeoutMs === 30_020 &&
       error.providerAttemptCount === 2 &&
       error.providerMaxAttempts === 2 &&
-      error.retryDelayMs === 1_000 &&
+      error.retryDelayMs === 5_000 &&
       error.recoveryRequired === true &&
       error.recoveryReason === 'FORMATTING_FAILED_AFTER_GROUNDED_RESEARCH',
   );
@@ -972,7 +974,7 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
   assert.equal(shapeLog.fields.groundingChunkCount, 1);
   assert.equal(shapeLog.fields.finishReason, 'STOP');
   assert.equal(shapeLog.fields.webSearchQueryCount, 1);
-  assert.equal(shapeLog.fields.configuredMaxOutputTokens, 2_048);
+  assert.equal(shapeLog.fields.configuredMaxOutputTokens, 512);
   assert.equal(Number.isInteger(shapeLog.fields.promptCharacterCount), true);
   assert.equal(shapeLog.fields.promptTokenCount, 12);
   assert.equal(shapeLog.fields.candidatesTokenCount, 34);
@@ -994,11 +996,8 @@ test('safe response-shape diagnostics never log text, URLs, topics, or secrets',
   }
 });
 
-test('two successful responses without search evidence fail without fabricated citations', async () => {
-  const client = fakeClient([
-    candidate('First ungrounded answer with https://invented.example/first.'),
-    candidate('Second ungrounded answer with https://invented.example/second.'),
-  ]);
+test('a successful response without search evidence fails immediately without fabricated citations', async () => {
+  const client = fakeClient([candidate('Ungrounded answer with https://invented.example/first.')]);
   const provider = new GeminiProvider(TEST_CONFIG, {
     client,
   });
@@ -1010,70 +1009,45 @@ test('two successful responses without search evidence fail without fabricated c
       error.internalCode === 'GEMINI_GROUNDING_METADATA_MISSING' &&
       error.operation === 'grounded_research' &&
       error.apiMode === 'models.generateContent' &&
-      error.researchAttemptCount === 2 &&
-      error.groundingFallbackUsed === true &&
+      error.researchAttemptCount === 1 &&
+      error.groundingFallbackUsed === false &&
       error.groundingMetadataPresent === false &&
       error.groundingChunkCount === 0 &&
       error.googleSearchCallCount === 0 &&
       error.citationAnnotationCount === 0,
   );
-  assert.equal(client.calls.length, 2);
+  assert.equal(client.calls.length, 1);
   assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
-  assert.deepEqual(client.calls[1].config.tools, [{ googleSearch: {} }]);
 });
 
-test('an ungrounded successful response gets one grounding-specific fallback', async () => {
+test('an ungrounded successful response is not retried as a fallback', async () => {
   const logger = memoryLogger();
-  const client = fakeClient([
-    candidate('First response has no provider grounding evidence.'),
-    candidate('Recent verifiable facts from Search.', {
-      sources: [
-        { title: 'Official one', uri: 'https://one.example/recent' },
-        { title: 'Official two', uri: 'https://two.example/recent' },
-      ],
-    }),
-    candidate(JSON.stringify({ summary: 'Concise grounded fallback result.' })),
-  ]);
-  const attemptIds = ['attempt_primary', 'attempt_grounding_fallback', 'attempt_formatting'];
+  const client = fakeClient([candidate('Response has no provider grounding evidence.')]);
   const provider = new GeminiProvider(TEST_CONFIG, {
     client,
     logger,
-    attemptId: () => attemptIds.shift(),
   });
 
-  const result = await provider.research({
-    topic: 'Current facts requiring live verification',
-    requestId: 'req_grounding-fallback',
-  });
+  await assert.rejects(
+    () =>
+      provider.research({
+        topic: 'Current facts requiring live verification',
+        requestId: 'req_ungrounded-rejected',
+      }),
+    (error) =>
+      error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED' &&
+      error.internalCode === 'GEMINI_GROUNDING_METADATA_MISSING' &&
+      error.researchAttemptCount === 1 &&
+      error.fallbackResearchProfileUsed === false,
+  );
 
-  assert.equal(result.summary, 'Concise grounded fallback result.');
-  assert.equal(result.researchDiagnostics.attemptCount, 2);
-  assert.equal(result.researchDiagnostics.groundingFallbackUsed, true);
-  assert.equal(result.sourceReferences.length, 2);
-  assert.equal(client.calls.length, 3);
-  assert.match(client.calls[1].config.systemInstruction, /grounding fallback/i);
-  assert.match(client.calls[1].config.systemInstruction, /execute Google Search/i);
-  assert.match(client.calls[1].config.systemInstruction, /recent, independently verifiable facts/i);
-  assert.deepEqual(client.calls[0].config.thinkingConfig, { thinkingLevel: 'LOW' });
-  assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'LOW' });
-  assert.equal(client.calls[0].config.maxOutputTokens, 2_048);
-  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
-  assert.match(client.calls[1].config.systemInstruction, /exactly 2 one-line records/i);
-  const researchStarts = logger.entries.filter(
+  const researchAttempts = logger.entries.filter(
     (entry) =>
       entry.fields.event === 'gemini.attempt.started' &&
       entry.fields.operation === 'grounded_research',
   );
-  assert.deepEqual(
-    researchStarts.map((entry) => ({
-      attemptId: entry.fields.attemptId,
-      groundingFallback: entry.fields.groundingFallback,
-    })),
-    [
-      { attemptId: 'attempt_primary', groundingFallback: false },
-      { attemptId: 'attempt_grounding_fallback', groundingFallback: true },
-    ],
-  );
+  assert.equal(researchAttempts.length, 1);
+  assert.equal(client.calls.length, 1);
 });
 
 test('an ungrounded MAX_TOKENS response is incomplete and remains safely rejected', async () => {
@@ -1082,7 +1056,6 @@ test('an ungrounded MAX_TOKENS response is incomplete and remains safely rejecte
     candidate('Truncated answer with https://invented.example/truncated.', {
       finishReason: 'MAX_TOKENS',
     }),
-    candidate('Second answer with https://invented.example/final.'),
   ]);
   const provider = new GeminiProvider(TEST_CONFIG, { client, logger });
 
@@ -1091,16 +1064,17 @@ test('an ungrounded MAX_TOKENS response is incomplete and remains safely rejecte
     (error) =>
       error.code === 'GEMINI_SOURCE_EXTRACTION_FAILED' &&
       error.internalCode === 'GEMINI_GROUNDING_METADATA_MISSING' &&
-      error.finishReason === 'STOP' &&
+      error.finishReason === 'MAX_TOKENS' &&
+      error.researchAttemptCount === 1 &&
       error.groundingChunkCount === 0,
   );
-  assert.equal(client.calls.length, 2);
+  assert.equal(client.calls.length, 1);
   const firstCompletion = logger.entries.find(
     (entry) =>
       entry.fields.event === 'gemini.attempt.completed' && entry.fields.attemptNumber === 1,
   );
   assert.equal(firstCompletion.fields.finishReason, 'MAX_TOKENS');
-  assert.equal(firstCompletion.fields.retryReason, 'GROUNDING_EVIDENCE_MISSING');
+  assert.equal(firstCompletion.fields.retryReason, 'NONE');
 });
 
 test('a grounded MAX_TOKENS response is retried once and never accepted as complete', async () => {
@@ -1125,7 +1099,7 @@ test('a grounded MAX_TOKENS response is retried once and never accepted as compl
   );
   assert.equal(client.calls.length, 2);
   assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'LOW' });
-  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
+  assert.equal(client.calls[1].config.maxOutputTokens, 256);
 });
 
 test('a grounded STOP fallback completes after an incomplete first response', async () => {
@@ -1152,7 +1126,7 @@ test('a grounded STOP fallback completes after an incomplete first response', as
   assert.equal(result.sourceReferences.length, 2);
   assert.equal(client.calls.length, 3);
   assert.match(client.calls[1].config.systemInstruction, /grounding fallback/i);
-  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
+  assert.equal(client.calls[1].config.maxOutputTokens, 256);
   assert.deepEqual(client.calls[1].config.thinkingConfig, { thinkingLevel: 'LOW' });
 });
 
@@ -1371,7 +1345,7 @@ test('HTTP timeout errors expose only safe stage deadline metadata', async (cont
       reason: 'GEMINI_DEADLINE_EXCEEDED',
       timeoutReason: 'GEMINI_DEADLINE_EXCEEDED',
       configuredTimeoutMs: 115_000,
-      operationTimeoutMs: 115_000,
+      operationTimeoutMs: 125_000,
       providerAttemptCount: 1,
       providerMaxAttempts: 1,
       retryDelayMs: 0,
@@ -1532,14 +1506,15 @@ test('503 followed by success uses one fallback grounded-research profile', asyn
     groundingFallbackUsed: false,
     finalProviderStatus: 'OK',
     groundingMetadataCount: 1,
+    attempts: result.researchDiagnostics.attempts,
   });
-  assert.deepEqual(delays, [1_000]);
+  assert.deepEqual(delays, [5_000]);
   assert.equal(client.calls.length, 3);
   assert.deepEqual(client.calls[0].config.tools, [{ googleSearch: {} }]);
   assert.deepEqual(client.calls[1].config.tools, [{ googleSearch: {} }]);
   assert.equal(client.calls[2].config.tools, undefined);
-  assert.equal(client.calls[0].config.maxOutputTokens, 2_048);
-  assert.equal(client.calls[1].config.maxOutputTokens, 2_048);
+  assert.equal(client.calls[0].config.maxOutputTokens, 512);
+  assert.equal(client.calls[1].config.maxOutputTokens, 256);
   assert.match(client.calls[1].config.systemInstruction, /exactly 2 one-line records/i);
   assert.doesNotMatch(client.calls[1].config.systemInstruction, /grounding fallback/i);
   assert.equal(client.calls[1].contents.length < client.calls[0].contents.length, true);
@@ -1561,6 +1536,194 @@ test('503 followed by success uses one fallback grounded-research profile', asyn
   );
   assert.equal(JSON.stringify(logger.entries).includes('Secure agents'), false);
   assert.equal(JSON.stringify(logger.entries).includes(TEST_CONFIG.apiKey), false);
+});
+
+test('primary local timeout is followed by one successful grounded fallback', async () => {
+  const calls = [];
+  const client = {
+    calls,
+    models: {
+      generateContent(parameters) {
+        calls.push(parameters);
+        if (calls.length === 1) {
+          return new Promise((_resolve, reject) => {
+            parameters.config.abortSignal.addEventListener(
+              'abort',
+              () => reject(parameters.config.abortSignal.reason),
+              { once: true },
+            );
+          });
+        }
+        if (calls.length === 2) {
+          return Promise.resolve(
+            candidate('Grounded fallback after the local deadline.', {
+              sources: [{ title: 'Source', uri: 'https://authority.example/local-recovery' }],
+            }),
+          );
+        }
+        return Promise.resolve(candidate(JSON.stringify({ summary: 'Recovered locally.' })));
+      },
+    },
+  };
+  const provider = new GeminiProvider(
+    {
+      ...TEST_CONFIG,
+      researchTimeoutMs: 10,
+      researchFallbackTimeoutMs: 50,
+      formattingMaxAttempts: 1,
+    },
+    { client, delay: async () => undefined, random: () => 0 },
+  );
+
+  const result = await provider.research({ topic: 'Secure agents' });
+
+  assert.equal(result.summary, 'Recovered locally.');
+  assert.equal(result.researchDiagnostics.attemptCount, 2);
+  assert.equal(result.researchDiagnostics.attempts[0].timeoutSource, 'local');
+  assert.equal(
+    result.researchDiagnostics.attempts[0].retryReason,
+    'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
+  );
+  assert.equal(result.researchDiagnostics.attempts[0].retryable, true);
+  assert.equal(result.researchDiagnostics.attempts[1].profile, 'fallback');
+  assert.equal(result.researchDiagnostics.attempts[1].providerStatus, 'OK');
+  assert.equal(calls.length, 3);
+});
+
+test('primary and fallback 503 responses preserve unavailable classification and stop at two', async () => {
+  const client = fakeClient([
+    Object.assign(new Error('temporary primary outage'), { status: 503 }),
+    Object.assign(new Error('temporary fallback outage'), { status: 503 }),
+  ]);
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, formattingMaxAttempts: 1 },
+    { client, delay: async () => undefined, random: () => 0 },
+  );
+
+  await assert.rejects(
+    () => provider.research({ topic: 'Secure agents' }),
+    (error) =>
+      error.code === 'GEMINI_UPSTREAM_UNAVAILABLE' &&
+      error.statusCode === 503 &&
+      error.providerHttpStatus === 503 &&
+      error.finalProviderStatus === 'UNAVAILABLE' &&
+      error.researchAttemptCount === 2 &&
+      error.fallbackResearchProfileUsed === true &&
+      error.researchAttempts.length === 2 &&
+      error.researchAttempts[0].retryable === true &&
+      error.researchAttempts[1].retryable === false,
+  );
+  assert.equal(client.calls.length, 2);
+});
+
+test('fallback research has its own longer attempt deadline and safe per-attempt diagnostics', async () => {
+  const transient = Object.assign(new Error('temporary'), { status: 503 });
+  const client = fakeClient([
+    transient,
+    candidate('Grounded fallback.', {
+      sources: [{ title: 'Source', uri: 'https://authority.example/fallback' }],
+      webSearchQueries: ['current fallback evidence'],
+    }),
+    candidate(JSON.stringify({ summary: 'Recovered.' })),
+  ]);
+  const provider = new GeminiProvider(
+    {
+      ...TEST_CONFIG,
+      researchTimeoutMs: 1_000,
+      researchFallbackTimeoutMs: 3_000,
+      researchOperationTimeoutMs: 20_000,
+      formattingMaxAttempts: 1,
+    },
+    { client, delay: async () => undefined, random: () => 0 },
+  );
+
+  const result = await provider.research({ topic: 'Secure agents' });
+
+  assert.equal(client.calls[0].config.httpOptions.timeout, 1_000);
+  assert.equal(client.calls[1].config.httpOptions.timeout, 3_000);
+  assert.equal(result.researchDiagnostics.attempts.length, 2);
+  assert.deepEqual(
+    result.researchDiagnostics.attempts.map((attempt) => ({
+      attemptNumber: attempt.attemptNumber,
+      profile: attempt.profile,
+      configuredTimeoutMs: attempt.configuredTimeoutMs,
+      providerStatus: attempt.providerStatus,
+      retryDelayCategory: attempt.retryDelayCategory,
+    })),
+    [
+      {
+        attemptNumber: 1,
+        profile: 'primary',
+        configuredTimeoutMs: 1_000,
+        providerStatus: 'UNAVAILABLE',
+        retryDelayCategory: 'exponential_jitter',
+      },
+      {
+        attemptNumber: 2,
+        profile: 'fallback',
+        configuredTimeoutMs: 3_000,
+        providerStatus: 'OK',
+        retryDelayCategory: 'none',
+      },
+    ],
+  );
+});
+
+test('Retry-After is bounded, categorized, and never shortens exponential backoff', () => {
+  const secondsError = { response: { headers: { 'retry-after': '12' } } };
+  const dateError = { headers: new Headers({ 'Retry-After': 'Thu, 23 Jul 2026 06:01:00 GMT' }) };
+
+  assert.equal(parseRetryAfterMs(secondsError, 0), 12_000);
+  assert.equal(parseRetryAfterMs({ headers: { 'retry-after': '999' } }, 0), 30_000);
+  assert.deepEqual(chooseRetryDelay(secondsError, 1, 0, 0), {
+    delayMs: 12_000,
+    category: 'retry_after',
+  });
+  assert.deepEqual(chooseRetryDelay({ headers: { 'retry-after': '0' } }, 1, 0, 0), {
+    delayMs: 5_000,
+    category: 'retry_after',
+  });
+  assert.equal(parseRetryAfterMs(dateError, Date.parse('2026-07-23T06:00:55Z')), 5_000);
+  assert.deepEqual(chooseRetryDelay({}, 1, 0.999_999, 0), {
+    delayMs: 5_999,
+    category: 'exponential_jitter',
+  });
+  assert.deepEqual(chooseRetryDelay({}, 2, 0, 0), {
+    delayMs: 10_000,
+    category: 'exponential_jitter',
+  });
+});
+
+test('transient 429 respects Retry-After before the single grounded fallback', async () => {
+  const rateLimited = Object.assign(new Error('temporary rate limit'), {
+    status: 429,
+    response: { headers: { 'retry-after': '7' } },
+  });
+  const delays = [];
+  const client = fakeClient([
+    rateLimited,
+    candidate('Grounded fallback.', {
+      sources: [{ title: 'Source', uri: 'https://authority.example/rate-recovery' }],
+    }),
+    candidate(JSON.stringify({ summary: 'Recovered after rate limit.' })),
+  ]);
+  const provider = new GeminiProvider(
+    { ...TEST_CONFIG, formattingMaxAttempts: 1 },
+    {
+      client,
+      delay: async (milliseconds) => delays.push(milliseconds),
+      random: () => 0,
+    },
+  );
+
+  const result = await provider.research({ topic: 'Secure agents' });
+
+  assert.equal(result.summary, 'Recovered after rate limit.');
+  assert.deepEqual(delays, [7_000]);
+  assert.equal(result.researchDiagnostics.attemptCount, 2);
+  assert.equal(result.researchDiagnostics.attempts[0].retryReason, 'PROVIDER_RATE_LIMITED');
+  assert.equal(result.researchDiagnostics.attempts[0].retryDelayCategory, 'retry_after');
+  assert.equal(client.calls.length, 3);
 });
 
 test('504 followed by success retries grounded research once', async () => {
@@ -1614,7 +1777,7 @@ test('transient transport failure followed by success retries grounded research 
 });
 
 test('permanent provider errors are not retried', async () => {
-  for (const status of [400, 401, 403, 429]) {
+  for (const status of [400, 401, 403]) {
     const permanent = Object.assign(new Error('permanent private failure'), { status });
     const client = fakeClient([permanent]);
     let delayCount = 0;
@@ -1666,7 +1829,8 @@ test('retry budget exhaustion prevents the fallback provider call', async () => 
   await assert.rejects(
     () => provider.research({ topic: 'Secure agents' }),
     (error) =>
-      error.code === 'GEMINI_UPSTREAM_UNAVAILABLE' &&
+      error.code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED' &&
+      error.reason === 'OVERALL_RESEARCH_DEADLINE_EXCEEDED' &&
       error.retryBudgetExhausted === true &&
       error.researchAttemptCount === 1,
   );
@@ -1704,7 +1868,8 @@ test('grounded-research operation deadline bounds a hanging provider attempt', a
   await assert.rejects(
     () => provider.research({ topic: 'Secure agents' }),
     (error) =>
-      error.code === 'GEMINI_REQUEST_TIMEOUT' &&
+      error.code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED' &&
+      error.reason === 'OVERALL_RESEARCH_DEADLINE_EXCEEDED' &&
       error.configuredTimeoutMs <= 20 &&
       error.operationTimeoutMs === 20 &&
       error.researchAttemptCount === 1,
@@ -1729,7 +1894,7 @@ test('cancellation during grounded-research backoff stops the retry', async () =
     random: () => 0,
   });
   const operation = provider.research({ topic: 'Secure agents', signal: caller.signal });
-  assert.equal(await backoffStarted.promise, 1_000);
+  assert.equal(await backoffStarted.promise, 5_000);
   caller.abort();
 
   await assert.rejects(

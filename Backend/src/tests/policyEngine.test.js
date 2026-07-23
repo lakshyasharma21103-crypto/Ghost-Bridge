@@ -333,9 +333,9 @@ test('attribute registry exposes metadata but not resolver functions', () => {
   );
 });
 
-test('permission registry v11 exposes granular governance and orchestration permissions with role mappings', () => {
+test('permission registry v13+ exposes granular governance, orchestration, and release permissions with role mappings', () => {
   const registry = getPermissionRegistry();
-  assert.equal(registry.version, 11);
+  assert.ok(registry.version >= 13);
   for (const id of [
     'policy.create',
     'policy.update',

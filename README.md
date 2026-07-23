@@ -1,5 +1,10 @@
 # Agent Passport Runtime Gateway
 
+Phase 13E5 production release governance, deterministic readiness verification,
+rollout simulation, manual deployment boundaries, and operator runbooks are documented
+in [RELEASE_READINESS.md](./RELEASE_READINESS.md). Phase 13E5 never deploys production
+automatically.
+
 Phase 13C2 conditional governance is documented in [POLICY_ENGINE.md](./POLICY_ENGINE.md).
 Phase 13C3 secret inventory, encryption-key versioning, bindings, leases, rotation, expiry, revocation, brokered runtime access, and legacy migration are documented in [SECRET_GOVERNANCE.md](./SECRET_GOVERNANCE.md).
 Phase 13C4 approval workflows, separation of duties, normalized evidence, tamper-evident chains, retention, legal holds, and evidence packages are documented in [COMPLIANCE_GOVERNANCE.md](./COMPLIANCE_GOVERNANCE.md).
@@ -10,6 +15,9 @@ Phase 13D3 versioned data contracts, scoped delegation grants, safe extraction/t
 Phase 13D4 durable recovery policies, explicit compensation, human intervention, governed replacement/correction, uncertain-outcome containment, and verified checkpoint resume are documented in [ORCHESTRATION_RECOVERY.md](./ORCHESTRATION_RECOVERY.md).
 Phase 13D5 orchestration timeline, trace validation, health, critical path, bottlenecks, SLOs, alerts, worker/queue operations, fleet controls, safe diagnostics, retention, and verification are documented in [ORCHESTRATION_OBSERVABILITY.md](./ORCHESTRATION_OBSERVABILITY.md).
 Phase 13E1 horizontal worker scaling, deterministic versioned partitions, fencing, tenant fairness, atomic admission quotas, durable backpressure, protected capacity, safe dead letters, and provider-neutral capacity signals are documented in [PRODUCTION_SCALE.md](./PRODUCTION_SCALE.md).
+Phase 13E2 governed query shapes, additive indexes, regional cache namespaces, durable invalidation, and resumable projections are documented in [DATA_ACCESS_PERFORMANCE.md](./DATA_ACCESS_PERFORMANCE.md).
+Phase 13E3 single-writer regional authority, epoch fencing, failover/failback, regional routing, recovery objectives, backup inventory, isolated restore, and deterministic DR drills are documented in [MULTI_REGION_RESILIENCE.md](./MULTI_REGION_RESILIENCE.md).
+Phase 13E4 bounded synthetic load scenarios, performance budgets and baselines, compatible regression checks, safe evidence, and advisory capacity planning are documented in [PERFORMANCE_CAPACITY.md](./PERFORMANCE_CAPACITY.md).
 
 One key to discover, connect, and invoke any compatible AI agent.
 
@@ -97,3 +105,17 @@ intended.
 ## Data-access performance verification
 
 `npm run verify:data-access-performance` runs the deterministic non-billed Phase 13E2 query-governance, cursor, cache, durable invalidation, resumable projection, slow-diagnostic, and index-drift scenario. Use `npm run migrate:data-access-performance` for explicit additive index reconciliation. See [DATA_ACCESS_PERFORMANCE.md](DATA_ACCESS_PERFORMANCE.md) for the authority, consistency, repository, cache, projection, retention, and operations architecture.
+
+## Multi-region disaster-recovery verification
+
+`npm run verify:multi-region-dr` runs the deterministic non-billed Phase 13E3 two-region outage, authority and queue transfer, checkpoint resume, exactly-once recovery, residency denial, backup/isolated-restore, failback, and DR-drill scenario. Use `npm run migrate:multi-region-dr` for additive restart-safe regional indexes and safe defaults. Production cloud routing, DNS, load balancers, database topology, provider failover, and infrastructure fencing remain external runbook actions. See [MULTI_REGION_RESILIENCE.md](MULTI_REGION_RESILIENCE.md).
+
+## Performance and capacity verification
+
+`npm run verify:performance-capacity` runs the deterministic, bounded, non-billed Phase 13E4 load, budget, baseline/regression, fairness, worker fencing, cache, regional simulation, capacity, export, and cleanup scenario. Use `npm run migrate:performance-capacity` for additive restart-safe indexes. Heavy `perf:*` commands are manual-only, production traffic generation is disabled, the shipped staging target is disabled and approval-gated, and local results do not prove production capacity. See [PERFORMANCE_CAPACITY.md](PERFORMANCE_CAPACITY.md).
+
+## Staging and closed-pilot readiness
+
+`npm run verify:staging-pilot-readiness` runs the deterministic, bounded, non-billed Phase 14A staging deployment, smoke-test, capability-gate, synthetic enrollment, quota, observation, restricted launch, feedback-redaction, support, kill-switch, and evidence scenario. Use `npm run migrate:staging-pilot` for additive restart-safe indexes.
+
+Phase 14A does not deploy staging, invite users, send communications, invoke Gemini, or approve production. The current Gemini gate remains provider-unavailable/failed-transient, external-flow remains deferred, and grounded research remains disabled. See [STAGING_PILOT_OPERATIONS.md](STAGING_PILOT_OPERATIONS.md).

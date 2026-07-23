@@ -201,30 +201,31 @@ test('external-flow verifier preserves the provider, request, client, and gatewa
   );
   const calculatedRetryBudgetMs = calculatedGeminiRetryBudgetMs({
     gemini: {
-      researchTimeoutMs: 115_000,
-      formattingTimeoutMs: 115_000,
+      researchTimeoutMs: 120_000,
+      researchFallbackTimeoutMs: 180_000,
+      formattingTimeoutMs: 60_000,
       researchMaxAttempts: 2,
       formattingMaxAttempts: 2,
     },
   });
   const childEnvironment = externalAgentEnvironment({ localEnvironment: {}, environment: {} });
 
-  assert.equal(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS, 500_000);
-  assert.equal(childEnvironment.REQUEST_TIMEOUT_MS, '500000');
-  assert.equal(VERIFICATION_REQUEST_TIMEOUT_MS, 520_000);
-  assert.equal(RUNTIME_INVOCATION_TIMEOUT_MS, 540_000);
+  assert.equal(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS, 510_000);
+  assert.equal(childEnvironment.REQUEST_TIMEOUT_MS, '510000');
+  assert.equal(VERIFICATION_REQUEST_TIMEOUT_MS, 570_000);
+  assert.equal(RUNTIME_INVOCATION_TIMEOUT_MS, 550_000);
   assert.equal(EXTERNAL_STARTUP_PROBE_TIMEOUT_MS, 30_000);
-  assert.equal(calculatedRetryBudgetMs, 472_998);
+  assert.equal(calculatedRetryBudgetMs, 500_000);
   assert.ok(calculatedRetryBudgetMs < EXTERNAL_AGENT_REQUEST_TIMEOUT_MS);
-  assert.ok(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS < VERIFICATION_REQUEST_TIMEOUT_MS);
-  assert.ok(VERIFICATION_REQUEST_TIMEOUT_MS < RUNTIME_INVOCATION_TIMEOUT_MS);
+  assert.ok(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS < RUNTIME_INVOCATION_TIMEOUT_MS);
+  assert.ok(RUNTIME_INVOCATION_TIMEOUT_MS < VERIFICATION_REQUEST_TIMEOUT_MS);
   assert.equal(
     configuredTimeoutMs(
-      { RUNTIME_INVOCATION_TIMEOUT_MS: '540000' },
+      { RUNTIME_INVOCATION_TIMEOUT_MS: '550000' },
       'RUNTIME_INVOCATION_TIMEOUT_MS',
       1,
     ),
-    540_000,
+    550_000,
   );
   assert.match(source, /REQUEST_TIMEOUT_MS:\s*String\(EXTERNAL_AGENT_REQUEST_TIMEOUT_MS\)/);
   assert.match(source, /process\.env\.RUNTIME_INVOCATION_TIMEOUT_MS\s*=\s*String\(/);
@@ -232,7 +233,7 @@ test('external-flow verifier preserves the provider, request, client, and gatewa
     configuredTimeoutMs(
       { EXTERNAL_FLOW_REQUEST_TIMEOUT_MS: '0' },
       'EXTERNAL_FLOW_REQUEST_TIMEOUT_MS',
-      520_000,
+      570_000,
     ),
     0,
   );
@@ -270,7 +271,7 @@ test('invalid timeout hierarchy fails before runtime startup with a safe validat
   assert.equal(failure.applicationErrorCode, 'EXTERNAL_FLOW_TIMEOUT_HIERARCHY_INVALID');
   assert.equal(
     failure.timeoutBudgetValidationMessage,
-    'EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
+    'RUNTIME_INVOCATION_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS.',
   );
   const output = formatVerificationFailure(failure);
   assert.match(output, /Failed stage: environment_validation/);
@@ -278,7 +279,7 @@ test('invalid timeout hierarchy fails before runtime startup with a safe validat
   assert.match(output, /Application error code: EXTERNAL_FLOW_TIMEOUT_HIERARCHY_INVALID/);
   assert.match(
     output,
-    /Timeout-budget validation: EXTERNAL_AGENT_REQUEST_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS\./,
+    /Timeout-budget validation: RUNTIME_INVOCATION_TIMEOUT_MS must be less than EXTERNAL_FLOW_REQUEST_TIMEOUT_MS\./,
   );
 });
 
@@ -1066,68 +1067,45 @@ test('Gemini upstream failures retain only their allowlisted operation diagnosti
   assert.equal(output.includes(secret), false);
 });
 
-test('gateway invocation retries one transient Gemini outage with fresh correlation IDs', async () => {
+test('gateway invocation does not replay a transient Gemini outage beyond internal attempts', async () => {
   const transient = endpointResult(undefined, {
     status: 502,
     success: false,
     error: { code: 'GEMINI_UPSTREAM_UNAVAILABLE', operation: 'grounded_research' },
   });
-  const completed = endpointResult({ invocationId: 'invocation_123', status: 'completed' });
-  const responses = [transient, completed];
+  const responses = [transient];
   const calls = [];
   const delays = [];
   const retries = [];
   const uuids = ['trace-first', 'request-first', 'trace-second', 'request-second'];
 
-  const result = await invokeGatewayWithTransientRetry({
-    baseUrl: 'http://gateway.example.test',
-    body: { capability: 'research_topic', input: { topic: 'Public advisories' } },
-    connectionId: 'connection_123',
-    maxAttempts: 2,
-    retryDelayMs: 25,
-    randomUUID: () => uuids.shift(),
-    requestFn: async (baseUrl, pathname, options) => {
-      calls.push({ baseUrl, pathname, options });
-      return responses.shift();
-    },
-    delayFn: async (delayMs) => delays.push(delayMs),
-    retryReportFn: (details) => retries.push(details),
-    runtimeMode: REMOTE_LIVE_AGENT_MODE,
-  });
-
-  assert.equal(EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS, 2);
-  assert.equal(EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS, 5_000);
-  assert.equal(result.attemptNumber, 2);
-  assert.equal(result.invocation.invocationId, 'invocation_123');
-  assert.equal(result.traceId, 'trace_trace-second');
-  assert.equal(result.requestId, 'req_request-second');
-  assert.equal(calls.length, 2);
-  assert.deepEqual(delays, [25]);
-  assert.equal(calls[0].options.headers['X-Trace-Id'], 'trace_trace-first');
-  assert.equal(calls[1].options.headers['X-Trace-Id'], 'trace_trace-second');
-  assert.notEqual(
-    calls[0].options.headers['X-Request-Id'],
-    calls[1].options.headers['X-Request-Id'],
-  );
-  assert.deepEqual(
-    retries.map(({ code, nextAttempt, maxAttempts, delayMs }) => ({
-      code,
-      nextAttempt,
-      maxAttempts,
-      delayMs,
-    })),
-    [
-      {
-        code: 'GEMINI_UPSTREAM_UNAVAILABLE',
-        nextAttempt: 2,
-        maxAttempts: 2,
-        delayMs: 25,
+  await assert.rejects(() =>
+    invokeGatewayWithTransientRetry({
+      baseUrl: 'http://gateway.example.test',
+      body: { capability: 'research_topic', input: { topic: 'Public advisories' } },
+      connectionId: 'connection_123',
+      maxAttempts: 2,
+      retryDelayMs: 25,
+      randomUUID: () => uuids.shift(),
+      requestFn: async (baseUrl, pathname, options) => {
+        calls.push({ baseUrl, pathname, options });
+        return responses.shift();
       },
-    ],
+      delayFn: async (delayMs) => delays.push(delayMs),
+      retryReportFn: (details) => retries.push(details),
+      runtimeMode: REMOTE_LIVE_AGENT_MODE,
+    }),
   );
+
+  assert.equal(EXTERNAL_FLOW_GATEWAY_MAX_ATTEMPTS, 1);
+  assert.equal(EXTERNAL_FLOW_GATEWAY_RETRY_DELAY_MS, 5_000);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(delays, []);
+  assert.equal(calls[0].options.headers['X-Trace-Id'], 'trace_trace-first');
+  assert.deepEqual(retries, []);
 });
 
-test('gateway invocation retries one completed Gemini research timeout', async () => {
+test('gateway invocation preserves a completed Gemini research timeout without replay', async () => {
   const timeout = endpointResult(undefined, {
     status: 502,
     success: false,
@@ -1137,27 +1115,26 @@ test('gateway invocation retries one completed Gemini research timeout', async (
       timeoutReason: 'GEMINI_DEADLINE_EXCEEDED',
     },
   });
-  const completed = endpointResult({ invocationId: 'invocation_456', status: 'completed' });
-  const responses = [timeout, completed];
+  const responses = [timeout];
   let delayCount = 0;
 
-  const result = await invokeGatewayWithTransientRetry({
-    baseUrl: 'http://gateway.example.test',
-    body: { capability: 'research_topic', input: { topic: 'Public advisories' } },
-    connectionId: 'connection_123',
-    maxAttempts: 2,
-    requestFn: async () => responses.shift(),
-    delayFn: async () => {
-      delayCount += 1;
-    },
-    retryReportFn() {},
-    runtimeMode: REMOTE_LIVE_AGENT_MODE,
-  });
+  await assert.rejects(() =>
+    invokeGatewayWithTransientRetry({
+      baseUrl: 'http://gateway.example.test',
+      body: { capability: 'research_topic', input: { topic: 'Public advisories' } },
+      connectionId: 'connection_123',
+      maxAttempts: 2,
+      requestFn: async () => responses.shift(),
+      delayFn: async () => {
+        delayCount += 1;
+      },
+      retryReportFn() {},
+      runtimeMode: REMOTE_LIVE_AGENT_MODE,
+    }),
+  );
 
   assert.equal(retryableGatewayProviderFailure(timeout), true);
-  assert.equal(result.attemptNumber, 2);
-  assert.equal(result.invocation.invocationId, 'invocation_456');
-  assert.equal(delayCount, 1);
+  assert.equal(delayCount, 0);
 });
 
 test('gateway invocation does not retry non-transient runtime failures', async () => {

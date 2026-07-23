@@ -24,6 +24,10 @@ const {
 } = require('./interAgentDelegationRoutes');
 const { productionScaleRouter } = require('./productionScaleRoutes');
 const { dataAccessPerformanceRouter } = require('./dataAccessPerformanceRoutes');
+const { regionalResilienceRouter } = require('./regionalResilienceRoutes');
+const { performanceCapacityRouter } = require('./performanceCapacityRoutes');
+const { releaseReadinessRouter } = require('./releaseReadinessRoutes');
+const { stagingPilotRouter } = require('./stagingPilotRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -62,6 +66,12 @@ router.use(`${API_PREFIX}/inter-agent-contracts`, interAgentContractRouter);
 router.use(`${API_PREFIX}/inter-agent-delegations`, interAgentDelegationRouter);
 router.use(`${API_PREFIX}/production-scale`, productionScaleRouter);
 router.use(`${API_PREFIX}/data-performance`, dataAccessPerformanceRouter);
+router.use(`${API_PREFIX}/regional-resilience`, regionalResilienceRouter);
+router.use(`${API_PREFIX}/performance`, performanceCapacityRouter);
+router.use(`${API_PREFIX}/releases`, releaseReadinessRouter);
+router.use('/api/releases', releaseReadinessRouter);
+router.use(`${API_PREFIX}/launch`, stagingPilotRouter);
+router.use('/api/launch', stagingPilotRouter);
 if (env.NODE_ENV === 'development') {
   router.use(`${API_PREFIX}/demo`, demoRouter);
   router.use(`${API_PREFIX}/developer-sandbox`, developerSandboxRouter);

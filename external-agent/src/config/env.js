@@ -5,6 +5,7 @@ const { resolveGeminiThinkingConfiguration } = require('./geminiThinking');
 const {
   DEFAULT_EXTERNAL_REQUEST_TIMEOUT_MS,
   DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
+  DEFAULT_GEMINI_RESEARCH_FALLBACK_TIMEOUT_MS,
   DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
   GEMINI_PROCESSING_OVERHEAD_MS,
   providerRequestBudget,
@@ -12,8 +13,8 @@ const {
 
 const DEFAULT_GEMINI_RESEARCH_MAX_ATTEMPTS = 2;
 const DEFAULT_GEMINI_FORMATTING_MAX_ATTEMPTS = 2;
-const DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS = 2_048;
-const DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 2_048;
+const DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS = 512;
+const DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS = 256;
 const DEFAULT_GEMINI_FORMATTING_MAX_OUTPUT_TOKENS = 1_500;
 
 const booleanValue = (defaultValue) =>
@@ -43,6 +44,10 @@ function resolveGeminiTimeouts(environment) {
       environment.GEMINI_RESEARCH_TIMEOUT_MS ??
       legacyTimeoutMs ??
       DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
+    researchFallbackTimeoutMs:
+      environment.GEMINI_RESEARCH_FALLBACK_TIMEOUT_MS ??
+      legacyTimeoutMs ??
+      DEFAULT_GEMINI_RESEARCH_FALLBACK_TIMEOUT_MS,
     formattingTimeoutMs:
       environment.GEMINI_FORMATTING_TIMEOUT_MS ??
       legacyTimeoutMs ??
@@ -53,7 +58,9 @@ function resolveGeminiTimeouts(environment) {
 const environmentSchema = z
   .object({
     PORT: z.coerce.number().int().min(1).max(65535).default(5002),
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    NODE_ENV: z
+      .enum(['development', 'test', 'ci', 'integration', 'staging', 'production'])
+      .default('development'),
     EXTERNAL_AGENT_RUNTIME_TOKEN: z.string().min(32, 'must contain at least 32 characters'),
     ALLOWED_GATEWAY_ORIGINS: z.string().default(''),
     REQUEST_TIMEOUT_MS: z.coerce
@@ -68,6 +75,7 @@ const environmentSchema = z
     GEMINI_MODEL: z.string().trim().optional(),
     GEMINI_WEB_SEARCH_ENABLED: booleanValue(true),
     GEMINI_RESEARCH_TIMEOUT_MS: optionalTimeout,
+    GEMINI_RESEARCH_FALLBACK_TIMEOUT_MS: optionalTimeout,
     GEMINI_FORMATTING_TIMEOUT_MS: optionalTimeout,
     GEMINI_RESEARCH_MAX_ATTEMPTS: z.coerce
       .number()
@@ -130,9 +138,11 @@ const environmentSchema = z
         });
       }
 
-      const { researchTimeoutMs, formattingTimeoutMs } = resolveGeminiTimeouts(environment);
+      const { researchTimeoutMs, researchFallbackTimeoutMs, formattingTimeoutMs } =
+        resolveGeminiTimeouts(environment);
       const budget = providerRequestBudget({
         researchTimeoutMs,
+        researchFallbackTimeoutMs,
         formattingTimeoutMs,
         researchMaxAttempts: environment.GEMINI_RESEARCH_MAX_ATTEMPTS,
         formattingMaxAttempts: environment.GEMINI_FORMATTING_MAX_ATTEMPTS,
@@ -150,6 +160,19 @@ const environmentSchema = z
         code: z.ZodIssueCode.custom,
         path: ['AI_PROVIDER'],
         message: 'mock is not allowed in production',
+      });
+    }
+    if (
+      environment.NODE_ENV === 'production' &&
+      environment.ALLOWED_GATEWAY_ORIGINS.split(',')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .some((origin) => !origin.startsWith('https://'))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ALLOWED_GATEWAY_ORIGINS'],
+        message: 'must contain HTTPS origins only in production',
       });
     }
   });
@@ -185,6 +208,7 @@ function readEnvironment(source = process.env) {
   const timeouts = resolveGeminiTimeouts(result.data);
   const timeoutBudget = providerRequestBudget({
     researchTimeoutMs: timeouts.researchTimeoutMs,
+    researchFallbackTimeoutMs: timeouts.researchFallbackTimeoutMs,
     formattingTimeoutMs: timeouts.formattingTimeoutMs,
     researchMaxAttempts: result.data.GEMINI_RESEARCH_MAX_ATTEMPTS,
     formattingMaxAttempts: result.data.GEMINI_FORMATTING_MAX_ATTEMPTS,
@@ -212,6 +236,7 @@ function readEnvironment(source = process.env) {
       model: result.data.GEMINI_MODEL,
       webSearchEnabled: result.data.GEMINI_WEB_SEARCH_ENABLED,
       researchTimeoutMs: timeouts.researchTimeoutMs,
+      researchFallbackTimeoutMs: timeouts.researchFallbackTimeoutMs,
       formattingTimeoutMs: timeouts.formattingTimeoutMs,
       researchOperationTimeoutMs: timeoutBudget.researchOperationTimeoutMs,
       formattingOperationTimeoutMs: timeoutBudget.formattingOperationTimeoutMs,
@@ -244,6 +269,7 @@ module.exports = {
   DEFAULT_GEMINI_FORMATTING_TIMEOUT_MS,
   DEFAULT_GEMINI_RESEARCH_MAX_ATTEMPTS,
   DEFAULT_GEMINI_RESEARCH_FALLBACK_MAX_OUTPUT_TOKENS,
+  DEFAULT_GEMINI_RESEARCH_FALLBACK_TIMEOUT_MS,
   DEFAULT_GEMINI_RESEARCH_MAX_OUTPUT_TOKENS,
   DEFAULT_GEMINI_RESEARCH_TIMEOUT_MS,
   GEMINI_PROCESSING_OVERHEAD_MS,

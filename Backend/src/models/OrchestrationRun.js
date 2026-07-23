@@ -59,6 +59,11 @@ const orchestrationRunSchema = new mongoose.Schema(
       index: true,
     },
     routingVersion: { type: Number, default: 1, required: true, min: 1, max: 1_000 },
+    homeRegionId: { type: String, trim: true, maxlength: 128, index: true },
+    executionRegionId: { type: String, trim: true, maxlength: 128, index: true },
+    authorityEpoch: { type: Number, min: 0 },
+    failoverPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'RegionalFailoverPlan', index: true },
+    resumedFromRegionId: { type: String, trim: true, maxlength: 128 },
     concurrencyLimit: {
       type: Number,
       required: true,

@@ -30,6 +30,7 @@ const { createAuditLog } = require('./auditService');
 const { isRetryableError } = require('../utils/retryability');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
+const { assertRegionalWriteAuthority } = require('./regionalAuthority.service');
 const { logger } = require('../utils/logger');
 const metrics = require('./orchestrationMetrics.service');
 const {
@@ -188,6 +189,7 @@ function schedulerDependencies(overrides = {}) {
     registerWorker,
     releaseQuotaReservation,
     createDeadLetter,
+    assertRegionalWriteAuthority,
     logger,
     random: Math.random,
     ...overrides,
@@ -208,6 +210,14 @@ async function privateRun(Model, runId) {
 
 async function transitionNode(node, toState, update = {}, dependencies = {}) {
   const Model = dependencies.OrchestrationNodeRun || OrchestrationNodeRun;
+  await (dependencies.assertRegionalWriteAuthority || assertRegionalWriteAuthority)({
+    organizationId: node.organizationId,
+    workspaceId: node.workspaceId,
+    scope: 'workspace',
+    regionId: node.executionRegionId,
+    authorityEpoch: node.authorityEpoch,
+    authorityLeaseEpoch: node.authorityLeaseEpoch,
+  }, { dependencies });
   if (node.leaseOwner && node.partitionKey) {
     await (dependencies.assertPartitionFence || assertPartitionFence)(node, { dependencies });
   }
@@ -338,6 +348,14 @@ async function claimNextNode(options = {}) {
   const run = await privateRun(dependencies.OrchestrationRun, candidate.orchestrationRunId);
   if (!run || !['queued', 'running', 'waiting_approval', 'recovering', 'recovered'].includes(run.status)) return null;
   if (run.cancelRequestedAt || run.status === 'cancel_requested') return null;
+  const regionalAuthority = await dependencies.assertRegionalWriteAuthority({
+    organizationId: run.organizationId,
+    workspaceId: run.workspaceId,
+    scope: 'workspace',
+    regionId: options.regionId || options.safeRegion,
+    authorityEpoch: options.authorityEpoch,
+    authorityLeaseEpoch: options.authorityLeaseEpoch,
+  }, { dependencies, now });
   if (run.startedAt && Date.now() - new Date(run.startedAt).getTime() >= run.maxRunDurationMs) {
     if (Number(run.activeNodeCount || 0) === 0) {
       await failRun(run, {
@@ -379,6 +397,11 @@ async function claimNextNode(options = {}) {
         workerId,
         instanceId,
         leaseMs,
+        organizationId: run.organizationId,
+        workspaceId: run.workspaceId,
+        regionId: regionalAuthority.context?.regionId,
+        authorityEpoch: regionalAuthority.context?.authorityEpoch,
+        authorityLeaseEpoch: regionalAuthority.context?.authorityLeaseEpoch,
       },
       { dependencies },
     );
@@ -434,6 +457,10 @@ async function claimNextNode(options = {}) {
         leaseOwner: workerId,
         leaseToken,
         partitionOwnershipEpoch: partitionOwnership?.ownershipEpoch,
+        regionalOwnershipEpoch: partitionOwnership?.regionalOwnershipEpoch,
+        executionRegionId: regionalAuthority.context?.regionId,
+        authorityEpoch: regionalAuthority.context?.authorityEpoch,
+        authorityLeaseEpoch: regionalAuthority.context?.authorityLeaseEpoch,
         leaseExpiresAt: new Date(now.getTime() + leaseMs),
         heartbeatAt: now,
         claimedAt: now,
@@ -675,6 +702,11 @@ async function mappedInput(run, node, definition, context, dependencies) {
         sourceNodeKey: contractEdge.from,
         targetNodeKey: node.nodeKey,
         traceId: node.traceId,
+        executionRegionId: node.executionRegionId,
+        activeWriteRegionId: node.executionRegionId,
+        authorityEpoch: node.authorityEpoch,
+        authorityLeaseEpoch: node.authorityLeaseEpoch,
+        failoverPlanId: idOf(node.failoverPlanId) || undefined,
         requestId: node.requestId,
       },
     };
@@ -949,6 +981,9 @@ async function processClaimedNode(claim, options = {}) {
           attempt: node.attempt,
           capability: node.capability,
           operation: node.operation,
+          executionRegionId: node.executionRegionId,
+          authorityEpoch: node.authorityEpoch,
+          failoverPlanId: idOf(node.failoverPlanId) || undefined,
         },
         async onInvocationCreated(invocationId) {
           await dependencies.OrchestrationNodeRun.updateOne(
@@ -989,6 +1024,9 @@ async function processClaimedNode(claim, options = {}) {
           parentTraceId: node.parentTraceId,
           outputSchema: definition.outputSchema,
           retry: node.attempt > 1,
+          executionRegionId: node.executionRegionId,
+          authorityEpoch: node.authorityEpoch,
+          authorityLeaseEpoch: node.authorityLeaseEpoch,
           signal: controller.signal,
           orchestrationContext: runtimeActor.orchestrationContext,
           onInvocationCreated: runtimeActor.onInvocationCreated,

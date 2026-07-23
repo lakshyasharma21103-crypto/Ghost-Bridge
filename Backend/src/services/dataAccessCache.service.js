@@ -31,6 +31,7 @@ function createCacheKey(input = {}, options = {}) {
     'ghostbridge',
     `v${definition.serializationVersion}`,
     definition.namespace,
+    `g_${digest(input.regionId || 'local', secret)}`,
     `o_${digest(input.organizationId, secret)}`,
     `w_${digest(input.workspaceId, secret)}`,
     `e_${digest(`${input.entityType || 'entity'}:${input.entityId || 'none'}`, secret)}`,
@@ -392,7 +393,7 @@ class CacheAsideService {
       this.metrics.increment('cache_bypass', { cacheNamespace: definition.namespace });
       return { value: await loader(), cacheOutcome: 'cache_bypass' };
     }
-    const scopeBinding = digest(`${input.organizationId}:${input.workspaceId || 'none'}:${input.visibilityScope || 'default'}`, this.keySecret);
+    const scopeBinding = digest(`${input.regionId || 'local'}:${input.organizationId}:${input.workspaceId || 'none'}:${input.visibilityScope || 'default'}`, this.keySecret);
     const key = createCacheKey(input, { secret: this.keySecret });
     let cached;
     try {
@@ -431,6 +432,7 @@ class CacheAsideService {
         try {
           const tags = [
             ...(input.tags || definition.invalidationTags),
+            `region_${digest(input.regionId || 'local', this.keySecret)}`,
             tenantCacheTag(input.organizationId, undefined, this.keySecret),
             ...(input.workspaceId ? [tenantCacheTag(input.organizationId, input.workspaceId, this.keySecret)] : []),
           ];

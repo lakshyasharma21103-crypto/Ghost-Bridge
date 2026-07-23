@@ -87,6 +87,39 @@ function safeFinalProviderStatus(value) {
   return SAFE_FINAL_PROVIDER_STATUSES.has(value) ? value : undefined;
 }
 
+function safeResearchAttempts(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 2) return [];
+  return value
+    .filter(
+      (attempt) =>
+        Number.isInteger(attempt?.attemptNumber) &&
+        ['primary', 'fallback'].includes(attempt.profile) &&
+        Number.isInteger(attempt.configuredTimeoutMs) &&
+        Number.isInteger(attempt.durationMs) &&
+        safeFinalProviderStatus(attempt.providerStatus),
+    )
+    .map((attempt) => ({
+      attemptNumber: attempt.attemptNumber,
+      profile: attempt.profile,
+      configuredTimeoutMs: attempt.configuredTimeoutMs,
+      durationMs: attempt.durationMs,
+      providerHttpStatus: Number.isInteger(attempt.providerHttpStatus)
+        ? attempt.providerHttpStatus
+        : undefined,
+      providerStatus: attempt.providerStatus,
+      timeoutSource: attempt.timeoutSource,
+      retryable: attempt.retryable === true,
+      retryReason: attempt.retryReason,
+      retryDelayMs: attempt.retryDelayMs,
+      retryDelayCategory: attempt.retryDelayCategory,
+      remainingTotalBudgetMs: attempt.remainingTotalBudgetMs,
+      groundingMetadataCount: attempt.groundingMetadataCount,
+      groundingChunkCount: attempt.groundingChunkCount,
+      searchQueryCount: attempt.searchQueryCount,
+      citationAnnotationCount: attempt.citationAnnotationCount,
+    }));
+}
+
 function report(detail) {
   console.log(`PASS Gemini agent: ${detail}`);
 }
@@ -124,21 +157,30 @@ async function verify() {
   const traceId = `trace_${crypto.randomUUID()}`;
   const requestId = `req_${crypto.randomUUID()}`;
   try {
-    response = await fetch(`${baseUrl}/v1/research/invoke`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${runtimeToken}`,
-        'Content-Type': 'application/json',
-        'X-Trace-Id': traceId,
-        'X-Request-Id': requestId,
-      },
-      body: JSON.stringify({
-        topic: verificationResearchTopic(),
-      }),
-      signal: controller.signal,
-    });
-    text = await response.text();
+    try {
+      response = await fetch(`${baseUrl}/v1/research/invoke`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${runtimeToken}`,
+          'Content-Type': 'application/json',
+          'X-Trace-Id': traceId,
+          'X-Request-Id': requestId,
+        },
+        body: JSON.stringify({
+          topic: verificationResearchTopic(),
+        }),
+        signal: controller.signal,
+      });
+      text = await response.text();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(
+          `DIRECT_VERIFIER_TIMEOUT: outer verifier deadline exceeded after ${verifierTimeoutMs} ms.`,
+        );
+      }
+      throw error;
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -229,6 +271,7 @@ async function verify() {
             ? safeAttemptDurations(error.researchAttemptDurationsMs).join(', ')
             : '[unavailable]'
         }`,
+        `Research attempts: ${JSON.stringify(safeResearchAttempts(error.researchAttempts))}`,
         `Fallback research profile used: ${
           typeof error.fallbackResearchProfileUsed === 'boolean'
             ? error.fallbackResearchProfileUsed
@@ -290,6 +333,10 @@ async function verify() {
     'Research attempt durations are invalid.',
   );
   assert(
+    safeResearchAttempts(runtime.researchAttempts).length === runtime.researchAttemptCount,
+    'Safe per-attempt research diagnostics are missing.',
+  );
+  assert(
     typeof runtime.fallbackResearchProfileUsed === 'boolean' &&
       runtime.fallbackResearchProfileUsed === (runtime.researchAttemptCount === 2),
     'Fallback research profile reporting is invalid.',
@@ -323,6 +370,9 @@ async function verify() {
   report(`grounding fallback used ${runtime.groundingFallbackUsed}`);
   report(`final provider status ${runtime.finalProviderStatus}`);
   report(`genuine grounding metadata count ${runtime.groundingMetadataCount}`);
+  for (const attempt of safeResearchAttempts(runtime.researchAttempts)) {
+    report(`research attempt ${JSON.stringify(attempt)}`);
+  }
 }
 
 if (require.main === module) {

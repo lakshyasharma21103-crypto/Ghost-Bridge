@@ -90,6 +90,48 @@ const CacheInvalidationEvent = require('./CacheInvalidationEvent');
 const QueryPerformanceSample = require('./QueryPerformanceSample');
 const ProjectionMetadata = require('./ProjectionMetadata');
 const IndexDriftRecord = require('./IndexDriftRecord');
+const RegionalDeploymentConfiguration = require('./RegionalDeploymentConfiguration');
+const RegionalServiceRegistration = require('./RegionalServiceRegistration');
+const RegionalHealthSnapshot = require('./RegionalHealthSnapshot');
+const RegionalWriteAuthority = require('./RegionalWriteAuthority');
+const RegionalAuthorityTransition = require('./RegionalAuthorityTransition');
+const RegionalRoutingDecision = require('./RegionalRoutingDecision');
+const RegionalReplicationHealth = require('./RegionalReplicationHealth');
+const DisasterRecoveryPolicy = require('./DisasterRecoveryPolicy');
+const RegionalFailoverPlan = require('./RegionalFailoverPlan');
+const BackupManifest = require('./BackupManifest');
+const BackupIntegrityManifest = require('./BackupIntegrityManifest');
+const DisasterRecoveryRestore = require('./DisasterRecoveryRestore');
+const DisasterRecoveryDrill = require('./DisasterRecoveryDrill');
+const PerformanceLoadScenario = require('./PerformanceLoadScenario');
+const PerformanceBudgetPolicy = require('./PerformanceBudgetPolicy');
+const PerformanceBaseline = require('./PerformanceBaseline');
+const PerformanceEnvironmentFingerprint = require('./PerformanceEnvironmentFingerprint');
+const PerformanceTestRun = require('./PerformanceTestRun');
+const PerformanceMeasurementWindow = require('./PerformanceMeasurementWindow');
+const PerformanceFailureInjectionProfile = require('./PerformanceFailureInjectionProfile');
+const PerformanceFixtureSet = require('./PerformanceFixtureSet');
+const PerformanceRegressionEvaluation = require('./PerformanceRegressionEvaluation');
+const CapacityModel = require('./CapacityModel');
+const CapacityPlan = require('./CapacityPlan');
+const ReleaseCandidate = require('./ReleaseCandidate');
+const ReleaseManifest = require('./ReleaseManifest');
+const BuildProvenance = require('./BuildProvenance');
+const ReleaseArtifactManifest = require('./ReleaseArtifactManifest');
+const ReleaseCompatibilityMatrix = require('./ReleaseCompatibilityMatrix');
+const ReleaseMigrationPlan = require('./ReleaseMigrationPlan');
+const ReleaseMigrationCheckpoint = require('./ReleaseMigrationCheckpoint');
+const ReleaseFeatureFlag = require('./ReleaseFeatureFlag');
+const DeploymentTarget = require('./DeploymentTarget');
+const ReleaseRolloutPolicy = require('./ReleaseRolloutPolicy');
+const ReleaseRolloutPlan = require('./ReleaseRolloutPlan');
+const ReleaseEvidencePackage = require('./ReleaseEvidencePackage');
+const ReleaseManualGate = require('./ReleaseManualGate');
+const ReleaseWaiver = require('./ReleaseWaiver');
+const ReleaseFreeze = require('./ReleaseFreeze');
+const ReleaseOperationalOwnership = require('./ReleaseOperationalOwnership');
+const ReleaseObservationWindow = require('./ReleaseObservationWindow');
+const stagingPilotModels = require('./stagingPilotModels');
 
 module.exports = {
   Partner,
@@ -184,4 +226,46 @@ module.exports = {
   QueryPerformanceSample,
   ProjectionMetadata,
   IndexDriftRecord,
+  RegionalDeploymentConfiguration,
+  RegionalServiceRegistration,
+  RegionalHealthSnapshot,
+  RegionalWriteAuthority,
+  RegionalAuthorityTransition,
+  RegionalRoutingDecision,
+  RegionalReplicationHealth,
+  DisasterRecoveryPolicy,
+  RegionalFailoverPlan,
+  BackupManifest,
+  BackupIntegrityManifest,
+  DisasterRecoveryRestore,
+  DisasterRecoveryDrill,
+  PerformanceLoadScenario,
+  PerformanceBudgetPolicy,
+  PerformanceBaseline,
+  PerformanceEnvironmentFingerprint,
+  PerformanceTestRun,
+  PerformanceMeasurementWindow,
+  PerformanceFailureInjectionProfile,
+  PerformanceFixtureSet,
+  PerformanceRegressionEvaluation,
+  CapacityModel,
+  CapacityPlan,
+  ReleaseCandidate,
+  ReleaseManifest,
+  BuildProvenance,
+  ReleaseArtifactManifest,
+  ReleaseCompatibilityMatrix,
+  ReleaseMigrationPlan,
+  ReleaseMigrationCheckpoint,
+  ReleaseFeatureFlag,
+  DeploymentTarget,
+  ReleaseRolloutPolicy,
+  ReleaseRolloutPlan,
+  ReleaseEvidencePackage,
+  ReleaseManualGate,
+  ReleaseWaiver,
+  ReleaseFreeze,
+  ReleaseOperationalOwnership,
+  ReleaseObservationWindow,
+  ...stagingPilotModels,
 };

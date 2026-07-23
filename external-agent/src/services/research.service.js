@@ -16,6 +16,37 @@ const providerResultSchema = z
         groundingFallbackUsed: z.boolean(),
         finalProviderStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
         groundingMetadataCount: z.number().int().nonnegative(),
+        attempts: z
+          .array(
+            z
+              .object({
+                attemptNumber: z.number().int().min(1).max(2),
+                profile: z.enum(['primary', 'fallback']),
+                configuredTimeoutMs: z.number().int().positive(),
+                durationMs: z.number().int().nonnegative(),
+                providerHttpStatus: z.number().int().min(100).max(599).optional(),
+                providerStatus: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+                timeoutSource: z.enum(['none', 'local', 'provider', 'overall']),
+                retryable: z.boolean(),
+                retryReason: z.string().regex(/^[A-Z][A-Z0-9_]{1,63}$/),
+                retryDelayMs: z.number().int().nonnegative(),
+                retryDelayCategory: z.enum([
+                  'none',
+                  'exponential_jitter',
+                  'retry_after',
+                  'grounding_fallback',
+                ]),
+                remainingTotalBudgetMs: z.number().int().nonnegative(),
+                groundingMetadataCount: z.number().int().nonnegative(),
+                groundingChunkCount: z.number().int().nonnegative(),
+                searchQueryCount: z.number().int().nonnegative(),
+                citationAnnotationCount: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(2)
+          .optional(),
       })
       .strict(),
   })
@@ -75,6 +106,9 @@ class ResearchService {
           groundingFallbackUsed: result.researchDiagnostics.groundingFallbackUsed,
           finalProviderStatus: result.researchDiagnostics.finalProviderStatus,
           groundingMetadataCount: result.researchDiagnostics.groundingMetadataCount,
+          ...(result.researchDiagnostics.attempts
+            ? { researchAttempts: result.researchDiagnostics.attempts }
+            : {}),
         },
       };
     });

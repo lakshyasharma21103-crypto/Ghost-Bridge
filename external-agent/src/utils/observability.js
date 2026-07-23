@@ -10,6 +10,7 @@ const SAFE_RECOVERY_REASONS = new Set([
 const SAFE_TIMEOUT_REASONS = new Set([
   'LOCAL_PROVIDER_DEADLINE_EXCEEDED',
   'GEMINI_DEADLINE_EXCEEDED',
+  'OVERALL_RESEARCH_DEADLINE_EXCEEDED',
 ]);
 const SAFE_LIFECYCLE_REASONS = Object.freeze({
   REQUEST_CANCELLED: 'CLIENT_DISCONNECTED',
@@ -22,7 +23,8 @@ function definedFields(value) {
 
 function safeErrorFields(error) {
   const timeoutReason =
-    error?.code === 'GEMINI_REQUEST_TIMEOUT' &&
+    (error?.code === 'GEMINI_REQUEST_TIMEOUT' ||
+      error?.code === 'GEMINI_RESEARCH_BUDGET_EXHAUSTED') &&
     SAFE_TIMEOUT_REASONS.has(error?.timeoutReason || error?.reason)
       ? error.timeoutReason || error.reason
       : undefined;
@@ -39,10 +41,12 @@ function safeErrorFields(error) {
     providerAttemptCount: error?.providerAttemptCount,
     providerMaxAttempts: error?.providerMaxAttempts,
     retryDelayMs: error?.retryDelayMs,
+    retryDelayCategory: error?.retryDelayCategory,
     retryReason: error?.retryReason,
     retryBudgetExhausted: error?.retryBudgetExhausted === true ? true : undefined,
     researchAttemptCount: error?.researchAttemptCount,
     researchAttemptDurationsMs: error?.researchAttemptDurationsMs,
+    researchAttempts: error?.researchAttempts,
     fallbackResearchProfileUsed:
       typeof error?.fallbackResearchProfileUsed === 'boolean'
         ? error.fallbackResearchProfileUsed

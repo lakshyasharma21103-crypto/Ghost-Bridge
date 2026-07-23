@@ -15,8 +15,16 @@ const {
 } = require('./services/interAgentDelegation.service');
 const { ensureProductionScaleIndexes } = require('./services/productionScaleOperations.service');
 const dataAccessPerformance = require('./services/dataAccessPerformance.service');
+const { ensureReleaseReadinessIndexes } = require('./services/releaseReadiness.service');
+const { ensureStagingPilotIndexes } = require('./services/stagingPilot.service');
+const { assertStartupConfiguration } = require('./config/productionProfile');
 
 async function start(options = {}) {
+  if (env.NODE_ENV === 'production') {
+    assertStartupConfiguration(options.environment || process.env, {
+      defaultEnvironment: env.NODE_ENV,
+    });
+  }
   const activeLogger = options.logger || logger;
   const lifecycle = options.lifecycle || serviceLifecycle;
   const connect = options.connectDatabase || connectDatabase;
@@ -157,6 +165,8 @@ async function start(options = {}) {
       await ensureAgentSelectionIndexes();
       await ensureInterAgentDelegationIndexes();
       await ensureProductionScaleIndexes();
+      await ensureReleaseReadinessIndexes();
+      await ensureStagingPilotIndexes();
       dataAccessPerformance.timeoutHierarchy();
       await dataAccessPerformance.recordIndexDriftSnapshot();
       lifecycle.markReady();
