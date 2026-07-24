@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/request-proof.schema.json",
+  "title": "Ghost Bridge request-integrity proof",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["descriptor", "proof"],
+  "properties": {
+    "descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "method", "path", "contentDigest", "audience", "connectionId", "protocolVersion", "invocationId", "messageId", "issuedAt", "expiresAt", "nonce"],
+      "properties": {
+        "profile": { "const": "ghostbridge-http-signature/0.1-draft" },
+        "method": { "type": "string", "pattern": "^[A-Z]+$", "maxLength": 20 },
+        "path": { "type": "string", "pattern": "^/", "maxLength": 2000 },
+        "contentDigest": { "type": "string", "minLength": 32, "maxLength": 100 },
+        "audience": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "connectionId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+        "protocolVersion": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/protocolVersion" },
+        "invocationId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+        "messageId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+        "issuedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+        "expiresAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+        "nonce": { "type": "string", "minLength": 16, "maxLength": 500 },
+        "organizationScope": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "workspaceScope": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "proof": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/proof.schema.json" }
+  }
+}

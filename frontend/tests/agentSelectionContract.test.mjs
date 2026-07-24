@@ -11,7 +11,7 @@ test('console exposes discovery, selection policy and decision routes', () => {
   const app = read('src/App.jsx');
   for (const route of ['/agent-discovery', '/selection-policies', '/selection-decisions']) assert.match(app, new RegExp(route));
   const sidebar = read('src/components/Sidebar.jsx');
-  for (const label of ['Agent Discovery', 'Selection Policies', 'Selection Decisions']) assert.match(sidebar, new RegExp(label));
+  for (const label of ['Native Agents', 'Selection Policies', 'Selection Decisions']) assert.match(sidebar, new RegExp(label));
 });
 
 test('agent discovery exposes bounded safe filters and columns', () => {

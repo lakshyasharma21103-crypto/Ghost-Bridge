@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/data-contract.schema.json",
+  "title": "Data Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractKey", "contractVersion", "direction", "allowedFields", "requiredFields", "prohibitedFields", "acceptedDataClasses", "prohibitedDataClasses", "maximumPayloadBytes", "maximumStringLength", "maximumArrayLength", "maximumObjectDepth", "retentionDeclaration", "redactionRequirements", "transformationProfileReferences", "status"],
+  "properties": {
+    "contractKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "contractVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "direction": { "enum": ["input", "output", "bidirectional"] },
+    "allowedFields": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "requiredFields": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "prohibitedFields": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "acceptedDataClasses": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "prohibitedDataClasses": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "maximumPayloadBytes": { "type": "integer", "minimum": 1, "maximum": 16777216 },
+    "maximumStringLength": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+    "maximumArrayLength": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "maximumObjectDepth": { "type": "integer", "minimum": 1, "maximum": 64 },
+    "retentionDeclaration": { "type": "string", "maxLength": 500 },
+    "redactionRequirements": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "transformationProfileReferences": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "status": { "enum": ["draft", "active", "deprecated", "revoked"] }
+  }
+}

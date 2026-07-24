@@ -1,0 +1,21 @@
+{
+  "name": "@ghostbridge/example-flowdesk-host",
+  "private": true,
+  "version": "0.1.0-draft",
+  "main": "src/index.js",
+  "exports": {
+    ".": {
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node --check src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@ghostbridge/native-client": "0.1.0-draft",
+    "@ghostbridge/protocol-core": "0.1.0-draft",
+    "@ghostbridge/trust": "0.1.0-draft"
+  }
+}

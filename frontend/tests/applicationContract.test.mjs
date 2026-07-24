@@ -17,10 +17,11 @@ function sourceFiles(directory) {
     .map((entry) => join(directory, entry));
 }
 
-test('the dashboard route map includes every Agent Passport Runtime Gateway page', () => {
+test('the public protocol homepage and Platform Console preserve the enterprise route map', () => {
   const app = read('src/App.jsx');
   const routes = [
-    ['/', 'Landing'],
+    ['/', 'ProtocolHome'],
+    ['/console', 'Landing'],
     ['/partner', 'PartnerDashboard'],
     ['/operations', 'Operations'],
     ['/passports/new', 'CreatePassport'],
@@ -230,13 +231,12 @@ test('Developer Sandbox is backend-environment gated and loads seeded sandboxes 
   assert.doesNotMatch(sandbox, /localStorage|sessionStorage|document\.cookie/);
 });
 
-test('frontend source contains no legacy product references', () => {
+test('frontend source presents Ghost Bridge as the primary product language', () => {
   const source = sourceFiles(sourceRoot)
     .map((file) => readFileSync(file, 'utf8'))
     .join('\n');
 
-  assert.doesNotMatch(
-    source,
-    /Ghost Bridge|GhostBridge|agent network|workflow builder|workflow canvas|\bn8n\b/i,
-  );
+  assert.match(source, /Ghost Bridge Protocol/);
+  assert.match(source, /install external AI agents into any compatible application/i);
+  assert.doesNotMatch(source, /workflow builder|workflow canvas|\bn8n\b/i);
 });

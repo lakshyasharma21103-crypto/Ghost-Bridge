@@ -1,5 +1,5 @@
 {
-  "name": "agent-passport-runtime-gateway",
+  "name": "ghost-bridge",
   "private": true,
   "version": "0.1.0",
   "engines": {
@@ -8,7 +8,12 @@
   "workspaces": [
     "frontend",
     "backend",
-    "external-agent"
+    "external-agent",
+    "packages/*",
+    "protocol/examples/invoice-agent",
+    "protocol/examples/accounting-agent",
+    "protocol/examples/codeforge-agent-provider",
+    "protocol/examples/flowdesk-host"
   ],
   "scripts": {
     "ports:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-dev-ports.ps1",
@@ -16,10 +21,10 @@
     "dev:worker": "npm run dev:worker --workspace backend",
     "dev:external-agent": "npm run dev --workspace external-agent",
     "dev:all": "concurrently -n FRONTEND,BACKEND,EXTERNAL_AGENT \"npm run dev --workspace frontend\" \"npm run dev --workspace backend\" \"npm run dev --workspace external-agent\"",
-    "build": "npm run build --workspace backend && npm run build --workspace frontend && npm run build --workspace external-agent",
+    "build": "npm run generate:docs-index && npm run build --workspace @ghostbridge/protocol-core && npm run build --workspace @ghostbridge/trust && npm run build --workspace @ghostbridge/issuer && npm run build --workspace @ghostbridge/native-client && npm run build --workspace @ghostbridge/native-agent && npm run build --workspace @ghostbridge/conformance && npm run build --workspace @ghostbridge/inspector && npm run build --workspace @ghostbridge/example-invoice-agent && npm run build --workspace @ghostbridge/example-accounting-agent && npm run build --workspace @ghostbridge/example-codeforge-provider && npm run build --workspace @ghostbridge/example-flowdesk-host && npm run build --workspace backend && npm run build --workspace frontend && npm run build --workspace external-agent",
     "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend && npm run typecheck --workspace external-agent",
     "lint": "npm run lint --workspace backend && npm run lint --workspace frontend && npm run lint --workspace external-agent",
-    "test": "npm run test --workspace backend && npm run test --workspace frontend && npm run test --workspace external-agent",
+    "test": "npm run test --workspace @ghostbridge/protocol-core && npm run test --workspace @ghostbridge/trust && npm run test --workspace @ghostbridge/issuer && npm run test --workspace @ghostbridge/native-client && npm run test --workspace @ghostbridge/native-agent && npm run test --workspace @ghostbridge/conformance && npm run test --workspace @ghostbridge/inspector && npm run test --workspace @ghostbridge/example-invoice-agent && npm run test --workspace @ghostbridge/example-accounting-agent && npm run test --workspace @ghostbridge/example-codeforge-provider && npm run test --workspace @ghostbridge/example-flowdesk-host && npm run test --workspace backend && npm run test --workspace frontend && npm run test --workspace external-agent",
     "test:external-agent": "npm run test --workspace external-agent",
     "worker": "npm run worker --workspace backend",
     "seed:demo": "npm run seed:demo --workspace backend",
@@ -47,6 +52,24 @@
     "verify:staging-pilot-readiness": "npm run verify:staging-pilot-readiness --workspace backend",
     "verify:pilot-analytics-adoption": "npm run verify:pilot-analytics-adoption --workspace backend",
     "verify:ga-commercial-readiness": "npm run verify:ga-commercial-readiness --workspace backend",
+    "verify:ghostbridge-native-protocol": "node scripts/verifyGhostBridgeNativeProtocol.js",
+    "generate:docs-index": "node scripts/generateGhostBridgeDocsIndex.mjs",
+    "dev:ghostbridge-inspector": "npm run dev --workspace @ghostbridge/inspector --",
+    "verify:ghostbridge-sdk": "node scripts/verifyGhostBridgeSdk.js && tsc -p protocol/examples/typescript-sdk/tsconfig.json --noEmit",
+    "verify:ghostbridge-docs": "npm run generate:docs-index && node scripts/verifyGhostBridgeDocs.mjs",
+    "verify:ghostbridge-inspector": "node scripts/verifyGhostBridgeInspector.js",
+    "verify:phase-15b-cleanup": "node scripts/verifyPhase15bCleanup.mjs",
+    "verify:ghostbridge-phase-15b": "node scripts/verifyGhostBridgePhase15b.js",
+    "verify:universal-agent-compatibility": "node scripts/verifyUniversalAgentCompatibility.js",
+    "verify:governed-host-agent-compatibility": "node scripts/verifyGovernedHostAgentCompatibility.js",
+    "verify:phase-15b1-realignment": "node scripts/verifyPhase15b1Realignment.mjs",
+    "verify:phase-15b-realignment": "npm run verify:universal-agent-compatibility && npm run verify:governed-host-agent-compatibility && npm run verify:phase-15b1-realignment",
+    "verify:ghostbridge-issuer-trust": "node scripts/verifyGhostBridgeIssuerTrust.js",
+    "verify:ghostbridge-key-rotation": "node scripts/verifyGhostBridgeKeyRotation.js",
+    "verify:ghostbridge-revocation-distribution": "node scripts/verifyGhostBridgeRevocationDistribution.js",
+    "verify:ghostbridge-request-integrity": "node scripts/verifyGhostBridgeRequestIntegrity.js",
+    "verify:cross-company-trust": "node scripts/verifyCrossCompanyTrust.js",
+    "verify:ghostbridge-phase-15c": "node scripts/verifyGhostBridgePhase15c.js",
     "perf:local-load": "npm run perf:local-load --workspace backend",
     "perf:local-spike": "npm run perf:local-spike --workspace backend",
     "perf:local-stress": "npm run perf:local-stress --workspace backend",
@@ -70,12 +93,15 @@
     "migrate:staging-pilot": "npm run migrate:staging-pilot --workspace backend",
     "migrate:pilot-analytics": "npm run migrate:pilot-analytics --workspace backend",
     "migrate:ga-commercial": "npm run migrate:ga-commercial --workspace backend",
+    "migrate:ghostbridge-trust": "npm run migrate:ghostbridge-trust --workspace backend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test && npm run build"
   },
   "devDependencies": {
+    "@types/node": "^24.1.0",
     "concurrently": "^9.2.0",
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
   }
 }

@@ -1,0 +1,26 @@
+{
+  "name": "@ghostbridge/native-agent",
+  "version": "0.1.0-draft",
+  "private": true,
+  "description": "Production draft runtime SDK for Ghost Bridge Native agents.",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node --check src/index.js",
+    "typecheck": "node --check src/index.js",
+    "lint": "node --check src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@ghostbridge/protocol-core": "0.1.0-draft",
+    "@ghostbridge/trust": "0.1.0-draft"
+  },
+  "license": "UNLICENSED"
+}

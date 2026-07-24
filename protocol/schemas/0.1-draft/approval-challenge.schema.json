@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/approval-challenge.schema.json",
+  "title": "Approval Challenge",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["challengeId", "invocationId", "organizationScope", "actionKey", "safeSummary", "requiredRoleCategories", "approvalLimits", "expiresAt", "requestedBy", "policyDecisionReference", "status"],
+  "properties": {
+    "challengeId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "invocationId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "organizationScope": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "workspaceScope": { "type": "string", "maxLength": 200 },
+    "actionKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "safeSummary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "requiredRoleCategories": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "approvalLimits": { "type": "object", "maxProperties": 50 },
+    "expiresAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "requestedBy": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "policyDecisionReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "status": { "enum": ["pending", "approved", "rejected", "expired", "cancelled"] }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/revocation-entry.schema.json",
+  "title": "Ghost Bridge revocation entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["subjectType", "subjectReference", "status", "reasonCode", "effectiveAt"],
+  "properties": {
+    "subjectType": { "enum": ["issuer", "issuer_key", "agent_execution_key", "passport", "capability_manifest", "capability", "install_grant", "connection_offer", "connection", "receipt_profile"] },
+    "subjectReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "subjectDigest": { "type": "string", "minLength": 32, "maxLength": 100 },
+    "status": { "enum": ["active", "suspended", "revoked", "compromised", "retired", "replaced"] },
+    "reasonCode": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "effectiveAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "expiresAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "replacementReference": { "type": "string", "maxLength": 500 },
+    "compromiseTime": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" }
+  }
+}

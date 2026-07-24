@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/capability.schema.json",
+  "title": "Capability Contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["capabilityKey", "capabilityVersion", "displayName", "safeDescription", "inputContractReference", "outputContractReference", "acceptedDataClasses", "producedDataClasses", "prohibitedDataClasses", "riskCategory", "sideEffectCategory", "idempotencySupport", "asynchronousSupport", "cancellationSupport", "requiredPermissions", "approvalRequirement", "delegationPolicy", "timeoutBounds", "receiptRequirement", "status"],
+  "properties": {
+    "capabilityKey": { "type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,199}$" },
+    "capabilityVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "safeDescription": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "inputContractReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "outputContractReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "inputSchema": { "type": "object", "maxProperties": 100, "additionalProperties": true },
+    "outputSchema": { "type": "object", "maxProperties": 100, "additionalProperties": true },
+    "acceptedDataClasses": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "producedDataClasses": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "prohibitedDataClasses": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "riskCategory": { "enum": ["low", "moderate", "high", "critical", "unknown"] },
+    "sideEffectCategory": { "enum": ["none", "read", "reversible_write", "irreversible_write", "external_action", "unknown"] },
+    "idempotencySupport": { "enum": ["none", "optional", "required"] },
+    "asynchronousSupport": { "type": "boolean" },
+    "cancellationSupport": { "type": "boolean" },
+    "requiredPermissions": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "approvalRequirement": { "enum": ["none", "conditional", "required"] },
+    "delegationPolicy": { "type": "object", "maxProperties": 20, "additionalProperties": true },
+    "timeoutBounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimumMs", "maximumMs"],
+      "properties": {
+        "minimumMs": { "type": "integer", "minimum": 1 },
+        "maximumMs": { "type": "integer", "minimum": 1, "maximum": 86400000 }
+      }
+    },
+    "receiptRequirement": { "enum": ["none", "optional", "required"] },
+    "status": { "enum": ["active", "deprecated", "suspended", "revoked"] },
+    "deprecation": { "type": "object", "additionalProperties": true },
+    "extensions": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/extensions" }
+  }
+}

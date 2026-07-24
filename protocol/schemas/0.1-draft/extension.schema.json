@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/extension.schema.json",
+  "title": "Ghost Bridge Native extension declaration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["identifier", "version", "status", "required"],
+  "properties": {
+    "identifier": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\/[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$"
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[a-z0-9.-]+)?$"
+    },
+    "status": {
+      "enum": ["experimental", "candidate", "official", "deprecated", "removed"]
+    },
+    "required": { "type": "boolean" },
+    "profiles": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "enum": [
+          "ghostbridge.core",
+          "ghostbridge.governed-execution",
+          "ghostbridge.agent-coordination.experimental"
+        ]
+      },
+      "uniqueItems": true
+    },
+    "documentationReference": { "type": "string", "maxLength": 500 },
+    "schemaReference": { "type": "string", "maxLength": 500 },
+    "securityConsiderations": { "type": "string", "maxLength": 4000 }
+  }
+}

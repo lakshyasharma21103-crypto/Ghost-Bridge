@@ -1,0 +1,30 @@
+{
+  "name": "@ghostbridge/protocol-core",
+  "version": "0.1.0-draft",
+  "private": true,
+  "description": "Portable Ghost Bridge Native protocol types, validators, schemas, and wire utilities.",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "../../protocol/schemas/0.1-draft"
+  ],
+  "scripts": {
+    "build": "node --check src/index.js",
+    "typecheck": "node --check src/index.js",
+    "lint": "node --check src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "license": "UNLICENSED"
+}

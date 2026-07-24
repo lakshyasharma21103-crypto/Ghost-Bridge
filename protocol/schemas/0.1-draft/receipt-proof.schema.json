@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/receipt-proof.schema.json",
+  "title": "Execution Receipt proof projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receiptId", "agentExecutionKeyId", "passportId", "passportVersion", "trustProfileVersion", "proof"],
+  "properties": {
+    "receiptId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "agentExecutionKeyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._~-]+$" },
+    "passportId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "passportVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "trustProfileVersion": { "const": "ghostbridge-trust/0.1-draft" },
+    "proof": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/proof.schema.json" }
+  }
+}

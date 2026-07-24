@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/approval-decision.schema.json",
+  "title": "Approval Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["challengeId", "decisionId", "decision", "approvedLimits", "decidedBy", "decidedAt", "safeReasonCode"],
+  "properties": {
+    "challengeId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "decisionId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "decision": { "enum": ["approved", "rejected", "more_information_required", "expired", "cancelled"] },
+    "approvedLimits": { "type": "object", "maxProperties": 50 },
+    "decidedBy": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "decidedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "safeReasonCode": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "proof": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/proof" }
+  }
+}

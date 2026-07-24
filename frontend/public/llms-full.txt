@@ -1,0 +1,3198 @@
+# Ghost Bridge public documentation
+---
+
+---
+ghostbridge/0.1-draft is experimental. Private Console and commercial administration content are excluded.
+---
+
+---
+# What is Ghost Bridge?
+
+The universal Host Application to External Agent protocol.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/get-started/what-is-ghost-bridge
+
+## The primary model
+
+A provider publishes one external Native Agent. A compatible Host Application verifies its Passport, previews protocol-profile and extension compatibility, negotiates authentication, installs approved capabilities, invokes them, observes Tasks and Receipts, and can revoke the connection.
+
+**Diagram: Universal relationship**
+
+- Agent Provider → External Native Agent
+- opaque Install Grant → Host Application
+- Host Application → Invocation → External Agent
+- External Agent → Task and Receipt → Host Application
+
+## Protocol profiles
+
+| Profile | Status | Conformance |
+| --- | --- | --- |
+| Core | Active | C1 discovery and identity; C2 installation and authentication; C3 execution lifecycle |
+| Governed Execution | Active | G1 scoped access; G2 policy, data, and approval; G3 durable auditable execution |
+| Agent Coordination | Experimental/Deferred | Not required for Core or Governed compatibility |
+
+## Why it matters
+
+- Hosts integrate the protocol once instead of shipping provider-specific adapters.
+- Users supply an opaque Install Grant, not a remote endpoint or credential.
+- Providers publish bounded capability contracts and remain independent of host internals.
+- Compatibility failures are visible before installation.
+
+## Protocol status
+
+> **Experimental protocol (warning)**
+> ghostbridge/0.1-draft is a Draft protocol revision. It is not a production-stability claim.
+
+| Area | Current state |
+| --- | --- |
+| Protocol | Experimental |
+| TypeScript SDK | Phase 15B development |
+| Independent implementation | Not completed |
+| Registry | Preview |
+| External security review | Not completed |
+
+---
+# Quickstart: add an external agent
+
+Run the independent CodeForge Provider and FlowDesk Host compatibility fixture.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/get-started/quickstart
+
+## Prerequisites
+
+- Node.js 20 or newer.
+- A repository checkout.
+- No database, provider credential, paid API, or external service.
+
+## Run the universal flow
+
+```powershell
+npm.cmd install
+npm.cmd run verify:universal-agent-compatibility
+```
+
+```bash
+npm install
+npm run verify:universal-agent-compatibility
+```
+
+## What the verifier proves
+
+1. CodeForge publishes a Passport, Core profile, authentication modes, and create-app capability.
+2. FlowDesk resolves the opaque grant without a provider adapter or user-entered endpoint.
+3. The host previews compatibility and installs only approved capabilities.
+4. The host invokes the agent, observes a durable Task, verifies its Receipt, and revokes the connection.
+
+## Next
+
+- Build an Agent.
+- Build a Host.
+- Add Governed Execution when enterprise controls are required.
+
+---
+# Add an external agent
+
+The ordinary Host Application installation journey.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/get-started/add-external-agent
+
+## Installation journey
+
+1. Paste the opaque Install Grant supplied by the agent provider.
+2. Choose the organization and, when applicable, workspace.
+3. Review verified identity, profiles, authentication, extensions, and requested capabilities.
+4. Approve only the capabilities the host policy permits.
+5. Complete negotiated authentication and create the Agent Connection.
+
+## What users never enter
+
+- Remote agent endpoints.
+- Provider access tokens.
+- Provider-specific adapter settings.
+- Private runtime credentials.
+
+---
+# Core versus Governed Execution
+
+Choose the smallest active profile that satisfies the integration.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/get-started/core-vs-governed
+
+## Comparison
+
+| Concern | Core | Governed Execution |
+| --- | --- | --- |
+| Universal installation | Required | Includes Core |
+| Capability invocation | Required | Required |
+| Organization/workspace policy | Basic scope | Enforced controls |
+| Data Contracts and approvals | Optional extension behavior | G2 requirement |
+| Idempotent durable audit trail | Core task and receipt | G3 requirement |
+| Agent-to-agent delegation | Not required | Not required |
+
+---
+# Architecture
+
+Participants, trust boundaries, active profiles, and the universal host-agent flow.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/learn/architecture
+
+## Primary participants
+
+| Participant | Responsibility |
+| --- | --- |
+| Agent Provider | Publishes and operates an external Native Agent. |
+| External Native Agent | Declares identity, profiles, authentication, extensions, and capabilities. |
+| Host Application | Resolves grants, evaluates compatibility, authenticates, installs, invokes, and revokes. |
+| Organization and Workspace | Bound the installed relationship and execution. |
+| Registry | Optional public metadata discovery; never a runtime credential store. |
+
+## Universal host-agent flow
+
+**Diagram: Direct integration**
+
+- Provider publishes Agent
+- Host resolves opaque grant
+- Host verifies Passport and compatibility
+- Host installs approved capabilities
+- Host invokes Agent
+- Host verifies Task and Receipt
+- Host revokes Connection
+
+## Protocol profiles
+
+- Core is the required universal baseline.
+- Governed Execution adds policy, data, approval, idempotency, and audit controls.
+- Agent Coordination is Experimental/Deferred and never implied by Core or Governed Execution.
+
+## Trust boundaries
+
+Each side independently validates remote data. The resolver is host infrastructure, the runtime target is not shown in preview, and authentication material is never placed in the public protocol model.
+
+## Transport and storage
+
+The current binding is HTTPS/JSON. The protocol does not require a database, queue, cloud, model provider, commercial platform, or MCP transport.
+
+## Revocation
+
+Connection revocation is authoritative: subsequent invocations fail closed.
+
+## Experimental coordination
+
+Multi-agent delegation remains a separate future profile and does not sit on the critical path shown above.
+
+---
+# Participants
+
+Architecture and lifecycle for universal Host Application to External Agent integration.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/learn/participants
+
+## Overview
+
+Participants is part of Ghost Bridge Native 0.1-draft. Architecture and lifecycle for universal Host Application to External Agent integration.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Protocol Layers
+
+Architecture and lifecycle for universal Host Application to External Agent integration.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/learn/protocol-layers
+
+## Overview
+
+Protocol Layers is part of Ghost Bridge Native 0.1-draft. Architecture and lifecycle for universal Host Application to External Agent integration.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Native protocol lifecycle
+
+The complete 16-step lifecycle from discovery through authoritative revocation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/learn/lifecycle
+
+## Lifecycle matrix
+
+| Step | Participants and message | Security check | SDK / Inspector |
+| --- | --- | --- | --- |
+| 1. Discovery | Client → Discovery Document | Bounded public endpoints | discover / Connection |
+| 2. Version negotiation | Client ↔ Agent supported versions | No silent high-impact downgrade | negotiateVersion / Connection |
+| 3. Passport verification | Issuer, Client, Agent Passport | Issuer, audience, expiry, keys, revocation | getPassport / Passport |
+| 4. Capability discovery | Client → bounded catalog | Scope filtering before ranking | searchCapabilities / Capabilities |
+| 5. Grant resolution | Client → Install Grant resolution | Entropy, expiry, scope, one-time state | resolveInstallGrant / Installation |
+| 6. Connection | Client redeems grant | Atomic one-time redemption | install / Installation |
+| 7. Authorization | Subject, policy, Organization, Workspace | RBAC, policy, revocation | invoke / Invocation |
+| 8. Acceptance | Invocation Envelope | Schema, version, deadline, idempotency | invoke / Messages |
+| 9. Task creation | Agent → Execution Task | Valid state transition | getTask / Tasks |
+| 10. Delegation | Delegator → Delegation Grant | No authority expansion | invoke / Delegation |
+| 11. Data enforcement | Projected payload | Fields, classes, size, redaction | projectDataContract / Data Contract |
+| 12. Approval | Challenge → Decision | Exact action, limits, expiry, single use | submitApprovalDecision / Approval |
+| 13. Execution | Agent capability handler | Timeout, cancellation, safe context | invokeAndWait / Tasks |
+| 14. Receipt | Agent → Execution Receipt | Digest, version, scope, proof | verifyReceipt / Receipts |
+| 15. Recovery | Client or Operator | Idempotency and safe retry classification | cancelTask / Tasks |
+| 16. Revocation | Issuer, owner, resolver | Authoritative invalidation and cache refresh | checkRevocation / Revocation |
+
+## Failure behavior
+
+Every step fails with a bounded standard error. Errors contain safe correlation identifiers but no remote stack, token, credential, raw policy, or database record.
+
+---
+# Protocol and Platform
+
+Architecture and lifecycle for universal Host Application to External Agent integration.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/learn/protocol-and-platform
+
+## Overview
+
+Protocol and Platform is part of Ghost Bridge Native 0.1-draft. Architecture and lifecycle for universal Host Application to External Agent integration.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Versioning
+
+Protocol revisions, SDK package versions, documentation revisions, and extension versions are independent.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/learn/versioning
+
+## Three version domains
+
+| Domain | Meaning |
+| --- | --- |
+| Protocol revision | Wire compatibility; currently ghostbridge/0.1-draft. |
+| SDK package version | Package semantic version; does not imply protocol stability. |
+| Documentation revision | Build identity for this documentation set. |
+
+## Negotiation
+
+- Both parties advertise supported protocol revisions.
+- One mutually supported revision is selected.
+- Unsupported revisions fail safely.
+- Signed or high-impact messages do not silently downgrade.
+- Extensions negotiate separately.
+
+## Current status
+
+> **Experimental protocol (warning)**
+> ghostbridge/0.1-draft is a Draft protocol revision. It is not a production-stability claim.
+
+| Area | Current state |
+| --- | --- |
+| Protocol | Experimental |
+| TypeScript SDK | Phase 15B development |
+| Independent implementation | Not completed |
+| Registry | Preview |
+| External security review | Not completed |
+
+---
+# Build a Native Agent
+
+Build a deterministic Invoice Summary Agent with typed capabilities, Tasks, and Receipts.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/build-agent
+
+## Create the project
+
+```powershell
+New-Item -ItemType Directory invoice-summary-agent
+Set-Location invoice-summary-agent
+npm.cmd init -y
+npm.cmd install ..\packages\ghostbridge-native-agent
+```
+
+```bash
+mkdir invoice-summary-agent && cd invoice-summary-agent
+npm init -y
+npm install ../packages/ghostbridge-native-agent
+```
+
+## Create the Agent Passport
+
+Create an active, expiring Passport containing only public declarations. Never place credentials or runtime bearer tokens in a Passport.
+
+## Define Data Contracts and capabilities
+
+```typescript
+import { createGhostBridgeAgent } from "@ghostbridge/native-agent";
+
+const agent = createGhostBridgeAgent({ passport });
+agent.registerCapability("invoice.extract", {
+  inputContract: { type: "object", required: ["text"] },
+  outputContract: { type: "object", required: ["invoiceNumber", "total"] },
+  capabilityVersion: "1.0.0",
+  riskCategory: "low",
+  sideEffectCategory: "none",
+  idempotencyRequirement: "optional",
+  receiptProfile: "standard",
+  handler: async ({ input, context }) => ({
+    outcome: "completed",
+    output: extractInvoice(input.text, context.signal),
+  }),
+});
+agent.registerCapability("invoice.validate", {
+  inputContract: { type: "object", required: ["invoiceNumber", "total"] },
+  outputContract: { type: "object", required: ["valid"] },
+  capabilityVersion: "1.0.0",
+  riskCategory: "moderate",
+  sideEffectCategory: "none",
+  handler: async ({ input }) => ({ outcome: "completed", output: { valid: Boolean(input.invoiceNumber) } }),
+});
+await agent.listen({ host: "127.0.0.1", port: 8787 });
+```
+
+## Inspect and test
+
+1. Inspect discovery and the public Passport.
+2. Search the bounded capability catalog.
+3. Resolve and redeem a synthetic one-time grant.
+4. Invoke invoice.extract and inspect its Task.
+5. Verify its Receipt.
+6. Send invalid input and confirm validation fails.
+7. Test expired Passport and grant fixtures.
+8. Revoke the Connection and confirm future invocation fails.
+
+## Next steps
+
+- Add a durable Task store.
+- Configure issuer-key and revocation resolvers.
+- Run conformance checks.
+- Review the security checklist and Inspector logs.
+
+---
+# Build a Host Application
+
+Integrate one generic resolver-backed Native Client for any compatible external agent.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/build-host
+
+## Create the generic client
+
+```typescript
+import { createGhostBridgeClient } from "@ghostbridge/native-client";
+
+const host = createGhostBridgeClient({
+  installGrantResolver: resolveOpaqueGrant,
+  issuerKeyResolver: resolveIssuerKey,
+  authenticationHandler: authenticateUser,
+  requiredProfiles: ["ghostbridge.core"],
+});
+```
+
+## Preview and install
+
+```typescript
+const preview = await host.previewInstall({ grant, organizationScope, workspaceScope });
+if (preview.compatibility.status === "incompatible") throw new Error("Incompatible agent");
+
+const connection = await host.install({
+  grant,
+  organizationScope,
+  workspaceScope,
+  approvedCapabilityKeys: preview.capabilities.map(({ capabilityKey }) => capabilityKey),
+});
+```
+
+## Provider independence
+
+- Resolve opaque grants through infrastructure configured by the host operator.
+- Do not branch on provider names.
+- Do not require users to paste endpoints or credentials.
+- Treat Passport, profile, authentication, extension, and capability declarations as untrusted until validated.
+
+## Complete host checklist
+
+1. Create the Host Application project and install @ghostbridge/native-client.
+2. Configure the opaque-grant resolver and issuer-key resolution.
+3. Configure host-supported profiles, extensions, and authentication handlers.
+4. Accept an Install Grant from the user.
+5. Preview the external Agent and verify its Passport.
+6. Negotiate the protocol version, profiles, extensions, and authentication mode.
+7. Inspect Capability Contracts and approve an enabled subset.
+8. Complete authentication and create the Agent Connection.
+9. Invoke an approved capability and watch its Execution Task.
+10. Handle Approval Required when Governed Execution policy requests it.
+11. Validate output, verify the Receipt, and handle standard errors.
+12. Revoke the Agent Connection when access must end.
+
+---
+# Publish Agent Compatibility
+
+Declare enough public metadata for any conforming Host to evaluate an Agent.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/publish-agent-compatibility
+
+## Publish declarations
+
+- Supported protocol versions and Core conformance.
+- Optional Governed Execution conformance.
+- Supported authentication modes.
+- Extension declarations with applicable profiles and required status.
+- A verifiable Agent Passport and bounded Capability Contracts.
+
+## Provider boundary
+
+Publish protocol declarations, not a Host-specific adapter. Runtime resolution remains machine-facing and users receive an opaque Install Grant or Registry action.
+
+## Verify
+
+```powershell
+npm.cmd run verify:universal-agent-compatibility
+```
+
+---
+# Install an external agent
+
+Preview compatibility, approve capabilities, authenticate, and create a scoped connection.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/install-external-agent
+
+## Compatibility gate
+
+- Negotiate a common protocol version.
+- Require Core support.
+- Require Governed Execution only when host policy needs it.
+- Negotiate an authentication mode.
+- Fail closed for unsupported required extensions.
+
+## Safe preview
+
+The preview contains only public identity, profile, extension, and capability metadata. It excludes the opaque grant, runtime target, authentication reference, credentials, and private policy detail.
+
+---
+# Build with Agent Skills
+
+Use the repository skill pack to design and implement a Native integration.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/build-with-agent-skills
+
+## Discovery before code
+
+- Define what the agent does, who operates it, and who issues its Passport.
+- List capabilities, side effects, accepted and prohibited data, delegation, and approval.
+- Choose durable execution, receipt profile, scopes, and revocation behavior.
+
+## Use the pack
+
+```text
+skills/ghostbridge-agent-dev/SKILL.md
+```
+
+## Required outputs
+
+- Actual SDK usage.
+- Valid Capability and Data Contracts.
+- No credentials in source.
+- Tests and conformance checks.
+- Security-sensitive decisions explained.
+
+---
+# Host Best Practices
+
+Build provider-independent agents and Host Applications with the Native SDK.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/client-best-practices
+
+## Overview
+
+Host Best Practices is part of Ghost Bridge Native 0.1-draft. Build provider-independent agents and Host Applications with the Native SDK.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Progressive Capability Discovery
+
+Catalog → Inspect → Authorize → Invoke without loading every complete contract.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/capability-discovery
+
+## Catalog
+
+Return bounded summaries only: agent identity, capability key and name, one-line description, risk, side effects, approval requirement, conformance level, and availability.
+
+## Inspect
+
+Return one complete permitted Capability Contract only after a candidate is selected.
+
+## Authorize
+
+- Filter organization and workspace scope before ranking.
+- Require an active installation.
+- Enforce RBAC, policy, revocation, and Data Contract compatibility.
+- Never expose credentials, endpoints, private Passport fields, or revoked capabilities.
+
+## Invoke
+
+```typescript
+const catalog = await client.searchCapabilities({
+  query: "extract invoice",
+  organizationScope,
+  workspaceScope,
+  riskCategories: ["low", "moderate"],
+  limit: 10,
+});
+const contract = await client.getCapabilityDetails({
+  agentId: catalog.items[0].agentId,
+  capabilityKey: catalog.items[0].capabilityKey,
+  organizationScope,
+  workspaceScope,
+});
+```
+
+---
+# Invoke an installed agent
+
+Invoke an approved capability through its active Agent Connection.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/invoke-installed-agent
+
+## Invoke
+
+```typescript
+const result = await host.invoke({
+  connectionId: connection.connectionId,
+  capability: "codeforge.create_app",
+  input: { name: "Acme Portal", template: "react" },
+  idempotencyKey: "create-acme-portal-v1",
+});
+```
+
+## Validate the lifecycle
+
+- Validate declared input and output contracts.
+- Observe the Execution Task until terminal.
+- Verify the Execution Receipt.
+- Stop all future use after revocation.
+
+---
+# Error handling
+
+Handle bounded typed errors without exposing remote implementation details.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/error-handling
+
+## Typed error mapping
+
+| Condition | Type |
+| --- | --- |
+| Malformed response | ProtocolValidationError |
+| Unsupported revision | UnsupportedProtocolVersionError |
+| Approval required | ApprovalRequiredError |
+| Deadline elapsed | DeadlineExceededError |
+| Revoked authority | RevokedError |
+| Rate limit | RateLimitedError |
+| Network unavailable | ProviderUnavailableError |
+
+## Safe retry
+
+Retry only transient errors and only when a request is read-only or has an idempotency key. Never automatically retry an unsafe side effect without idempotency.
+
+---
+# Governed Execution
+
+Enterprise controls for direct Host Application to External Agent execution.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/governed/overview
+
+## Active profile
+
+Governed Execution builds on Core. It does not require agent-to-agent delegation.
+
+## Levels
+
+| Level | Required behavior |
+| --- | --- |
+| G1 | Organization/workspace isolation, authentication, and user authorization. |
+| G2 | Capability policy, Data Contract enforcement, prohibited-field blocking, and action-bound approval. |
+| G3 | Idempotent side effects, durable Tasks, Receipts, failure semantics, and revocation. |
+
+## Reference flow
+
+The deterministic LedgerWorks Provider and OpsCanvas Host verifier exercises G1-G3 without delegation.
+
+---
+# Organizations and Workspaces
+
+Bind every governed installation and Invocation to exact tenant scope.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/governed/organizations-workspaces
+
+## Isolation
+
+- Reject organization mismatch before installation.
+- Reject workspace mismatch before installation or execution.
+- Bind authentication and authorization evidence to the same scope.
+- Never fall back to a broader organization or workspace.
+
+---
+# Authentication
+
+Determine who or what is presenting a request.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/authentication
+
+## Authentication modes
+
+| Mode category | Use |
+| --- | --- |
+| none | Local fixtures only. |
+| oauth | Delegated user or application authentication. |
+| mutual_tls | Mutual certificate identity. |
+| signed_request | Message-bound proof. |
+| managed_credential | Operator-managed secret. |
+| delegated_credential | Narrow delegated credential. |
+| platform_brokered | Compatible operator brokerage. |
+
+## Requirements
+
+- Use HTTPS remotely.
+- Validate exact issuer and audience.
+- Use short-lived credentials and secure storage.
+- Never put credentials in Passports, Connection Offers, URLs, or logs.
+- Use PKCE for browser authorization where applicable.
+
+---
+# Authorization
+
+Determine whether a subject may perform a capability in an Organization and Workspace.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/authorization
+
+## Trust concepts are distinct
+
+| Concept | What it authorizes |
+| --- | --- |
+| Authentication | Establishes the presenting subject. |
+| Agent Passport | Establishes verifiable agent identity and declarations. |
+| Install Grant | Authorizes installation only. |
+| Agent Connection | Establishes an installed scoped relationship. |
+| Delegation Grant | Transfers narrowly bounded agent-to-agent authority. |
+| Approval Decision | Authorizes one exact high-impact action. |
+| Data Contract | Controls information crossing an agent boundary. |
+| Execution Receipt | Provides outcome evidence; grants no authority. |
+| Revocation | Invalidates trust or authority. |
+
+## Evaluation order
+
+1. Authenticate the subject.
+2. Validate Passport and revocation.
+3. Validate Organization and Workspace.
+4. Require active installation.
+5. Evaluate RBAC and policy.
+6. Validate capability, delegation, and Data Contract.
+7. Require approval where declared.
+8. Accept one bounded Invocation.
+
+## Tenant isolation
+
+Authority never inherits across Organizations or Workspaces. Scope filtering occurs before capability ranking and before sensitive detail retrieval.
+
+---
+# Capability Policies
+
+Install and execute only the capabilities permitted by Host policy.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/governed/capability-policies
+
+## Least capability
+
+The Host approves an explicit subset during installation. Disabled or later-revoked capabilities fail with a bounded authorization error.
+
+---
+# Data Contracts
+
+Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/data-contracts
+
+## Overview
+
+Data Contracts is part of Ghost Bridge Native 0.1-draft. Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Approvals
+
+Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/approvals
+
+## Overview
+
+Approvals is part of Ghost Bridge Native 0.1-draft. Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Data Boundaries
+
+Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/data-boundaries
+
+## Overview
+
+Data Boundaries is part of Ghost Bridge Native 0.1-draft. Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Replay protection and idempotency
+
+Why authenticated-message replay and business-operation duplication are separate controls.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/replay-protection
+
+## Two questions
+
+| Control | Question |
+| --- | --- |
+| Replay protection | Has this authenticated message already been presented? |
+| Idempotency | Should this business operation execute again? |
+
+## Required result
+
+The first signed request succeeds. The identical authenticated request is rejected. A fresh valid request with the same business idempotency key may return the existing business result.
+
+---
+# Durable Tasks and Idempotency
+
+Make side effects replay-safe and execution state observable.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/governed/durable-tasks
+
+## G3 requirements
+
+- Require idempotency for side-effecting capabilities.
+- Return one result for repeated keys.
+- Expose bounded Task state and cancellation support.
+- Retain audit-safe references without credentials.
+
+---
+# Receipts and Revocation
+
+Verify outcome evidence and stop future use authoritatively.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/governed/receipts-revocation
+
+## Evidence and invalidation
+
+A Receipt binds the completed outcome to its execution references. Revoking the Connection prevents every later Invocation through that relationship.
+
+---
+# Key management
+
+Purpose separation, non-exporting signer providers, public JWKS, and algorithm policy.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/key-management
+
+## Key roles
+
+| Role | Routine authority |
+| --- | --- |
+| Root / recovery | Issuer metadata and operational-key authorization |
+| Operational | Passport, manifest, installation, offer, and revocation proofs by purpose |
+| Agent execution | Runtime response and Execution Receipt evidence for one agent |
+
+## Algorithm policy
+
+Ed25519 with JWS `EdDSA` is mandatory-to-implement for this draft. `none`, `HS*`, key-type confusion, unprotected identifiers, `jku`, `x5u`, embedded `jwk`, and unsupported critical headers are rejected.
+
+## Private-key boundary
+
+Production signers operate through KeyProvider/IssuerSigner/AgentSigner interfaces. Private bytes are never returned by public APIs, JWKS, Inspector, logs, metrics, Receipts, or frontend state.
+
+---
+# How a host verifies a real Agent Passport
+
+Issuer identity, issuer discovery, Passport signature, public-key discovery, host trust policy, and revocation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/trust-overview
+
+## Experimental security profile
+
+> **Production-oriented, not certified (warning)**
+> ghostbridge-trust/0.1-draft uses established cryptographic standards but has not completed an external audit, formal verification, or Protocol 1.0 stabilization.
+
+## Four separate results
+
+| Result | Meaning |
+| --- | --- |
+| Cryptographic validity | The protected JWS and exact signed content are valid. |
+| Issuer authenticity | A root pin or approved bootstrap binds the key chain to the exact HTTPS issuer. |
+| Host trust | Organization and workspace policy approve the issuer and requested use. |
+| Operational validity | Metadata, Passport, keys, Connection, capabilities, and revocation data are current. |
+
+## Verification chain
+
+1. Normalize the exact issuer origin.
+2. Discover and validate signed issuer metadata.
+3. Load the bounded public JWKS and check thumbprints/key state.
+4. Verify the Passport and signed Capability Manifest.
+5. Apply organization and workspace trust policy.
+6. Check the distributed signed revocation set before governed execution.
+
+---
+# Issuer identity
+
+Exact HTTPS issuer identity, root bootstrap, and business-trust boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/issuer-identity
+
+## Identity is an origin
+
+A Passport Issuer is identified by a normalized HTTPS origin. A display name such as CodeForge is presentation only and never establishes identity. Explicit allowlisted localhost HTTP exists solely for local fixtures.
+
+## Bootstrap
+
+- Pin approved root JWK thumbprints.
+- Require exact issuer metadata binding.
+- Review root or origin changes administratively.
+- Do not treat Registry listing as issuer approval.
+
+---
+# Issuer discovery
+
+Safe well-known issuer metadata and public-key discovery without attacker-controlled key URLs.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/issuer-discovery
+
+## Well-known endpoint
+
+```http
+GET {normalized issuer origin}/.well-known/ghostbridge-issuer
+```
+
+## Network boundary
+
+- HTTPS outside explicit local fixture mode.
+- No credentials, fragments, arbitrary schemes, private IPs, or proof-header URLs.
+- No redirects by default; bounded bytes and timeouts.
+- Same-origin JWKS and revocation endpoints by default.
+
+## Anti-rollback
+
+Hosts persist the highest trusted metadata and revocation sequence and reject older signed snapshots.
+
+---
+# Passport signing and capability integrity
+
+Issuer proofs, Capability Manifest digests, and Agent execution-key authorization.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/passport-signing
+
+## What the proof binds
+
+- Issuer, Passport and agent identity/version.
+- Profile, validity, status, transports, authentication, data, approval, Receipt, and revocation declarations.
+- Exact Capability Manifest digest.
+- Purpose-scoped Agent execution-key IDs and RFC 7638 thumbprints.
+
+## Substitution defense
+
+The host requires set equality between delivered Capability Contracts and the signed manifest, then recomputes every contract digest. Risk, side effect, approval, Data Contract, idempotency, and Receipt changes require a new manifest.
+
+---
+# Key rotation
+
+Prepublication, activation overlap, retirement, compromise, and cache invalidation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/key-rotation
+
+## Overlapping rotation
+
+1. Generate inside the key provider.
+2. Prepublish the public key and increase metadata sequence.
+3. Refresh host caches.
+4. Activate the new key and move the old key to retiring.
+5. Verify bounded old objects during overlap.
+6. Retire the old key; never reuse its kid.
+
+## Compromise
+
+Compromise stops new signatures, publishes higher-sequence emergency revocation, invalidates caches, blocks affected installation/Connections, and classifies historical evidence. Root compromise requires explicit out-of-band recovery.
+
+---
+# Distributed revocation
+
+Signed issuer snapshots, freshness policy, rollback protection, and historical evidence.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/revocation
+
+## Issuer-authoritative snapshots
+
+Each issuer publishes a purpose-signed bounded revocation set with monotonic sequence, `nextUpdate`, and previous-set digest. Ghost Bridge does not require a global revocation authority.
+
+## Freshness
+
+| State | Host behavior |
+| --- | --- |
+| fresh | Normal policy evaluation |
+| nearing_expiry | Refresh proactively |
+| stale / unavailable | Visible warning for allowed low-risk Core use; high-risk Governed defaults fail closed |
+| rollback_detected / invalid | Reject and alert |
+
+---
+# Request integrity
+
+Negotiated signed-request authentication bound to content, Connection, audience, and nonce.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/request-integrity
+
+## Draft profile
+
+`ghostbridge-http-signature/0.1-draft` follows established HTTP Message Signature semantics and is one negotiated authentication profile, not a universal requirement.
+
+## Bound components
+
+- Method and target path.
+- Canonical content digest.
+- Creation, expiry, message and Invocation IDs.
+- Connection, protocol, audience, nonce, and configured tenant scope.
+
+---
+# Receipt verification
+
+Agent execution-key proof and explicit historical trust after retirement or compromise.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/receipt-verification
+
+## Current and historical evidence
+
+Verification reports signature validity, authorization at issuance, current key state, current revocation, and compromise timing separately. Historical results include valid at issuance, valid with retired key, invalid due to revocation, and indeterminate due to compromise.
+
+## Evidence boundary
+
+A valid signature proves who signed the declared bytes. It does not independently prove that a real-world outcome or vendor claim is true.
+
+---
+# Issuer compromise response
+
+Operational-key, Agent-key, root-key, metadata, endpoint, and domain compromise handling.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/issuer-compromise
+
+## Operational response
+
+1. Mark the key compromised and stop signing.
+2. Publish emergency revocation with a higher sequence.
+3. Activate a prepublished replacement.
+4. Invalidate host caches and block affected new trust operations.
+5. Re-evaluate Connections and classify historical Receipts.
+6. Audit and issue replacement Passports.
+
+## Root compromise
+
+> **No silent recovery (warning)**
+> Root or domain compromise requires issuer suspension, administrator review, and documented out-of-band recovery.
+
+---
+# Organization and workspace trust policies
+
+Issuer approval, root pins, algorithms, risk, freshness, and unknown-issuer review.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/trust-policies
+
+## Policy composition
+
+Organization policy sets mandatory trust boundaries. Workspace policy may be stricter but cannot weaken them. Decisions are scoped and versioned; trusted results are never cached across organizations with different policy.
+
+## Unknown issuers
+
+Allowed behaviors are block, administrator review, or limited Core-only use. Unknown issuers never silently receive high-impact Governed authority.
+
+---
+# Authentication profiles
+
+Negotiated OAuth, mutual TLS, signed request, credential, and platform-brokered modes.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/authentication-profiles
+
+## Connection-bound negotiation
+
+Each mode declares discovery, host support, user interaction, credential boundary, audience, refresh, revocation, proof of possession, and safe errors. The selected mode is bound to the Connection and cannot silently downgrade.
+
+## Local fixtures
+
+`none` is restricted to explicit safe local scenarios. Automated tests use deterministic synthetic authorization and do not call a live identity provider.
+
+---
+# Security Best Practices
+
+Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/security-best-practices
+
+## Overview
+
+Security Best Practices is part of Ghost Bridge Native 0.1-draft. Organization-scoped policy, data, approval, durable execution, evidence, and revocation controls.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Agent Passports
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/agent-passports
+
+## Overview
+
+Agent Passports is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Capability Contracts
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/capability-contracts
+
+## Overview
+
+Capability Contracts is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Install Grants
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/install-grants
+
+## Overview
+
+Install Grants is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Connection Offers
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/reference/connection-offers
+
+## Overview
+
+Connection Offers is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Agent Connections
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/agent-connections
+
+## Overview
+
+Agent Connections is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Invocation Envelopes
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/invocations
+
+## Overview
+
+Invocation Envelopes is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Execution Tasks
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/execution-tasks
+
+## Overview
+
+Execution Tasks is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Execution Receipts
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/execution-receipts
+
+## Overview
+
+Execution Receipts is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Revocation
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/revocation
+
+## Overview
+
+Revocation is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Security Overview
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/overview
+
+## Overview
+
+Security Overview is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Passport Verification
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/passport-verification
+
+## Overview
+
+Passport Verification is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Protocol Profiles
+
+Active and experimental compatibility profiles for Ghost Bridge Native.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/reference/profiles
+
+## Core
+
+Core is active and required. C1 covers discovery and identity, C2 installation and authentication, and C3 the execution lifecycle.
+
+## Governed Execution
+
+Governed Execution is active and includes Core. G1 covers scoped access, G2 policy/data/approval, and G3 idempotent durable auditability.
+
+## Agent Coordination
+
+> **Experimental/Deferred (warning)**
+> Coordination, delegation, and multi-agent flows are not required for either active profile.
+
+---
+# Authentication Modes
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/reference/authentication-modes
+
+## Overview
+
+Authentication Modes is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Extension Declarations
+
+Normative message, profile, compatibility, execution, and security reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/reference/extensions
+
+## Overview
+
+Extension Declarations is part of Ghost Bridge Native 0.1-draft. Normative message, profile, compatibility, execution, and security reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Standard Errors
+
+Safe compatibility, contract, authorization, and execution failures.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/reference/standard-errors
+
+## Compatibility and authentication
+
+| Code | Meaning |
+| --- | --- |
+| NO_COMMON_PROTOCOL_VERSION | The Host and Agent share no supported protocol version. |
+| CORE_PROFILE_REQUIRED | The required Core profile is absent or unsupported. |
+| GOVERNED_PROFILE_REQUIRED | Host policy requires unsupported Governed Execution. |
+| NO_COMPATIBLE_AUTHENTICATION_MODE | No declared Agent mode is supported by the Host. |
+| REQUIRED_EXTENSION_UNSUPPORTED | A required Agent extension is unsupported. |
+
+## Contracts and execution
+
+| Code | Meaning |
+| --- | --- |
+| INPUT_CONTRACT_VIOLATION | Invocation input violates the bounded declared schema. |
+| OUTPUT_CONTRACT_VIOLATION | Agent output violates the bounded declared schema. |
+| AUTHENTICATION_REQUIRED | The negotiated authentication step is incomplete. |
+| AUTHORIZATION_DENIED | The subject or capability is not authorized. |
+| IDEMPOTENCY_REQUIRED | A side-effecting Invocation lacks an idempotency key. |
+| TASK_FAILED | Execution reached a bounded failed terminal state. |
+
+## Safety
+
+Errors expose a stable code and safe message. They do not expose credentials, raw policy data, runtime targets, database records, or remote stack traces.
+
+---
+# Ghost Bridge Inspector
+
+Inspect profiles, installation, authentication, capability contracts, and execution safely.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/tools/inspector
+
+## Primary tabs
+
+- Connection and Passport.
+- Profiles and Capabilities.
+- Install Preview and Authentication.
+- Invocation, Tasks, Receipts, and Revocation.
+- Sanitized Messages and Logs.
+
+## Experimental section
+
+Agent Coordination is grouped separately as Experimental. It is not the default Inspector path.
+
+## Safety boundary
+
+Inspector defaults to loopback, rejects credential-bearing targets, and redacts authorization headers, cookies, tokens, and secret-shaped fields.
+
+---
+# Debugging
+
+Diagnose Native protocol failures with Inspector, typed errors, and safe correlation data.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/tools/debugging
+
+## Troubleshooting matrix
+
+| Symptom | Likely cause | Inspector / SDK | Safe remediation |
+| --- | --- | --- | --- |
+| Discovery failed | Unreachable or malformed discovery | Connection / ProviderUnavailableError | Check loopback target and discovery document. |
+| Unsupported version | No mutual revision | Connection / UnsupportedProtocolVersionError | Advertise a mutual revision; do not force downgrade. |
+| Invalid or expired Passport | Schema, issuer, expiry, or key failure | Passport / PassportValidationError | Refresh and verify the public Passport. |
+| Revoked Passport | Authoritative revocation | Revocation / RevokedError | Stop execution and resolve replacement identity. |
+| Capability not found | Missing, filtered, or version mismatch | Capabilities / CapabilityNotFoundError | Search again in the same scope. |
+| Grant expired or redeemed | One-time grant state | Installation / InstallGrantError | Issue a fresh bounded grant. |
+| Scope mismatch | Organization or Workspace differs | Invocation / ScopeMismatchError | Use the Connection scope exactly. |
+| Missing idempotency key | Side-effect contract requires it | Invocation / ProtocolValidationError | Generate a stable operation key. |
+| Data Contract violation | Field, class, or size denied | Data Contract / DataContractViolationError | Project and minimize the payload. |
+| Delegation expired or exhausted | Bound reached | Delegation / DelegationError | Create a new least-authority Grant. |
+| Approval required or expired | High-impact policy | Approval / ApprovalRequiredError | Obtain a new exact Decision. |
+| Task timeout | Deadline elapsed | Tasks / DeadlineExceededError | Inspect status before a safe retry. |
+| Cancellation rejected | Terminal or non-cancellable Task | Tasks / GhostBridgeError | Observe the existing outcome. |
+| Receipt invalid | Digest, scope, version, or proof mismatch | Receipts / ProtocolValidationError | Treat outcome as unverified. |
+| Revocation cache stale | Invalidation lag | Revocation / RevokedError | Refresh authoritative status. |
+| Rate limited | Bounded capacity | Messages / RateLimitedError | Respect retryAfterMs. |
+| Provider unavailable | Peer unavailable | Connection / ProviderUnavailableError | Use bounded backoff for safe requests. |
+
+## Safe diagnostics
+
+- Correlate request IDs and trace IDs.
+- Use bounded structured logs.
+- Increase verbosity only for local synthetic fixtures.
+- Redact production payloads and never log credentials.
+- Reproduce with conformance checks.
+
+---
+# Conformance CLI
+
+Run deterministic Core C1-C3 and Governed Execution G1-G3 checks.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/tools/conformance-cli
+
+## Active profiles
+
+| Command | Coverage |
+| --- | --- |
+| verify-core-c1 | Discovery, Passport, and revocation declarations. |
+| verify-core-c2 | C1 plus installation and authentication negotiation. |
+| verify-core-c3 / verify-core | C1-C2 plus capabilities, invocation, Tasks, Receipts, and revocation. |
+| verify-governed-g1 | Core plus organization/workspace isolation and authorization. |
+| verify-governed-g2 | G1 plus policy, Data Contracts, prohibited fields, and approval. |
+| verify-governed-g3 / verify-governed | G1-G2 plus idempotent durable auditable execution. |
+
+## Legacy aliases
+
+> **Deprecated naming (warning)**
+> verify-level-1 through verify-level-3 remain compatibility aliases. They do not make Agent Coordination a Core or Governed requirement.
+
+## Local safety
+
+The draft CLI accepts deterministic localhost fixtures only and makes no live provider request.
+
+---
+# Schema Validation
+
+Guidance for Schema Validation in Ghost Bridge Native.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/tools/schema-validation
+
+## Overview
+
+Schema Validation is part of Ghost Bridge Native 0.1-draft. This page documents the implemented Native protocol behavior.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# CodeForge and FlowDesk
+
+Guidance for CodeForge and FlowDesk in Ghost Bridge Native.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/examples/codeforge-flowdesk
+
+## Overview
+
+CodeForge and FlowDesk is part of Ghost Bridge Native 0.1-draft. This page documents the implemented Native protocol behavior.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# LedgerWorks and OpsCanvas
+
+Guidance for LedgerWorks and OpsCanvas in Ghost Bridge Native.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/examples/ledgerworks-opscanvas
+
+## Overview
+
+LedgerWorks and OpsCanvas is part of Ghost Bridge Native 0.1-draft. This page documents the implemented Native protocol behavior.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Invoice Agent
+
+Guidance for Invoice Agent in Ghost Bridge Native.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/examples/invoice-agent
+
+## Overview
+
+Invoice Agent is part of Ghost Bridge Native 0.1-draft. This page documents the implemented Native protocol behavior.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Accounting Agent
+
+Guidance for Accounting Agent in Ghost Bridge Native.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/examples/accounting-agent
+
+## Overview
+
+Accounting Agent is part of Ghost Bridge Native 0.1-draft. This page documents the implemented Native protocol behavior.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# TypeScript SDK
+
+Production draft TypeScript API surface, compatibility, typed failures, and deterministic examples.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /sdks/typescript
+
+## API surface
+
+TypeScript SDK is part of the Phase 15B TypeScript SDK. Its package exports are explicit and its public declarations are repository controlled.
+
+## Compatibility
+
+| Environment | Support |
+| --- | --- |
+| Node.js | 20 or newer |
+| Browser | Client and portable core where Fetch and Web APIs are available |
+| Protocol | ghostbridge/0.1-draft |
+| Stability | Experimental |
+
+## Safe errors
+
+Public methods validate remote responses and expose bounded typed errors without remote stack traces.
+
+---
+# @ghostbridge/protocol-core
+
+Portable constants, public types, validators, bounded wire utilities, extension negotiation, redaction, and proof interfaces.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /sdks/typescript/protocol-core
+
+## Public API
+
+| API | Signature and return |
+| --- | --- |
+| parseProtocolVersion | (value: string) → parsed protocol revision |
+| negotiateVersion | (options) → selectedVersion, stability, warnings |
+| safeParse / boundedSerialize | (wire value, limits?) → validated plain data or JSON |
+| validatePassport | (AgentPassport, options?) → AgentPassport |
+| validateCapabilityContract | (CapabilityContract) → CapabilityContract |
+| projectDataContract | (input, DataContract, options?) → projected object |
+| validateExtensionIdentifier | (identifier: string) → normalized identifier |
+| negotiateExtensions | ({ client, agent }) → negotiated and unavailable optional extensions |
+| redactPublicData | (value) → recursively redacted public data |
+| digest | (value) → deterministic SHA-256 digest |
+
+## Errors and compatibility
+
+Validators throw GhostBridgeProtocolError with a bounded errorCode and safeMessage. The current implementation targets Node.js 20; portable types and validation surfaces are designed for browser-safe separation where practical.
+
+## Protocol requirement
+
+All APIs currently target ghostbridge/0.1-draft and are Experimental. Node-specific schema loading and cryptographic helpers are isolated public concerns and the package imports no database, backend, frontend, Platform, or legacy adapter.
+
+---
+# @ghostbridge/native-client
+
+Typed discovery, installation, progressive capability search, invocation, Tasks, approvals, Receipts, and revocation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /sdks/typescript/native-client
+
+## Create a client
+
+```typescript
+const client = createGhostBridgeClient({
+  baseUrl: "https://agent.example",
+  timeoutMs: 10_000,
+  fetch: globalThis.fetch,
+});
+```
+
+## Methods
+
+| Method | Parameters and return |
+| --- | --- |
+| discover | () → DiscoveryDocument |
+| negotiateVersion | (options?) → version selection |
+| resolveInstallGrant / install | (grant, scope) → resolution / Agent Connection |
+| getPassport | () → validated AgentPassport |
+| listCapabilities | () → complete public contracts for compatibility |
+| searchCapabilities | (ScopedCapabilityQuery) → bounded catalog page |
+| getCapabilityDetails | (CapabilityDetailsQuery) → one permitted contract |
+| invoke / invokeAndWait | (connection+envelope or InvokeOptions) → InvocationResult |
+| getTask / watchTask / cancelTask | (taskId, options?) → task state or async updates |
+| submitApprovalDecision | (challengeId, decision) → accepted decision |
+| getReceipt / verifyReceipt | (receipt or ID, verifier?) → Receipt verification |
+| checkRevocation | (subjectType, reference) → RevocationStatus |
+| close | () → clears client state |
+
+## Safe errors
+
+Methods expose GhostBridgeError subclasses for validation, unsupported versions, Passports, grants, capabilities, scope, delegation, Data Contracts, approvals, deadlines, cancellation, revocation, rate limiting, and unavailability. Remote stack traces are never accepted.
+
+## Runtime compatibility
+
+Node.js 20 and browser environments with Fetch, AbortController, Web Crypto-compatible UUID support, and TextEncoder are intended targets. A configurable Fetch implementation supports deterministic tests.
+
+---
+# @ghostbridge/native-agent
+
+Production draft API for registering governed capabilities and serving the Native HTTPS/JSON binding.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /sdks/typescript/native-agent
+
+## Create and configure
+
+```typescript
+const agent = createGhostBridgeAgent({ passport });
+agent
+  .configureDiscovery(discovery)
+  .configureAuthorization(authorize)
+  .configureTaskStore(taskStore)
+  .configureApprovalHandler(onApproval)
+  .configureReceiptIssuer(issueReceipt)
+  .configureRevocationResolver(resolveRevocation)
+  .configureLogger(logger)
+  .configureMetrics(recordMetric);
+```
+
+## Capability registration
+
+registerCapability and capability accept typed input/output, schemas or Data Contract references, version, risk, side effects, approval, idempotency, cancellation, asynchronous execution, timeout bounds, Receipt profile, delegation policy, and a handler.
+
+## Safe handler context
+
+- Organization and Workspace scope, Invocation and Task IDs.
+- Initiating subject, deadline, idempotency key, and trace context.
+- Approval and delegation references.
+- AbortSignal and a logger that strips credentials and payload fields.
+
+## Lifecycle methods
+
+| Method | Purpose |
+| --- | --- |
+| listen / close | Start or stop a Native loopback or configured HTTP binding. |
+| searchCapabilities | Return a scoped bounded catalog. |
+| getCapabilityDetails | Return one scoped contract. |
+| issueInstallGrant | Issue a high-entropy, expiring one-time grant. |
+| invoke | Authorize and execute one Invocation Envelope. |
+| getTask / cancelTask | Observe or request cancellation. |
+| getReceipt | Retrieve bounded outcome evidence. |
+| revokeConnection | Authoritatively stop future use. |
+
+---
+# @ghostbridge/conformance
+
+Deterministic localhost-only draft conformance checks.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /sdks/typescript/conformance
+
+## CLI
+
+```powershell
+npx ghostbridge-conformance --target http://127.0.0.1:8787 --level 3
+```
+
+## API
+
+| API | Return |
+| --- | --- |
+| runConformance | Structured checks, status, and bounded findings. |
+| assertLocalTarget | Validated loopback target or a safe rejection. |
+| conformanceLevels | Draft Level 1–3 definitions. |
+
+## Safety
+
+Remote targets are rejected. Conformance uses deterministic synthetic fixtures and makes no provider, billing, or production request.
+
+---
+# @ghostbridge/inspector
+
+Local-only sanitized protocol inspection API and development UI.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /sdks/typescript/inspector
+
+## API
+
+| API | Purpose |
+| --- | --- |
+| assertInspectorTarget | Accept loopback or require two explicit unsafe-remote flags. |
+| GhostBridgeInspector | Inspect discovery, Passport, capabilities, installation, Invocation, Tasks, approval, Receipts, and revocation. |
+| sanitizeInspectorValue | Remove secret-shaped fields and sensitive headers. |
+| startInspectorUi | Serve the loopback-only local Inspector UI. |
+
+## Errors
+
+InspectorSecurityError rejects remote, credential-bearing, non-HTTP, or non-loopback UI targets. Protocol operations retain bounded typed SDK errors.
+
+## Compatibility
+
+Node.js 20 only for the Inspector server and CLI. The package is private and is not published in Phase 15B.
+
+---
+# Extensions
+
+Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions
+
+## Overview
+
+Extensions is part of Ghost Bridge Native 0.1-draft. Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Extensions overview
+
+Optional namespaced additions that do not immediately modify the core protocol.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions/overview
+
+## Extension contract
+
+- Use a reverse-domain identifier such as com.example/feature-name.
+- The io.ghostbridge namespace is reserved for official work.
+- Declare version, state, required or optional behavior, references, and security considerations.
+- Negotiate client and agent support explicitly.
+
+## Security invariants
+
+- Extensions cannot replace core security checks.
+- They cannot weaken scope isolation, revocation, Data Contracts, or approval.
+- They cannot expose credentials or load third-party executable code.
+- Unknown optional behavior degrades safely; unknown required behavior fails.
+
+---
+# Support Matrix
+
+Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions/support-matrix
+
+## Overview
+
+Support Matrix is part of Ghost Bridge Native 0.1-draft. Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Authoring
+
+Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions/authoring
+
+## Overview
+
+Authoring is part of Ghost Bridge Native 0.1-draft. Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Extension negotiation
+
+Match identifier and version independently from protocol revision negotiation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions/negotiation
+
+## Negotiation behavior
+
+```typescript
+const result = negotiateExtensions({
+  client: [{ identifier: "io.ghostbridge/display-metadata", version: "1.0.0", status: "experimental", required: false }],
+  agent: [{ identifier: "io.ghostbridge/display-metadata", version: "1.0.0", status: "experimental", required: false }],
+});
+```
+
+## Graceful degradation
+
+An unsupported optional extension is reported in unavailableOptional. Unsupported required behavior or required version conflict fails negotiation.
+
+---
+# Lifecycle
+
+Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions/lifecycle
+
+## Overview
+
+Lifecycle is part of Ghost Bridge Native 0.1-draft. Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Official extensions
+
+Reserved official namespace and current reference extension.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions/official
+
+## io.ghostbridge/display-metadata
+
+| Field | Value |
+| --- | --- |
+| State | Experimental |
+| Version | 1.0.0 |
+| Required | No |
+| Authority impact | None |
+| Purpose | Optional presentation labels and hints only. |
+
+---
+# Experimental
+
+Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /extensions/experimental
+
+## Overview
+
+Experimental is part of Ghost Bridge Native 0.1-draft. Experimental extension framework guidance with explicit security and compatibility boundaries.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Specification
+
+The experimental Ghost Bridge Native wire specification and public Schema reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification
+
+## Overview
+
+Specification is part of Ghost Bridge Native 0.1-draft. The experimental Ghost Bridge Native wire specification and public Schema reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Ghost Bridge Native 0.1 Draft
+
+Experimental Host Application to External Agent wire protocol.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft
+
+## Normative language
+
+MUST, MUST NOT, SHOULD, and MAY express requirement strength in this draft.
+
+## Specification navigation
+
+| Group | Subjects |
+| --- | --- |
+| Profiles | Core C1-C3, Governed Execution G1-G3, and Experimental/Deferred Agent Coordination. |
+| Discovery and Identity | Version negotiation, Passport, issuer verification, and revocation. |
+| Installation | Opaque Install Grant resolution, compatibility preview, authentication, Connection Offer, and Connection. |
+| Capabilities and Execution | Capability Contract, Invocation, Task, cancellation, Receipt, and standard errors. |
+| Governed Execution | Scope, authorization, policy, Data Contracts, approval, idempotency, and audit evidence. |
+| Experimental Coordination | Delegation and multi-agent behavior; not required by active profiles. |
+
+## Transport binding
+
+The current binding uses HTTPS/JSON and requires no specific database, queue, cloud, model provider, commercial control plane, or MCP transport.
+
+## Status
+
+> **Experimental protocol (warning)**
+> ghostbridge/0.1-draft is a Draft protocol revision. It is not a production-stability claim.
+
+| Area | Current state |
+| --- | --- |
+| Protocol | Experimental |
+| TypeScript SDK | Phase 15B development |
+| Independent implementation | Not completed |
+| Registry | Preview |
+| External security review | Not completed |
+
+---
+# Specification: trust profile
+
+Issuer identity, issuer discovery, Passport signature, public-key discovery, host trust policy, and revocation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/trust-profile
+
+## Experimental security profile
+
+> **Production-oriented, not certified (warning)**
+> ghostbridge-trust/0.1-draft uses established cryptographic standards but has not completed an external audit, formal verification, or Protocol 1.0 stabilization.
+
+## Four separate results
+
+| Result | Meaning |
+| --- | --- |
+| Cryptographic validity | The protected JWS and exact signed content are valid. |
+| Issuer authenticity | A root pin or approved bootstrap binds the key chain to the exact HTTPS issuer. |
+| Host trust | Organization and workspace policy approve the issuer and requested use. |
+| Operational validity | Metadata, Passport, keys, Connection, capabilities, and revocation data are current. |
+
+## Verification chain
+
+1. Normalize the exact issuer origin.
+2. Discover and validate signed issuer metadata.
+3. Load the bounded public JWKS and check thumbprints/key state.
+4. Verify the Passport and signed Capability Manifest.
+5. Apply organization and workspace trust policy.
+6. Check the distributed signed revocation set before governed execution.
+
+---
+# Specification: issuer identity
+
+Exact HTTPS issuer identity, root bootstrap, and business-trust boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/issuer-identity
+
+## Identity is an origin
+
+A Passport Issuer is identified by a normalized HTTPS origin. A display name such as CodeForge is presentation only and never establishes identity. Explicit allowlisted localhost HTTP exists solely for local fixtures.
+
+## Bootstrap
+
+- Pin approved root JWK thumbprints.
+- Require exact issuer metadata binding.
+- Review root or origin changes administratively.
+- Do not treat Registry listing as issuer approval.
+
+---
+# Specification: issuer discovery
+
+Safe well-known issuer metadata and public-key discovery without attacker-controlled key URLs.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/issuer-discovery
+
+## Well-known endpoint
+
+```http
+GET {normalized issuer origin}/.well-known/ghostbridge-issuer
+```
+
+## Network boundary
+
+- HTTPS outside explicit local fixture mode.
+- No credentials, fragments, arbitrary schemes, private IPs, or proof-header URLs.
+- No redirects by default; bounded bytes and timeouts.
+- Same-origin JWKS and revocation endpoints by default.
+
+## Anti-rollback
+
+Hosts persist the highest trusted metadata and revocation sequence and reject older signed snapshots.
+
+---
+# Specification: proof profile
+
+Issuer proofs, Capability Manifest digests, and Agent execution-key authorization.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/proof-profile
+
+## What the proof binds
+
+- Issuer, Passport and agent identity/version.
+- Profile, validity, status, transports, authentication, data, approval, Receipt, and revocation declarations.
+- Exact Capability Manifest digest.
+- Purpose-scoped Agent execution-key IDs and RFC 7638 thumbprints.
+
+## Substitution defense
+
+The host requires set equality between delivered Capability Contracts and the signed manifest, then recomputes every contract digest. Risk, side effect, approval, Data Contract, idempotency, and Receipt changes require a new manifest.
+
+---
+# Specification: key discovery
+
+Purpose separation, non-exporting signer providers, public JWKS, and algorithm policy.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/key-discovery
+
+## Key roles
+
+| Role | Routine authority |
+| --- | --- |
+| Root / recovery | Issuer metadata and operational-key authorization |
+| Operational | Passport, manifest, installation, offer, and revocation proofs by purpose |
+| Agent execution | Runtime response and Execution Receipt evidence for one agent |
+
+## Algorithm policy
+
+Ed25519 with JWS `EdDSA` is mandatory-to-implement for this draft. `none`, `HS*`, key-type confusion, unprotected identifiers, `jku`, `x5u`, embedded `jwk`, and unsupported critical headers are rejected.
+
+## Private-key boundary
+
+Production signers operate through KeyProvider/IssuerSigner/AgentSigner interfaces. Private bytes are never returned by public APIs, JWKS, Inspector, logs, metrics, Receipts, or frontend state.
+
+---
+# Specification: key lifecycle
+
+Purpose separation, non-exporting signer providers, public JWKS, and algorithm policy.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/key-lifecycle
+
+## Key roles
+
+| Role | Routine authority |
+| --- | --- |
+| Root / recovery | Issuer metadata and operational-key authorization |
+| Operational | Passport, manifest, installation, offer, and revocation proofs by purpose |
+| Agent execution | Runtime response and Execution Receipt evidence for one agent |
+
+## Algorithm policy
+
+Ed25519 with JWS `EdDSA` is mandatory-to-implement for this draft. `none`, `HS*`, key-type confusion, unprotected identifiers, `jku`, `x5u`, embedded `jwk`, and unsupported critical headers are rejected.
+
+## Private-key boundary
+
+Production signers operate through KeyProvider/IssuerSigner/AgentSigner interfaces. Private bytes are never returned by public APIs, JWKS, Inspector, logs, metrics, Receipts, or frontend state.
+
+---
+# Specification: key rotation
+
+Prepublication, activation overlap, retirement, compromise, and cache invalidation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/key-rotation
+
+## Overlapping rotation
+
+1. Generate inside the key provider.
+2. Prepublish the public key and increase metadata sequence.
+3. Refresh host caches.
+4. Activate the new key and move the old key to retiring.
+5. Verify bounded old objects during overlap.
+6. Retire the old key; never reuse its kid.
+
+## Compromise
+
+Compromise stops new signatures, publishes higher-sequence emergency revocation, invalidates caches, blocks affected installation/Connections, and classifies historical evidence. Root compromise requires explicit out-of-band recovery.
+
+---
+# Specification: revocation set
+
+Signed issuer snapshots, freshness policy, rollback protection, and historical evidence.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/revocation-set
+
+## Issuer-authoritative snapshots
+
+Each issuer publishes a purpose-signed bounded revocation set with monotonic sequence, `nextUpdate`, and previous-set digest. Ghost Bridge does not require a global revocation authority.
+
+## Freshness
+
+| State | Host behavior |
+| --- | --- |
+| fresh | Normal policy evaluation |
+| nearing_expiry | Refresh proactively |
+| stale / unavailable | Visible warning for allowed low-risk Core use; high-risk Governed defaults fail closed |
+| rollback_detected / invalid | Reject and alert |
+
+---
+# Specification: audience binding
+
+Negotiated signed-request authentication bound to content, Connection, audience, and nonce.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/audience-binding
+
+## Draft profile
+
+`ghostbridge-http-signature/0.1-draft` follows established HTTP Message Signature semantics and is one negotiated authentication profile, not a universal requirement.
+
+## Bound components
+
+- Method and target path.
+- Canonical content digest.
+- Creation, expiry, message and Invocation IDs.
+- Connection, protocol, audience, nonce, and configured tenant scope.
+
+---
+# Specification: replay protection
+
+Why authenticated-message replay and business-operation duplication are separate controls.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/replay-protection
+
+## Two questions
+
+| Control | Question |
+| --- | --- |
+| Replay protection | Has this authenticated message already been presented? |
+| Idempotency | Should this business operation execute again? |
+
+## Required result
+
+The first signed request succeeds. The identical authenticated request is rejected. A fresh valid request with the same business idempotency key may return the existing business result.
+
+---
+# Specification: request integrity
+
+Negotiated signed-request authentication bound to content, Connection, audience, and nonce.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/request-integrity
+
+## Draft profile
+
+`ghostbridge-http-signature/0.1-draft` follows established HTTP Message Signature semantics and is one negotiated authentication profile, not a universal requirement.
+
+## Bound components
+
+- Method and target path.
+- Canonical content digest.
+- Creation, expiry, message and Invocation IDs.
+- Connection, protocol, audience, nonce, and configured tenant scope.
+
+---
+# Specification: receipt proof
+
+Agent execution-key proof and explicit historical trust after retirement or compromise.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/receipt-proof
+
+## Current and historical evidence
+
+Verification reports signature validity, authorization at issuance, current key state, current revocation, and compromise timing separately. Historical results include valid at issuance, valid with retired key, invalid due to revocation, and indeterminate due to compromise.
+
+## Evidence boundary
+
+A valid signature proves who signed the declared bytes. It does not independently prove that a real-world outcome or vendor claim is true.
+
+---
+# Specification: trust errors
+
+Issuer identity, issuer discovery, Passport signature, public-key discovery, host trust policy, and revocation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/0.1-draft/trust-errors
+
+## Experimental security profile
+
+> **Production-oriented, not certified (warning)**
+> ghostbridge-trust/0.1-draft uses established cryptographic standards but has not completed an external audit, formal verification, or Protocol 1.0 stabilization.
+
+## Four separate results
+
+| Result | Meaning |
+| --- | --- |
+| Cryptographic validity | The protected JWS and exact signed content are valid. |
+| Issuer authenticity | A root pin or approved bootstrap binds the key chain to the exact HTTPS issuer. |
+| Host trust | Organization and workspace policy approve the issuer and requested use. |
+| Operational validity | Metadata, Passport, keys, Connection, capabilities, and revocation data are current. |
+
+## Verification chain
+
+1. Normalize the exact issuer origin.
+2. Discover and validate signed issuer metadata.
+3. Load the bounded public JWKS and check thumbprints/key state.
+4. Verify the Passport and signed Capability Manifest.
+5. Apply organization and workspace trust policy.
+6. Check the distributed signed revocation set before governed execution.
+
+---
+# Latest
+
+The experimental Ghost Bridge Native wire specification and public Schema reference.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /specification/latest
+
+## Overview
+
+Latest is part of Ghost Bridge Native 0.1-draft. The experimental Ghost Bridge Native wire specification and public Schema reference.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Ghost Bridge Registry Preview
+
+Public metadata discovery using reference agents and deterministic fixtures only.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Preview
+> Canonical route: /registry
+
+## Preview notice
+
+> **Ghost Bridge Registry is currently in preview (warning)**
+> Available data contains only reference agents and synthetic fixtures. It is not evidence of a broad public ecosystem.
+
+## Reference agents
+
+| Agent | Capabilities | Status |
+| --- | --- | --- |
+| Invoice Summary Agent | invoice.extract, invoice.validate | Reference fixture |
+| Accounting Agent | accounting.check_duplicate, accounting.create_draft | Reference fixture |
+
+## Public projection
+
+Listings include safe Passport declarations, protocol version, public capabilities, risk, side effects, approval, receipts, conformance, and revocation status. They exclude credentials, customer records, installations, private endpoints, policy decisions, and tokens.
+
+---
+# About
+
+Preview-only public metadata from deterministic reference-agent fixtures.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Preview
+> Canonical route: /registry/about
+
+## Preview boundary
+
+> **Preview data only (warning)**
+> Only deterministic reference fixtures and safe public Passport projections are shown.
+
+## Excluded data
+
+- Customer records and installed-agent state.
+- Credentials, runtime bearer tokens, and install secrets.
+- Organization or Workspace connections.
+- Private endpoints and internal policy decisions.
+
+---
+# Agents
+
+Preview-only public metadata from deterministic reference-agent fixtures.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Preview
+> Canonical route: /registry/agents
+
+## Preview boundary
+
+> **Preview data only (warning)**
+> Only deterministic reference fixtures and safe public Passport projections are shown.
+
+## Excluded data
+
+- Customer records and installed-agent state.
+- Credentials, runtime bearer tokens, and install secrets.
+- Organization or Workspace connections.
+- Private endpoints and internal policy decisions.
+
+---
+# Invoice Summary Agent
+
+Deterministic reference agent for invoice extraction and validation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Preview
+> Canonical route: /registry/agents/invoice-agent
+
+## Public capabilities
+
+| Capability | Risk | Side effect | Approval |
+| --- | --- | --- | --- |
+| invoice.extract | Low | None | No |
+| invoice.validate | Moderate | None | No |
+
+## Trust status
+
+| Field | Value |
+| --- | --- |
+| Issuer | Ghost Bridge reference fixtures |
+| Protocol | ghostbridge/0.1-draft |
+| Passport | Active synthetic fixture |
+| Revocation | Not revoked |
+| Conformance | Draft Level 1–3 fixture |
+
+---
+# Accounting Agent
+
+Deterministic reference agent for duplicate checks and approval-bound draft creation.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Preview
+> Canonical route: /registry/agents/accounting-agent
+
+## Public capabilities
+
+| Capability | Risk | Side effect | Approval |
+| --- | --- | --- | --- |
+| accounting.check_duplicate | Moderate | Read | No |
+| accounting.create_draft | High | Reversible write | Required |
+
+## Trust status
+
+| Field | Value |
+| --- | --- |
+| Issuer | Ghost Bridge reference fixtures |
+| Protocol | ghostbridge/0.1-draft |
+| Passport | Active synthetic fixture |
+| Revocation | Not revoked |
+| Receipt support | Yes |
+
+---
+# Registry publishing
+
+Planned publishing checks; public self-service publishing is not implemented.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Planned
+> Canonical route: /registry/publishing
+
+## Future process
+
+1. Verify issuer and namespace ownership.
+2. Validate Passport and Schemas.
+3. Review conformance results.
+4. Moderate public metadata.
+5. Publish updates and process revocation.
+
+## Phase 15B boundary
+
+> **Documentation only (info)**
+> There is no real self-service publishing, DNS verification, marketplace, or checkout in Phase 15B.
+
+---
+# Consuming
+
+Preview-only public metadata from deterministic reference-agent fixtures.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Preview
+> Canonical route: /registry/consuming
+
+## Preview boundary
+
+> **Preview data only (warning)**
+> Only deterministic reference fixtures and safe public Passport projections are shown.
+
+## Excluded data
+
+- Customer records and installed-agent state.
+- Credentials, runtime bearer tokens, and install secrets.
+- Organization or Workspace connections.
+- Private endpoints and internal policy decisions.
+
+---
+# Trust and Safety
+
+Preview-only public metadata from deterministic reference-agent fixtures.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Preview
+> Canonical route: /registry/trust-and-safety
+
+## Preview boundary
+
+> **Preview data only (warning)**
+> Only deterministic reference fixtures and safe public Passport projections are shown.
+
+## Excluded data
+
+- Customer records and installed-agent state.
+- Credentials, runtime bearer tokens, and install secrets.
+- Organization or Workspace connections.
+- Private endpoints and internal policy decisions.
+
+---
+# GBEP Index
+
+Initial Ghost Bridge Enhancement Proposal process and repository-owned proposals.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /gbeps
+
+## Overview
+
+GBEP Index is part of Ghost Bridge Native 0.1-draft. Initial Ghost Bridge Enhancement Proposal process and repository-owned proposals.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# GBEP-0001: Process and governance
+
+Defines the initial Ghost Bridge Enhancement Proposal process.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /gbeps/0001
+
+## Summary
+
+GBEPs provide a transparent path for protocol, process, informational, and extension changes. Proposals do not merge automatically and require owner review.
+
+## Lifecycle
+
+**Diagram: GBEP lifecycle**
+
+- Draft
+- Review
+- Accepted or Rejected
+- Final
+- Superseded or Withdrawn
+
+## Security and compatibility
+
+Every standards or extensions proposal documents security, privacy, compatibility, reference implementation, and conformance impact.
+
+---
+# GBEP-0002: Extension lifecycle
+
+Defines Experimental, Candidate, Official, Deprecated, and Removed extension states.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /gbeps/0002
+
+## Summary
+
+Extensions advance only with implementation evidence, security review appropriate to their risk, documentation, compatibility analysis, and conformance coverage.
+
+## States
+
+**Diagram: Extension lifecycle**
+
+- Experimental
+- Candidate
+- Official
+- Deprecated
+- Removed
+
+---
+# Community
+
+Current project contribution, governance, security-reporting, and lifecycle information.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /community
+
+## Current state
+
+Community reflects the repository's current owner-led project state. It does not claim neutral governance, external certification, or broad adoption.
+
+## Review boundary
+
+Legal commitments, contribution agreements, and the Code of Conduct require owner and legal review where applicable.
+
+---
+# Governance
+
+Current project ownership and the path toward broader neutral governance.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /community/governance
+
+## Current state
+
+> **Initial project governance (info)**
+> Current ownership remains with the project owner. Neutral governance does not yet exist.
+
+## Decision process
+
+1. Open a documented issue or GBEP.
+2. Record motivation, security, privacy, compatibility, and alternatives.
+3. Collect implementation and conformance evidence.
+4. Owner reviews and records a decision.
+5. Accepted work follows the release process.
+
+## Future goal
+
+A broader neutral-governance model is a future goal and requires explicit owner and legal review.
+
+---
+# Contributing
+
+Current project contribution, governance, security-reporting, and lifecycle information.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /community/contributing
+
+## Current state
+
+Contributing reflects the repository's current owner-led project state. It does not claim neutral governance, external certification, or broad adoption.
+
+## Review boundary
+
+Legal commitments, contribution agreements, and the Code of Conduct require owner and legal review where applicable.
+
+---
+# Code of Conduct
+
+Current project contribution, governance, security-reporting, and lifecycle information.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Planned
+> Canonical route: /community/code-of-conduct
+
+## Current state
+
+Code of Conduct reflects the repository's current owner-led project state. It does not claim neutral governance, external certification, or broad adoption.
+
+## Review boundary
+
+Legal commitments, contribution agreements, and the Code of Conduct require owner and legal review where applicable.
+
+---
+# Security Reporting
+
+Current project contribution, governance, security-reporting, and lifecycle information.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /community/security-reporting
+
+## Current state
+
+Security Reporting reflects the repository's current owner-led project state. It does not claim neutral governance, external certification, or broad adoption.
+
+## Review boundary
+
+Legal commitments, contribution agreements, and the Code of Conduct require owner and legal review where applicable.
+
+---
+# Roadmap
+
+Implemented foundation, current realignment, and honestly labeled future work.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /community/roadmap
+
+## Completed foundation
+
+- Phase 15A — Protocol foundation.
+- Phase 15B — SDK and developer ecosystem.
+- Phase 15B.1 — Core/Governed realignment and universal compatibility.
+
+## Next
+
+- Phase 15C — Production trust and issuer system.
+- Phase 15D — Conformance and certification hardening.
+- Phase 15F — Independent Python implementation.
+- Phase 15H — Security review, benchmarks, and Protocol 1.0.
+
+## Future profile
+
+> **Agent Coordination remains future work (warning)**
+> Direct agent-to-agent communication, delegated authority, delegation chains, and cross-vendor autonomous coordination are Experimental/Deferred.
+
+---
+# Feature Lifecycle
+
+Current project contribution, governance, security-reporting, and lifecycle information.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /community/feature-lifecycle
+
+## Current state
+
+Feature Lifecycle reflects the repository's current owner-led project state. It does not claim neutral governance, external certification, or broad adoption.
+
+## Review boundary
+
+Legal commitments, contribution agreements, and the Code of Conduct require owner and legal review where applicable.
+
+---
+# Agent Coordination
+
+Experimental/Deferred agent-to-agent coordination concepts.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/experimental/agent-coordination
+
+## Status
+
+> **Experimental/Deferred (warning)**
+> Agent Coordination is not part of Core or Governed Execution conformance and is not required for universal Host Application to External Agent integration.
+
+## Retained work
+
+Delegation and two-agent reference code remain available as experimental implementation evidence. They are not presented as the primary product path.
+
+---
+# Two-Agent Tutorial
+
+Non-primary coordination work retained for experimentation and future design.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/get-started/two-agent-tutorial
+
+## Overview
+
+Two-Agent Tutorial is part of Ghost Bridge Native 0.1-draft. Non-primary coordination work retained for experimentation and future design.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Build a Client
+
+Discover, verify, install, invoke, approve, observe, and close a Native client.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/build-client
+
+## Participants
+
+| Participant | Role |
+| --- | --- |
+| Application | Owns user experience and orchestration. |
+| Ghost Bridge client | Creates and validates protocol messages. |
+| Native Agent | Exposes governed capabilities. |
+| Operator | Runs a compatible control plane when used. |
+| User | Initiates work. |
+| Approver | Decides one exact high-impact action. |
+
+## Install and invoke
+
+```typescript
+import { createGhostBridgeClient, ApprovalRequiredError } from "@ghostbridge/native-client";
+
+const client = createGhostBridgeClient({ baseUrl: "http://127.0.0.1:8787" });
+await client.discover();
+await client.negotiateVersion();
+const passport = await client.getPassport();
+const resolution = await client.resolveInstallGrant(grant, {
+  organizationScope: "org_demo",
+  workspaceScope: "workspace_ap",
+});
+const installed = await client.install(grant, resolution.requestedScope);
+const result = await client.invokeAndWait({
+  agentId: installed.agentId,
+  capability: "invoice.extract",
+  input: { text: "Invoice A-100, total 42.00" },
+  idempotencyKey: "invoice-a-100",
+});
+const verification = await client.verifyReceipt(result.receipt);
+client.close();
+```
+
+## Approval and cancellation
+
+When a Task waits for approval, submit an Approval Decision bound to its Challenge. A cancelled watcher does not imply that the remote Task was cancelled; call cancelTask explicitly.
+
+## Typed errors
+
+```typescript
+try {
+  await client.invoke(options);
+} catch (error) {
+  if (error instanceof ApprovalRequiredError) {
+    showApproval(error.requestId);
+  }
+}
+```
+
+---
+# Connect Two Agents
+
+Connect the Invoice and Accounting reference agents with explicit data and authority boundaries.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/connect-two-agents
+
+## Architecture
+
+**Diagram: Invoice-to-accounting workflow**
+
+- Application → Invoice Agent: invoice.extract
+- Data Contract: projected invoice summary
+- Invoice Agent → Accounting Agent: bounded Delegation Grant
+- Accounting Agent: check_duplicate
+- Approver: approve draft creation
+- Accounting Agent: create_draft → Receipt
+
+## Sequence
+
+1. Install both agents.
+2. Inspect compatible Capability Contracts.
+3. Invoke invoice.extract.
+4. Project output through the Data Contract.
+5. Create a read-only Delegation Grant.
+6. Invoke accounting.check_duplicate.
+7. Reject an attempted authority expansion.
+8. Create a separate write delegation.
+9. Receive and decide the Approval Challenge.
+10. Create the accounting draft.
+11. Retry with the same idempotency key and prove one draft.
+12. Verify the Execution Receipt.
+13. Revoke the Accounting Agent Connection and prove future invocation fails.
+
+## Task states and safe errors
+
+| Moment | Expected state or error |
+| --- | --- |
+| Read capability accepted | accepted → running → completed |
+| Write needs approval | waiting_for_approval |
+| Authority expansion | DELEGATION_INVALID |
+| Same key, same input | completed with idempotentReplay |
+| Same key, different input | IDEMPOTENCY_CONFLICT |
+| After revocation | REVOKED |
+
+## Run the actual example
+
+```powershell
+node protocol/examples/two-agent-workflow/run.js
+```
+
+---
+# Programmatic agent orchestration
+
+Safe direct SDK and declarative workflow patterns.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/develop/orchestration
+
+## Direct SDK orchestration
+
+- Invoke agents through typed SDK calls.
+- Keep intermediate values in application memory.
+- Apply a Data Contract at every agent boundary.
+- Keep delegation explicit and return the final result to the user.
+
+## Declarative workflow orchestration
+
+- Reference Capability Contracts from workflow nodes.
+- Let a compatible Operator execute the graph.
+- Record checkpoints and Receipts.
+- Do not run generated code outside approved execution boundaries.
+
+> **No unrestricted code mode (danger)**
+> Phase 15B does not introduce arbitrary untrusted code execution. Any future sandbox requires a GBEP and security review.
+
+---
+# Delegation Grants
+
+Non-primary coordination work retained for experimentation and future design.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/core/delegation-grants
+
+## Overview
+
+Delegation Grants is part of Ghost Bridge Native 0.1-draft. Non-primary coordination work retained for experimentation and future design.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Delegated Authority
+
+Non-primary coordination work retained for experimentation and future design.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/security/delegated-authority
+
+## Overview
+
+Delegated Authority is part of Ghost Bridge Native 0.1-draft. Non-primary coordination work retained for experimentation and future design.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.
+
+---
+# Two-Agent Workflow
+
+Non-primary coordination work retained for experimentation and future design.
+
+> Protocol: ghostbridge/0.1-draft
+> Status: Experimental · Experimental
+> Canonical route: /docs/examples/two-agent-workflow
+
+## Overview
+
+Two-Agent Workflow is part of Ghost Bridge Native 0.1-draft. Non-primary coordination work retained for experimentation and future design.
+
+## Protocol requirements
+
+- Validate protocol version and bounded message shape.
+- Enforce Organization and Workspace scope.
+- Check expiry, policy, idempotency, and revocation where applicable.
+- Return typed, bounded errors without secrets.
+
+## Implementation guidance
+
+Use the canonical portable validators and SDK APIs. Inspect local flows with Ghost Bridge Inspector and run deterministic conformance checks before integration.

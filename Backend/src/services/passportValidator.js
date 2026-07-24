@@ -6,6 +6,8 @@ const {
 } = require('../utils/safeFetch');
 
 const SUPPORTED_AUTH_TYPES = ['no_auth_dev', 'api_key', 'bearer_token', 'oauth2'];
+// `mcp` is a quarantined historical Passport v1 value. Native protocol
+// packages do not use or import this validator.
 const SUPPORTED_RUNTIME_TYPES = ['rest', 'mcp'];
 const INSTALL_MODES = ['delegated_runtime_access', 'auth_required', 'metadata_only'];
 const RISK_LEVELS = ['low', 'medium', 'high'];

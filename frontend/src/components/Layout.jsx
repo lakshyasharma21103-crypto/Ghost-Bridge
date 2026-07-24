@@ -1,12 +1,16 @@
 import { ChevronDown, CircleHelp } from 'lucide-react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAppState } from '../app/AppState.jsx';
 import { Sidebar } from './Sidebar.jsx';
 
 export function Layout() {
-  const { identity, serverEnvironment } = useAppState();
+  const { identity, serverEnvironment, partnerConfigured } = useAppState();
   const location = useLocation();
   const gatewayReady = serverEnvironment && serverEnvironment !== 'unavailable';
+
+  if (!partnerConfigured) {
+    return <Navigate to="/console/login" replace state={{ from: location.pathname }} />;
+  }
 
   return (
     <div className="console-shell">

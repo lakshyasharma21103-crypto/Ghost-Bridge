@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/delegation.schema.json",
+  "title": "Delegation Grant",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["delegationId", "delegatorAgentId", "delegateAgentId", "parentInvocationId", "organizationScope", "allowedCapabilityKeys", "allowedInputContractReferences", "allowedDataClasses", "prohibitedDataClasses", "maximumInvocations", "furtherDelegationAllowed", "startsAt", "expiresAt", "revocationReference"],
+  "properties": {
+    "delegationId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "delegatorAgentId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "delegateAgentId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "parentInvocationId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "organizationScope": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "workspaceScope": { "type": "string", "maxLength": 200 },
+    "allowedCapabilityKeys": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "allowedInputContractReferences": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "allowedDataClasses": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "prohibitedDataClasses": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "maximumInvocations": { "type": "integer", "minimum": 1, "maximum": 100000 },
+    "remainingInvocations": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "furtherDelegationAllowed": { "type": "boolean" },
+    "startsAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "expiresAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "revocationReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "proof": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/proof" }
+  }
+}

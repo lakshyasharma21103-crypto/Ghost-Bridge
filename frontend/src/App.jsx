@@ -1,5 +1,4 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { Layout } from './components/Layout.jsx';
 import { AuditLogs } from './pages/AuditLogs.jsx';
 import { Connections } from './pages/Connections.jsx';
 import { ConnectionDetail } from './pages/ConnectionDetail.jsx';
@@ -104,14 +103,61 @@ import {
   UsageMetering,
 } from './pages/CommercialConsole.jsx';
 import { useAppState } from './app/AppState.jsx';
+import { PublicProtocolLayout } from './layouts/PublicProtocolLayout.jsx';
+import { ProtocolDocsFrame, ProtocolDocsLayout } from './layouts/ProtocolDocsLayout.jsx';
+import { PlatformConsoleLayout } from './layouts/PlatformConsoleLayout.jsx';
+import { ProtocolHome } from './pages/ProtocolHome.jsx';
+import { ProtocolDocsPage } from './pages/ProtocolDocs.jsx';
+import { ConsoleLogin } from './pages/ConsoleLogin.jsx';
+import { ConsoleProtocolPlaceholder } from './pages/ConsoleProtocolPlaceholder.jsx';
+import { TrustConsole } from './pages/TrustConsole.jsx';
+import { legacyPublicRedirects } from './docs/docsManifest.js';
 
 export default function App() {
   const { sandboxEnabled, sandboxReady } = useAppState();
 
   return (
     <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Landing />} />
+      <Route element={<PublicProtocolLayout />}>
+        <Route path="/" element={<ProtocolHome />} />
+      </Route>
+      <Route element={<ProtocolDocsLayout />}>
+        <Route element={<ProtocolDocsFrame />}>
+          <Route path="/docs/*" element={<ProtocolDocsPage />} />
+          <Route path="/extensions/*" element={<ProtocolDocsPage />} />
+          <Route path="/specification/*" element={<ProtocolDocsPage />} />
+          <Route path="/registry/*" element={<ProtocolDocsPage />} />
+          <Route path="/gbeps/*" element={<ProtocolDocsPage />} />
+          <Route path="/community/*" element={<ProtocolDocsPage />} />
+          <Route path="/sdks/*" element={<ProtocolDocsPage />} />
+          {Object.entries(legacyPublicRedirects).map(([from, to]) => (
+            <Route key={from} path={from} element={<Navigate to={to} replace />} />
+          ))}
+        </Route>
+      </Route>
+      <Route path="/console/login" element={<ConsoleLogin />} />
+      <Route element={<PlatformConsoleLayout />}>
+        <Route path="/console" element={<Landing />} />
+        <Route path="/console/agents" element={<AgentDiscovery />} />
+        <Route path="/console/passports" element={<PassportsList />} />
+        <Route path="/console/install" element={<ResolvePassportKey />} />
+        <Route path="/console/workflows" element={<Orchestrations />} />
+        <Route path="/console/invocations" element={<Invocations />} />
+        <Route path="/console/delegations" element={<DelegationGrants />} />
+        <Route path="/console/approvals" element={<ConsoleProtocolPlaceholder />} />
+        <Route path="/console/tasks" element={<OrchestrationRuns />} />
+        <Route path="/console/receipts" element={<ConsoleProtocolPlaceholder />} />
+        <Route path="/console/policies" element={<Policies />} />
+        <Route path="/console/security" element={<ConsoleProtocolPlaceholder />} />
+        <Route path="/console/security/issuers" element={<TrustConsole />} />
+        <Route path="/console/security/trust-policies" element={<TrustConsole />} />
+        <Route path="/console/security/signing-keys" element={<TrustConsole />} />
+        <Route path="/console/security/revocation" element={<TrustConsole />} />
+        <Route path="/console/security/verification-events" element={<TrustConsole />} />
+        <Route path="/console/operations" element={<Operations />} />
+        <Route path="/console/analytics" element={<PilotAnalyticsOverview />} />
+        <Route path="/console/commercial" element={<ProductCatalog />} />
+        <Route path="/console/admin" element={<ConsoleProtocolPlaceholder />} />
         <Route path="/partner" element={<PartnerDashboard />} />
         <Route path="/operations" element={<Operations />} />
         <Route path="/operations/scale-capacity" element={<ScaleCapacity />} />

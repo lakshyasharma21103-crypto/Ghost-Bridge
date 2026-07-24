@@ -1,0 +1,31 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/invocation.schema.json",
+  "title": "Invocation Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "invocationId", "messageId", "organizationScope", "initiatingSubject", "targetAgentId", "targetPassportVersion", "capabilityKey", "capabilityVersion", "inputContractReference", "deadline", "payload", "payloadClassification", "requestedReceiptProfile"],
+  "properties": {
+    "protocolVersion": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/protocolVersion" },
+    "invocationId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "messageId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "organizationScope": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "workspaceScope": { "type": "string", "maxLength": 200 },
+    "initiatingSubject": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "targetAgentId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "targetPassportVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "capabilityKey": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "capabilityVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "delegationReference": { "type": "string", "maxLength": 500 },
+    "inputContractReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "approvalReference": { "type": "string", "maxLength": 500 },
+    "idempotencyKey": { "type": "string", "maxLength": 200 },
+    "deadline": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "traceContext": { "type": "object", "maxProperties": 20, "additionalProperties": { "type": "string", "maxLength": 200 } },
+    "parentInvocationId": { "type": "string", "maxLength": 200 },
+    "payload": { "type": "object", "maxProperties": 256 },
+    "payloadClassification": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "requestedReceiptProfile": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "extensions": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/extensions" }
+  }
+}

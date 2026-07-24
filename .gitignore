@@ -40,6 +40,9 @@ temp/
 # Testing
 playwright-report/
 test-results/
+.ghostbridge-inspector/
+**/.ghostbridge-inspector/
+*.inspector-session.json
 
 # Editors
 .vscode/*

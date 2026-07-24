@@ -1,0 +1,29 @@
+{
+  "name": "@ghostbridge/issuer",
+  "version": "0.1.0-draft",
+  "private": true,
+  "description": "Ghost Bridge Trust Profile 0.1-draft issuer toolkit and non-exporting local synthetic key provider.",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "node --check src/index.js",
+    "typecheck": "node --check src/index.js",
+    "lint": "node --check src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@ghostbridge/protocol-core": "0.1.0-draft",
+    "@ghostbridge/trust": "0.1.0-draft"
+  },
+  "license": "UNLICENSED"
+}

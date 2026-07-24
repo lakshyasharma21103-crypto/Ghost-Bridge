@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json",
+  "title": "Ghost Bridge Native common wire definitions",
+  "type": "object",
+  "$defs": {
+    "protocolVersion": { "const": "ghostbridge/0.1-draft" },
+    "opaqueId": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "timestamp": { "type": "string", "format": "date-time", "maxLength": 40 },
+    "stringList": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "type": "string", "maxLength": 500 },
+      "uniqueItems": true
+    },
+    "profileSupport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported", "status", "conformance"],
+      "properties": {
+        "id": {
+          "enum": [
+            "ghostbridge.core",
+            "ghostbridge.governed-execution",
+            "ghostbridge.agent-coordination.experimental"
+          ]
+        },
+        "supported": { "type": "boolean" },
+        "status": { "enum": ["draft", "experimental", "deferred", "deprecated"] },
+        "conformance": {
+          "type": "array",
+          "maxItems": 10,
+          "items": { "type": "string", "pattern": "^[CGA][1-3]$" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "core": { "$ref": "#/$defs/profileSupport" },
+        "governedExecution": { "$ref": "#/$defs/profileSupport" },
+        "agentCoordination": { "$ref": "#/$defs/profileSupport" }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9]*(?:[.-][A-Za-z0-9]+)+(?:/[A-Za-z0-9._-]+)?$"
+      },
+      "additionalProperties": true
+    },
+    "proof": {
+      "type": "object",
+      "maxProperties": 16,
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

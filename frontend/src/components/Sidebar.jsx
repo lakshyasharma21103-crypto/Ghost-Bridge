@@ -43,7 +43,7 @@ import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAppState } from '../app/AppState.jsx';
 
 const primaryItems = [
-  { label: 'Overview', path: '/', icon: Home, end: true },
+  { label: 'Overview', path: '/console', icon: Home, end: true },
   { label: 'Operations', path: '/operations', icon: Gauge },
   { label: 'Scale & Capacity', path: '/operations/scale-capacity', icon: BarChart3 },
   { label: 'Queue Partitions', path: '/operations/queue-partitions', icon: Layers3 },
@@ -90,17 +90,22 @@ const primaryItems = [
   { label: 'Orch Alerts', path: '/orchestrations/alerts', icon: AlertTriangle },
   { label: 'Recovery Policies', path: '/recovery-policies', icon: LifeBuoy },
   { label: 'Interventions', path: '/interventions', icon: UserCheck },
-  { label: 'Agent Discovery', path: '/agent-discovery', icon: Search },
+  { label: 'Native Agents', path: '/agent-discovery', icon: Search },
   { label: 'Selection Policies', path: '/selection-policies', icon: ListChecks },
   { label: 'Selection Decisions', path: '/selection-decisions', icon: GitBranch },
   { label: 'Data Contracts', path: '/data-contracts', icon: FileKey2 },
   { label: 'Delegation Grants', path: '/delegation-grants', icon: KeySquare },
   { label: 'Delegation Invocations', path: '/delegation-invocations', icon: Workflow },
   { label: 'Passports', path: '/passports', icon: ShieldCheck },
-  { label: 'Install Keys', path: '/install-keys/resolve', icon: KeyRound, match: '/install-keys' },
+  { label: 'Install Agents', path: '/install-keys/resolve', icon: KeyRound, match: '/install-keys' },
   { label: 'Connections', path: '/connections', icon: Link2 },
   { label: 'Invocations', path: '/invocations', icon: Activity },
   { label: 'Audit Logs', path: '/audit', icon: ScrollText },
+  { label: 'Trusted Issuers', path: '/console/security/issuers', icon: ShieldCheck },
+  { label: 'Trust Policies', path: '/console/security/trust-policies', icon: ShieldEllipsis },
+  { label: 'Signing Keys', path: '/console/security/signing-keys', icon: KeyRound },
+  { label: 'Revocation', path: '/console/security/revocation', icon: ShieldAlert },
+  { label: 'Verification Events', path: '/console/security/verification-events', icon: ScrollText },
 ];
 
 const commercialItems = [
@@ -154,13 +159,13 @@ export function Sidebar() {
       ) : null}
       <aside className={`console-sidebar ${open ? 'console-sidebar-open' : ''}`}>
         <div className="sidebar-brand-row">
-          <Link to="/" className="sidebar-brand" onClick={closeNavigation}>
+          <Link to="/console" className="sidebar-brand" onClick={closeNavigation}>
             <span className="sidebar-product-mark">
               <Braces className="h-4 w-4" aria-hidden="true" />
             </span>
             <span className="min-w-0">
-              <span className="sidebar-brand-name">Agent Passport</span>
-              <span className="sidebar-brand-detail">Runtime Gateway</span>
+              <span className="sidebar-brand-name">Ghost Bridge</span>
+              <span className="sidebar-brand-detail">Platform Console</span>
             </span>
           </Link>
           <button

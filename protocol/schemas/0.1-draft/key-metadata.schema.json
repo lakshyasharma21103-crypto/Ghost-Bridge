@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/key-metadata.schema.json",
+  "title": "Ghost Bridge public signing-key metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kid", "kty", "crv", "x", "use", "alg", "state", "notBefore", "expiresAt", "thumbprint", "purpose"],
+  "properties": {
+    "kid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._~-]+$" },
+    "kty": { "const": "OKP" },
+    "crv": { "const": "Ed25519" },
+    "x": { "type": "string", "minLength": 40, "maxLength": 100 },
+    "use": { "const": "sig" },
+    "alg": { "const": "EdDSA" },
+    "state": { "enum": ["generated", "prepublished", "active", "retiring", "retired", "suspended", "revoked", "expired", "compromised"] },
+    "notBefore": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "expiresAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "activationSequence": { "type": ["integer", "null"], "minimum": 1 },
+    "retirementSequence": { "type": ["integer", "null"], "minimum": 1 },
+    "thumbprint": { "type": "string", "minLength": 32, "maxLength": 100 },
+    "purpose": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["issuer_metadata", "passport_signing", "capability_signing", "install_resolution_signing", "connection_offer_signing", "revocation_signing", "agent_key_authorization", "execution_receipt_signing", "request_signing", "recovery"]
+      }
+    },
+    "testOnly": { "type": "boolean" },
+    "compromisedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" }
+  }
+}

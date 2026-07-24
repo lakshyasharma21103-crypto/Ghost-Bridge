@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/task.schema.json",
+  "title": "Execution Task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["taskId", "invocationId", "state", "safeProgressCategory", "createdAt", "updatedAt", "deadline", "cancellationSupported", "retryCategory", "nextActionCategory"],
+  "properties": {
+    "taskId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "invocationId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "state": { "enum": ["accepted", "queued", "running", "waiting_for_approval", "waiting_for_dependency", "completed", "failed", "cancelled", "timed_out", "recovery_required", "compensation_required", "revoked"] },
+    "safeProgressCategory": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "createdAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "startedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "updatedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "completedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "deadline": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "cancellationSupported": { "type": "boolean" },
+    "retryCategory": { "type": "string", "maxLength": 100 },
+    "safeFailureCode": { "type": "string", "maxLength": 200 },
+    "receiptReference": { "type": "string", "maxLength": 500 },
+    "publicCheckpointReference": { "type": "string", "maxLength": 500 },
+    "nextActionCategory": { "type": "string", "maxLength": 100 }
+  }
+}

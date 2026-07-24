@@ -1,4 +1,136 @@
-# Agent Passport Runtime Gateway
+# Ghost Bridge
+
+Ghost Bridge is an open protocol for installing external AI agents into any
+compatible Host Application.
+
+**Install external agents into any compatible application.**
+
+An Agent Provider publishes one conforming Native Agent. A Host Application
+uses a generic resolver-backed SDK path to verify its Passport, preview profile
+and extension compatibility, negotiate authentication, install approved
+capabilities, invoke them, observe Tasks and Receipts, and revoke the
+Connection. Users enter an opaque Install Grant, never a runtime endpoint or
+provider credential.
+
+Core C1-C3 is the universal baseline. Governed Execution G1-G3 adds
+organization/workspace policy, authorization, Data Contracts, approval,
+idempotent durable execution, and audit evidence. Agent Coordination is
+Experimental/Deferred and is not required by either active profile.
+
+## Protocol and Platform
+
+The **Ghost Bridge Protocol** is open and portable: public specification, JSON
+Schemas, native wire messages, TypeScript SDK foundations, conformance tools,
+and reference examples. It can be implemented without this repository's
+commercial control plane.
+
+The **Ghost Bridge Platform** is the first complete implementation: hosted or
+privately deployed enterprise installation, orchestration, Runtime Gateway,
+organizations/workspaces, RBAC, policy, approvals, recovery, observability,
+audit, operations, analytics, and commercial administration. The Platform
+implements the Protocol; it is not the only possible implementation.
+
+Protocol `ghostbridge/0.1-draft` is **experimental**, not stable. Phase 15C
+adds the first production-oriented issuer, proof, signing-key, revocation,
+request-integrity, and receipt-verification trust foundation. It remains a
+draft: independent implementation, external security review, and production
+certification have not been completed.
+
+- [Protocol entry point](protocol/README.md)
+- [0.1-draft specification](protocol/specification/0.1-draft/overview.md)
+- [Public JSON Schemas](protocol/schemas/0.1-draft)
+- [North Star](docs/NORTH_STAR.md)
+- [Universal CodeForge/FlowDesk verifier](scripts/verifyUniversalAgentCompatibility.js)
+- [Experimental two-agent example](protocol/examples/two-agent-workflow/README.md)
+- [Legacy integration quarantine](docs/legacy/mcp-code-inventory.md)
+- [Future benchmark plan](docs/BENCHMARK_PLAN.md)
+
+Ghost Bridge Native has no dependency on MCP and requires no MCP URL. Phase 15
+adds no MCP adapter or migration tooling. Historical MCP-specific Platform code
+is quarantined for backward compatibility and absent from the public protocol
+site and native packages.
+
+Run the deterministic, local, non-billed native verification:
+
+```powershell
+npm run verify:ghostbridge-native-protocol
+```
+
+This retained Experimental/Deferred regression starts synthetic Invoice and
+Accounting agents and exercises
+discovery, version negotiation, one-time installation, organization/workspace
+isolation, Tasks, Receipts, Data Contracts, scoped delegation, approval,
+side-effect idempotency, and revocation, then cleans up its listeners.
+
+## Phase 15B.1 universal compatibility
+
+Phase 15B.1 realigns the primary product model to Host Application → External
+Agent. It adds explicit profiles, compatibility and authentication negotiation,
+generic grant resolution, independent CodeForge/FlowDesk fixtures, a direct
+LedgerWorks/OpsCanvas governed fixture, Core/Governed conformance levels, and
+Host-first public documentation and tooling.
+
+```powershell
+npm run verify:universal-agent-compatibility
+npm run verify:governed-host-agent-compatibility
+npm run verify:phase-15b-realignment
+```
+
+Read the [Phase 15B.1 completion report](docs/PHASE_15B1_COMPLETION_REPORT.md)
+for the complete API, documentation, verification, migration, and retained
+experimental-work inventory.
+
+## Phase 15B developer ecosystem
+
+Phase 15B adds the production-draft TypeScript SDK surface, progressive
+Capability Discovery, typed errors, a local-only Inspector, a manifest-driven
+manifest-driven documentation system, generated `llms.txt` indexes, Extensions,
+Registry Preview, GBEP governance, and an agent-development skill pack.
+
+```powershell
+npm run generate:docs-index
+npm run verify:ghostbridge-sdk
+npm run verify:ghostbridge-docs
+npm run verify:ghostbridge-inspector
+npm run verify:ghostbridge-phase-15b
+npm run dev:ghostbridge-inspector -- --target=http://127.0.0.1:PORT
+```
+
+Read the [Phase 15B completion report](docs/PHASE_15B_COMPLETION_REPORT.md) for
+the route map, SDK/API changes, Inspector restrictions, verification evidence,
+safe-cleanup decisions, retained legacy compatibility, and known limitations.
+
+Manual live-provider state is unchanged:
+
+- `verify:gemini-agent` — blocked provider unavailable; never run automatically
+- `verify:external-flow` — deferred; never run automatically
+- `external.grounded_research` — disabled and non-billable
+
+## Phase 15C trust foundation
+
+Phase 15C adds issuer discovery, Ed25519 public-key discovery, signed Agent
+Passports and Capability Manifests, audience and execution-key binding,
+rotation and revocation, replay-resistant request integrity, signed Receipts,
+Host trust policy, trust inspection, and independent CodeForge/FlowDesk trust
+fixtures. Test keys are explicit local fixtures and are rejected in production
+mode.
+
+```powershell
+npm run verify:ghostbridge-issuer-trust
+npm run verify:ghostbridge-key-rotation
+npm run verify:ghostbridge-revocation-distribution
+npm run verify:ghostbridge-request-integrity
+npm run verify:cross-company-trust
+npm run verify:ghostbridge-phase-15c
+```
+
+These verifiers are deterministic, local, and non-billed. They do not deploy,
+publish, contact Gemini, or run external-flow or performance tests. Read the
+[Phase 15C completion report](docs/PHASE_15C_COMPLETION_REPORT.md) and
+[trust overview](docs/security/trust-overview.md) for the implemented boundary,
+verification evidence, and known review gaps.
+
+## Platform implementation history
 
 Phase 14B pilot analytics, product feedback, governed experiments, and adoption optimization are documented in [PILOT_ANALYTICS_ADOPTION.md](PILOT_ANALYTICS_ADOPTION.md).
 
@@ -23,9 +155,10 @@ Phase 13E2 governed query shapes, additive indexes, regional cache namespaces, d
 Phase 13E3 single-writer regional authority, epoch fencing, failover/failback, regional routing, recovery objectives, backup inventory, isolated restore, and deterministic DR drills are documented in [MULTI_REGION_RESILIENCE.md](./MULTI_REGION_RESILIENCE.md).
 Phase 13E4 bounded synthetic load scenarios, performance budgets and baselines, compatible regression checks, safe evidence, and advisory capacity planning are documented in [PERFORMANCE_CAPACITY.md](./PERFORMANCE_CAPACITY.md).
 
-One key to discover, connect, and invoke any compatible AI agent.
-
-Agent Passport Runtime Gateway lets a partner platform register an Agent Passport, issue a one-time install key, and let a receiving platform resolve that key into a usable runtime connection. REST runtime invocation is available in v1.
+The earlier Agent Passport Runtime Gateway remains the Platform's historical
+implementation foundation. Phase 15A preserves those enterprise behaviors
+behind the authenticated Console while native protocol DTOs remain independent
+of database models and legacy adapters.
 
 Read the complete implementation, architecture, route, security, and verification report in [FINAL_IMPLEMENTATION_REPORT.md](FINAL_IMPLEMENTATION_REPORT.md).
 

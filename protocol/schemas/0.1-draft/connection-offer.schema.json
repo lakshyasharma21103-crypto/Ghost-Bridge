@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/connection-offer.schema.json",
+  "title": "Connection Offer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["connectionOfferId", "agentId", "passportReference", "protocolVersion", "transportCategory", "runtimeReference", "authenticationMode", "authenticationSetupReference", "expiresAt", "acceptedOrganizationScope", "restrictions", "revocationReference"],
+  "properties": {
+    "connectionOfferId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "agentId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "passportReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "protocolVersion": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/protocolVersion" },
+    "transportCategory": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "runtimeReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "authenticationMode": { "enum": ["none", "oauth", "mutual_tls", "signed_request", "managed_credential", "delegated_credential", "platform_brokered"] },
+    "authenticationModes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 7,
+      "items": { "enum": ["none", "oauth", "mutual_tls", "signed_request", "managed_credential", "delegated_credential", "platform_brokered"] },
+      "uniqueItems": true
+    },
+    "authenticationSetupReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "expiresAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "acceptedOrganizationScope": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "acceptedWorkspaceScope": { "type": "string", "maxLength": 200 },
+    "restrictions": { "type": "array", "maxItems": 100, "items": { "type": "string", "maxLength": 500 } },
+    "revocationReference": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "issuer": { "type": "string", "format": "uri", "maxLength": 500 },
+    "passportId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "passportVersion": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "supportedProtocolVersions": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "supportedTrustProfiles": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "audience": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "allowedCapabilitySet": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "issuedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
+    "messageId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
+    "agentExecutionKeyReferences": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/stringList" },
+    "trustProfileVersion": { "const": "ghostbridge-trust/0.1-draft" },
+    "proof": { "anyOf": [{ "$ref": "https://ghostbridge.dev/schemas/0.1-draft/proof.schema.json" }, { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/proof" }] }
+  }
+}

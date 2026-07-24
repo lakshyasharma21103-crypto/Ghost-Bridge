@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/trust-result.schema.json",
+  "title": "Ghost Bridge trust result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["category", "trusted", "cryptographicallyValid", "reasonCodes", "evidence"],
+  "properties": {
+    "category": { "enum": ["verified_and_trusted", "cryptographically_valid_review_required", "cryptographically_valid_untrusted_issuer", "verified_with_warning", "indeterminate", "suspended", "revoked", "blocked", "invalid"] },
+    "trusted": { "type": "boolean" },
+    "cryptographicallyValid": { "type": "boolean" },
+    "reasonCodes": { "type": "array", "maxItems": 32, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 100 } },
+    "evidence": { "type": "object", "maxProperties": 32, "additionalProperties": true }
+  }
+}

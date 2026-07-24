@@ -67,15 +67,15 @@ export function Landing() {
     <>
       <header className="overview-header">
         <div className="min-w-0">
-          <h1 className="overview-title">Agent Passport Runtime Gateway</h1>
+          <h1 className="overview-title">Ghost Bridge Platform</h1>
           <p className="overview-description">
-            Manage verified agents, governed connections and runtime activity.
+            Operate the enterprise implementation of the open Ghost Bridge Protocol.
           </p>
         </div>
         <div className="overview-actions">
           <Link to="/install-keys/resolve" className="console-button console-button-secondary">
             <KeyRound className="h-4 w-4" aria-hidden="true" />
-            Resolve key
+            Install agent
           </Link>
           <Link to="/passports/new" className="console-button console-button-primary">
             <FileKey className="h-4 w-4" aria-hidden="true" />

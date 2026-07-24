@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ghostbridge.dev/schemas/0.1-draft/proof.schema.json",
+  "title": "Ghost Bridge protected JWS proof",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "profile", "protectedJws", "kid", "algorithm", "createdAt"],
+  "properties": {
+    "format": { "const": "JWS" },
+    "profile": { "const": "ghostbridge-proof/0.1-draft" },
+    "protectedJws": { "type": "string", "minLength": 32, "maxLength": 32768 },
+    "kid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._~-]+$" },
+    "algorithm": { "const": "EdDSA" },
+    "createdAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" }
+  }
+}

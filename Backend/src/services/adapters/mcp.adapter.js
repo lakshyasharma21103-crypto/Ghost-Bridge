@@ -1,3 +1,6 @@
+// LEGACY QUARANTINE: retained only for historical stored Passport/Connection
+// compatibility. Ghost Bridge Native must never import this module. Do not add
+// new features; removal is planned after a backward-compatible data migration.
 const MCP_REMOTE_RUNTIME_NOT_IMPLEMENTED = 'MCP_REMOTE_RUNTIME_NOT_IMPLEMENTED';
 const MCP_REMOTE_RUNTIME_NOT_IMPLEMENTED_MESSAGE =
   'MCP runtime adapter is configured but remote MCP transport is not implemented yet.';

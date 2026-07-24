@@ -1,0 +1,28 @@
+{
+  "name": "@ghostbridge/trust",
+  "version": "0.1.0-draft",
+  "private": true,
+  "description": "Portable Ghost Bridge Trust Profile 0.1-draft verification, discovery, policy, replay, and revocation utilities.",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "node --check src/index.js",
+    "typecheck": "node --check src/index.js",
+    "lint": "node --check src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@ghostbridge/protocol-core": "0.1.0-draft"
+  },
+  "license": "UNLICENSED"
+}
