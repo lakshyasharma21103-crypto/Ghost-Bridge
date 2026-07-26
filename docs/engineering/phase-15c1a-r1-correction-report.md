@@ -268,7 +268,11 @@ None. `package-lock.json` is unchanged.
 
 ## 18. Environment variables changed
 
-None.
+Added `MONGODB_STORE_URI` to the Phase 15C.1A GitHub Actions workflow.
+It points only to the isolated CI MongoDB replica-set member used by
+`verify:phase-15c1a-r1-mongo-store-contract`.
+
+No production, developer, or external-service environment variable was added.
 
 ## 19. Local verification results
 
