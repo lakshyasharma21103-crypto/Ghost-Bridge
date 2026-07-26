@@ -27,9 +27,11 @@ const TERMINAL_STATES = new Set([
   'revoked',
 ]);
 const BASE_CAPABILITIES = Object.freeze({
-  persistence: 'durable',
-  atomicCompareAndSet: true,
+  persistence: 'deterministic_local',
+  productionEligible: false,
+  atomicCompareAndSet: false,
   transactionalTerminalWrite: false,
+  atomicInstallGrantRedemption: false,
   adapterName: 'ghostbridge-json-file',
   adapterVersion: '1',
 });
@@ -209,7 +211,6 @@ class FileTerminalTransactionStore {
     this.database = database;
     this.capabilities = Object.freeze({
       ...BASE_CAPABILITIES,
-      transactionalTerminalWrite: true,
     });
   }
 
@@ -272,6 +273,109 @@ class FileTerminalTransactionStore {
   }
 }
 
+class FileInstallGrantTransactionStore {
+  constructor(database) {
+    this.database = database;
+    this.capabilities = Object.freeze({
+      ...BASE_CAPABILITIES,
+    });
+  }
+
+  async redeemInstallGrant(input) {
+    assertPlainData(input);
+    return this.database.exclusive((state) => {
+      const keyHash = validKey(input.keyHash);
+      const grant = state.installGrants[keyHash];
+      if (!grant) {
+        throw storeProtocolError(
+          'INSTALL_GRANT_INVALID',
+          'The Install Grant is invalid.',
+        );
+      }
+      if (grant.status === 'redeemed') {
+        throw storeProtocolError(
+          'INSTALL_GRANT_ALREADY_REDEEMED',
+          'The Install Grant was already redeemed.',
+        );
+      }
+      if (grant.status === 'revoked') {
+        throw storeProtocolError('REVOKED', 'The Install Grant was revoked.');
+      }
+      if (grant.status !== 'active') {
+        throw storeProtocolError(
+          'INSTALL_GRANT_INVALID',
+          'The Install Grant is not active.',
+        );
+      }
+      const now = Date.parse(input.now);
+      if (
+        !Number.isFinite(now) ||
+        !Number.isFinite(Date.parse(grant.expiresAt)) ||
+        Date.parse(grant.expiresAt) <= now
+      ) {
+        throw storeProtocolError(
+          'INSTALL_GRANT_EXPIRED',
+          'The Install Grant has expired.',
+        );
+      }
+      if (
+        grant.organizationScope !== input.organizationScope ||
+        (grant.workspaceScope || undefined) !==
+          (input.workspaceScope || undefined)
+      ) {
+        throw storeProtocolError(
+          'SCOPE_MISMATCH',
+          'The Install Grant scope does not match.',
+        );
+      }
+      const enabledCapabilityKeys = [
+        ...new Set(input.approvedCapabilityKeys || []),
+      ];
+      if (
+        enabledCapabilityKeys.length === 0 ||
+        enabledCapabilityKeys.some(
+          (key) => !grant.allowedCapabilityKeys.includes(key),
+        )
+      ) {
+        throw storeProtocolError(
+          'AUTHORIZATION_DENIED',
+          'The requested capabilities are not authorized by the Install Grant.',
+        );
+      }
+      const connectionId = validKey(input.connection?.connectionId);
+      if (Object.hasOwn(state.connections, connectionId)) {
+        throw storeProtocolError(
+          'INSTALL_GRANT_INVALID',
+          'The Connection identifier is already in use.',
+        );
+      }
+      const connection = {
+        ...clone(input.connection),
+        organizationScope: grant.organizationScope,
+        ...(grant.workspaceScope
+          ? { workspaceScope: grant.workspaceScope }
+          : {}),
+        enabledCapabilityKeys,
+        disabledCapabilityKeys: grant.allowedCapabilityKeys.filter(
+          (key) => !enabledCapabilityKeys.includes(key),
+        ),
+      };
+      const updatedGrant = {
+        ...grant,
+        status: 'redeemed',
+        redeemedAt: input.now,
+        connectionId,
+      };
+      state.connections[connectionId] = connection;
+      state.installGrants[keyHash] = updatedGrant;
+      return {
+        grant: updatedGrant,
+        connection,
+      };
+    });
+  }
+}
+
 function matchesApprovalDecision(decision, criteria) {
   if (
     !decision ||
@@ -290,6 +394,13 @@ function matchesApprovalDecision(decision, criteria) {
   return Number.isFinite(expiresAt) && expiresAt > Date.parse(criteria.now);
 }
 
+function storeProtocolError(errorCode, safeMessage) {
+  const error = new Error(safeMessage);
+  error.code = errorCode;
+  error.errorCode = errorCode;
+  return error;
+}
+
 function createFileProtocolStores(options = {}) {
   const database = new FileProtocolDatabase(options.directory);
   const stores = Object.fromEntries(
@@ -301,6 +412,8 @@ function createFileProtocolStores(options = {}) {
     ]),
   );
   stores.terminalTransactions = new FileTerminalTransactionStore(database);
+  stores.installGrantTransactions =
+    new FileInstallGrantTransactionStore(database);
   Object.defineProperty(stores, 'close', {
     enumerable: false,
     value: () => database.close(),

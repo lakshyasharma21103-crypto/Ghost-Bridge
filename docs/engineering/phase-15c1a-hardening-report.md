@@ -10,6 +10,8 @@ Recorded: 2026-07-26 (Asia/Calcutta)
 > superseded. Those bounded findings are corrected in the Phase 15C.1A-R1 worktree; see
 > `phase-15c1a-r1-correction-report.md` and
 > `phase-15c1a-r1-residual-inventory.md`. Remote Linux/MongoDB evidence remains blocked.
+> The R1 JSON filesystem adapter is deterministic local persistence only and is explicitly
+> rejected in production; it is not evidence for production durability or atomicity.
 
 ## 1. Executive outcome
 

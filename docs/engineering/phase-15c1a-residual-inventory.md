@@ -8,6 +8,8 @@ Recorded: 2026-07-26 (Asia/Calcutta)
 > durable store proof, unknown-Connection revocation, conformance paths, and CI preparation.
 > They are tracked with current evidence in `phase-15c1a-r1-residual-inventory.md`; the R1
 > correction report supersedes any broader completion claim here.
+> The R1 JSON filesystem adapter is local-only and cannot satisfy production persistence or
+> transaction evidence.
 
 | ID | Finding | Affected paths | Security/correctness impact | Current behavior | Required behavior | Action | Tests | Status | Remaining risk |
 |---|---|---|---|---|---|---|---|---|---|

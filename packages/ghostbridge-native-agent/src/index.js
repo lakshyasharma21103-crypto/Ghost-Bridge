@@ -97,6 +97,7 @@ function createGhostBridgeAgent(options = {}) {
     'replay',
     'revocation',
     'terminalTransactions',
+    'installGrantTransactions',
   ];
   if (
     productionMode &&
@@ -110,10 +111,13 @@ function createGhostBridgeAgent(options = {}) {
       approvals: ['values'],
       approvalDecisions: ['putDecision', 'consumeApprovedDecision'],
       terminalTransactions: ['commitTerminal', 'recoverTerminalWrites'],
+      installGrantTransactions: ['redeemInstallGrant'],
     };
     for (const name of requiredProductionStores) {
       if (name === 'terminalTransactions') {
         assertTerminalTransactionStore(options.stores[name]);
+      } else if (name === 'installGrantTransactions') {
+        assertInstallGrantTransactionStore(options.stores[name]);
       } else {
         assertDurableStore(options.stores[name], name, storeMethods[name]);
       }
@@ -194,6 +198,8 @@ function createGhostBridgeAgent(options = {}) {
   const decisions = options.stores?.approvalDecisions || new Map();
   const idempotency = options.stores?.idempotency || new Map();
   const terminalTransactions = options.stores?.terminalTransactions;
+  const installGrantTransactions =
+    options.stores?.installGrantTransactions;
   const activeExecutions = new Map();
   const terminalOperations = new Map();
   const metrics = new Map();
@@ -517,10 +523,13 @@ function createGhostBridgeAgent(options = {}) {
       return options.installResolutionSigner(trustedPayload);
     },
     redeemInstallGrant(key, scope = {}, requestContext = {}) {
+      if (productionMode) {
+        return redeemInstallGrantAtomically(key, scope, requestContext);
+      }
       const complete = (grant) =>
         redeemInstallGrantRecord(grant, scope, requestContext);
       const found = findGrant(key);
-      return productionMode ? Promise.resolve(found).then(complete) : complete(found);
+      return complete(found);
     },
     issueApprovalChallenge(input) {
       const now = clock();
@@ -1301,12 +1310,12 @@ function createGhostBridgeAgent(options = {}) {
         'The capability authorization decision was unavailable.',
       );
     }
-    if (decision === true) return;
     if (
       mode === 'localFixtureMode' &&
-      decision &&
-      typeof decision === 'object' &&
-      decision.allowed === true
+      (decision === true ||
+        (decision &&
+          typeof decision === 'object' &&
+          decision.allowed === true))
     ) {
       return;
     }
@@ -1538,9 +1547,6 @@ function createGhostBridgeAgent(options = {}) {
         }
         return { ...publicConnection(connection), idempotentReplay: true };
       };
-      if (productionMode) {
-        return storeGet(connections, grant.connectionId).then(replay);
-      }
       return replay(connections.get(grant.connectionId));
     }
     const selectedAuthenticationMode =
@@ -1636,15 +1642,167 @@ function createGhostBridgeAgent(options = {}) {
       });
       return { ...publicConnection(connection), idempotentReplay: false };
     };
-    if (productionMode) {
-      return Promise.all([
-        storePut(connections, connectionId, connection),
-        storePut(installGrants, grant.keyHash, updatedGrant),
-      ]).then(complete);
-    }
     connections.set(connectionId, connection);
     installGrants.set(grant.keyHash, updatedGrant);
     return complete();
+  }
+
+  async function redeemInstallGrantAtomically(
+    key,
+    scope,
+    requestContext,
+  ) {
+    if (!scope.organizationScope) {
+      throw protocolError(
+        'SCOPE_REQUIRED',
+        'Organization scope is required.',
+      );
+    }
+    const selectedAuthenticationMode =
+      scope.authenticationMode || authenticationModes[0];
+    if (!authenticationModes.includes(selectedAuthenticationMode)) {
+      throw protocolError(
+        'NO_COMPATIBLE_AUTHENTICATION_MODE',
+        'The selected authentication mode is not supported.',
+      );
+    }
+    const enabledCapabilityKeys = scope.approvedCapabilityKeys;
+    if (
+      !Array.isArray(enabledCapabilityKeys) ||
+      enabledCapabilityKeys.length === 0
+    ) {
+      throw protocolError(
+        'AUTHORIZATION_DENIED',
+        'The requested capability enablement is not authorized by the Install Grant.',
+      );
+    }
+    if (
+      selectedAuthenticationMode !== 'none' &&
+      (!scope.authenticationBinding ||
+        (!scope.authenticationBinding.credentialReference &&
+          !scope.authenticationBinding.transportBindingReference) ||
+        scope.authenticationBinding.authenticationMode !==
+          selectedAuthenticationMode ||
+        scope.authenticationBinding.organizationScope !==
+          scope.organizationScope ||
+        (scope.authenticationBinding.workspaceScope || undefined) !==
+          (scope.workspaceScope || undefined))
+    ) {
+      throw protocolError(
+        'AUTHENTICATION_REQUIRED',
+        'The selected authentication mode requires a scope-bound opaque binding.',
+      );
+    }
+
+    const keyHash = digest({ key });
+    const connectionId = `connection_${crypto.randomUUID()}`;
+    const now = new Date(clock()).toISOString();
+    const connectionCandidate = {
+      connectionId,
+      agentId: passport.agentId,
+      passportVersion: passport.passportVersion,
+      status: 'active',
+      authenticationMode: selectedAuthenticationMode,
+      authenticationState:
+        selectedAuthenticationMode === 'none'
+          ? 'not_required'
+          : 'verified_and_bound',
+      ...(scope.authenticationBinding
+        ? {
+            authenticationBindingReference:
+              scope.authenticationBinding.credentialReference ||
+              scope.authenticationBinding.transportBindingReference,
+          }
+        : {}),
+      hostAudience: scope.hostAudience || options.hostAudience,
+      createdAt: now,
+      revocationReference: `revocations/connection/${connectionId}`,
+    };
+
+    let result;
+    try {
+      result = await installGrantTransactions.redeemInstallGrant({
+        keyHash,
+        now,
+        organizationScope: scope.organizationScope,
+        ...(scope.workspaceScope
+          ? { workspaceScope: scope.workspaceScope }
+          : {}),
+        approvedCapabilityKeys: [...new Set(enabledCapabilityKeys)],
+        connection: connectionCandidate,
+      });
+    } catch (error) {
+      const errorCode = error?.errorCode || error?.code;
+      if (
+        [
+          'INSTALL_GRANT_INVALID',
+          'INSTALL_GRANT_EXPIRED',
+          'INSTALL_GRANT_ALREADY_REDEEMED',
+          'SCOPE_MISMATCH',
+          'AUTHORIZATION_DENIED',
+          'REVOKED',
+        ].includes(errorCode)
+      ) {
+        throw protocolError(
+          errorCode,
+          installGrantRedemptionSafeMessage(errorCode),
+        );
+      }
+      throw protocolError(
+        'INSTALL_GRANT_INVALID',
+        'The Install Grant redemption transaction failed closed.',
+      );
+    }
+
+    const transactionGrant = result?.grant;
+    const connection = result?.connection;
+    if (
+      !transactionGrant ||
+      !connection ||
+      transactionGrant.keyHash !== keyHash ||
+      transactionGrant.status !== 'redeemed' ||
+      transactionGrant.connectionId !== connectionId ||
+      connection.connectionId !== connectionId ||
+      connection.status !== 'active' ||
+      connection.organizationScope !== scope.organizationScope ||
+      (connection.workspaceScope || undefined) !==
+        (scope.workspaceScope || undefined) ||
+      boundedSerialize(connection.enabledCapabilityKeys) !==
+        boundedSerialize([...new Set(enabledCapabilityKeys)])
+    ) {
+      throw protocolError(
+        'INSTALL_GRANT_INVALID',
+        'The Install Grant redemption transaction returned invalid state.',
+      );
+    }
+
+    const [storedGrant, storedConnection] = await Promise.all([
+      storeGet(installGrants, keyHash),
+      storeGet(connections, connectionId),
+    ]);
+    if (
+      boundedSerialize(storedGrant) !== boundedSerialize(transactionGrant) ||
+      boundedSerialize(storedConnection) !== boundedSerialize(connection)
+    ) {
+      throw protocolError(
+        'INSTALL_GRANT_INVALID',
+        'The Install Grant redemption transaction was not durably observable.',
+      );
+    }
+
+    metric('connection', 'created');
+    audit('protocol.install_grant.redeemed', {
+      organizationScope: transactionGrant.organizationScope,
+      workspaceScope: transactionGrant.workspaceScope,
+      outcome: 'redeemed',
+    });
+    audit('protocol.connection.created', {
+      organizationScope: connection.organizationScope,
+      workspaceScope: connection.workspaceScope,
+      outcome: 'created',
+      principalId: requestContext.authenticatedPrincipal?.subjectId,
+    });
+    return { ...publicConnection(connection), idempotentReplay: false };
   }
 
   function installResolution(grant, scope) {
@@ -2186,8 +2344,10 @@ function assertDurableStore(store, name, extraMethods = []) {
     store instanceof Map ||
     !capabilities ||
     capabilities.persistence !== 'durable' ||
+    capabilities.productionEligible !== true ||
     capabilities.atomicCompareAndSet !== true ||
     capabilities.transactionalTerminalWrite !== false ||
+    capabilities.atomicInstallGrantRedemption !== false ||
     typeof capabilities.adapterName !== 'string' ||
     !capabilities.adapterName.trim() ||
     typeof capabilities.adapterVersion !== 'string' ||
@@ -2196,7 +2356,7 @@ function assertDurableStore(store, name, extraMethods = []) {
     requiredMethods.some((method) => typeof store[method] !== 'function')
   ) {
     throw new TypeError(
-      `Production ${name} store must be an asynchronous durable adapter and implement ${requiredMethods.join(', ')}.`,
+      `Production ${name} store must be a production-eligible asynchronous durable adapter and implement ${requiredMethods.join(', ')}.`,
     );
   }
 }
@@ -2207,8 +2367,10 @@ function assertTerminalTransactionStore(store) {
     !store ||
     !capabilities ||
     capabilities.persistence !== 'durable' ||
+    capabilities.productionEligible !== true ||
     capabilities.atomicCompareAndSet !== true ||
     capabilities.transactionalTerminalWrite !== true ||
+    capabilities.atomicInstallGrantRedemption !== false ||
     typeof capabilities.adapterName !== 'string' ||
     !capabilities.adapterName.trim() ||
     typeof capabilities.adapterVersion !== 'string' ||
@@ -2223,11 +2385,48 @@ function assertTerminalTransactionStore(store) {
   }
 }
 
+function assertInstallGrantTransactionStore(store) {
+  const capabilities = store?.capabilities;
+  if (
+    !store ||
+    !capabilities ||
+    capabilities.persistence !== 'durable' ||
+    capabilities.productionEligible !== true ||
+    capabilities.atomicCompareAndSet !== true ||
+    capabilities.transactionalTerminalWrite !== false ||
+    capabilities.atomicInstallGrantRedemption !== true ||
+    typeof capabilities.adapterName !== 'string' ||
+    !capabilities.adapterName.trim() ||
+    typeof capabilities.adapterVersion !== 'string' ||
+    !capabilities.adapterVersion.trim() ||
+    isObviousInMemoryStore(store) ||
+    typeof store.redeemInstallGrant !== 'function'
+  ) {
+    throw new TypeError(
+      'Production installGrantTransactions store must provide atomic durable Install Grant redemption.',
+    );
+  }
+}
+
 function isObviousInMemoryStore(store) {
   if (store instanceof Map) return true;
   const adapterName = String(store?.capabilities?.adapterName || '').toLowerCase();
   if (/(?:memory|map|fixture|mock|fake|test)/.test(adapterName)) return true;
   return Object.values(store || {}).some((value) => value instanceof Map);
+}
+
+function installGrantRedemptionSafeMessage(errorCode) {
+  const messages = {
+    INSTALL_GRANT_INVALID: 'The Install Grant is invalid.',
+    INSTALL_GRANT_EXPIRED: 'The Install Grant has expired.',
+    INSTALL_GRANT_ALREADY_REDEEMED:
+      'The Install Grant was already redeemed.',
+    SCOPE_MISMATCH: 'The Install Grant scope does not match.',
+    AUTHORIZATION_DENIED:
+      'The requested capability enablement is not authorized by the Install Grant.',
+    REVOKED: 'The Install Grant has been revoked.',
+  };
+  return messages[errorCode] || 'The Install Grant redemption failed.';
 }
 
 function storeGet(store, key) {
@@ -2363,7 +2562,10 @@ function isVerifiedAuthorizationDecision(decision) {
       decision.principalId.trim() &&
       typeof decision.policyDecisionId === 'string' &&
       decision.policyDecisionId.trim() &&
+      typeof decision.evaluatedAt === 'string' &&
       Number.isFinite(Date.parse(decision.evaluatedAt)) &&
+      new Date(Date.parse(decision.evaluatedAt)).toISOString() ===
+        decision.evaluatedAt &&
       typeof decision.policyVersion === 'string' &&
       decision.policyVersion.trim(),
   );

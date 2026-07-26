@@ -53,6 +53,13 @@ function approvalBinding() {
   );
 }
 
+function authorizationBoundary() {
+  nodeTest(
+    [agentSecurityTest],
+    'production authorization evidence',
+  );
+}
+
 function taskReceipt() {
   nodeTest(
     [agentSecurityTest],
@@ -63,7 +70,7 @@ function taskReceipt() {
 function storeContract() {
   nodeTest(
     [agentSecurityTest],
-    'production construction|R1 filesystem store|R1 production rejects',
+    'production construction|R1 local filesystem|R1 atomic Install Grant|R1 production redemption|R1 production.*rejects',
   );
 }
 
@@ -158,6 +165,7 @@ function ciContract() {
 const operations = {
   'frontend-auth': frontendAuth,
   'approval-binding': approvalBinding,
+  'authorization-boundary': authorizationBoundary,
   'task-receipt': taskReceipt,
   'store-contract': storeContract,
   revocation,

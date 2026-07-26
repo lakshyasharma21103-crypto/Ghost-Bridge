@@ -60,32 +60,51 @@ Accepted, queued, waiting-for-approval, and running Tasks retain bounded Receipt
 without raw payloads, secrets, or transport credentials. Cancellation, handler failure,
 and timeout construct and verify a signed Receipt before committing the terminal pair.
 
-Fixture stores use ordered persistence with rollback on failure. Production requires the
-terminal unit-of-work contract: the deterministic adapter writes the signed Receipt and
-terminal Task together using atomic replacement, validates the pair, and exposes recovery.
+Fixture stores use ordered persistence with rollback on failure. Production requires a
+production-eligible terminal unit-of-work contract. The JSON filesystem adapter demonstrates
+the terminal-pair and recovery behavior only within one deterministic local database
+instance; it is rejected in `productionMode` and is not production atomicity evidence.
 Concurrent/repeated cancellation converges on one terminal Task and one Receipt. Receipt
-issuance, Receipt persistence, or Task persistence failure cannot leave a committed
-terminal Task without its required Receipt.
+issuance, Receipt persistence, or Task persistence failure cannot leave a committed terminal
+Task without its required Receipt.
 
 ## 8. Store contract changes
 
 Production store methods are Promise-compatible and have explicit capability metadata:
-durable persistence, atomic compare-and-set, terminal transaction support, adapter name,
-and adapter version. A boolean `durable` claim is no longer accepted. Direct Maps, obvious
-Map wrappers, and test/fake/memory adapter identities are rejected in production.
+durable persistence, `productionEligible: true`, atomic compare-and-set, terminal
+transaction support, atomic Install Grant redemption, adapter name, and adapter version. A
+boolean `durable` claim is not sufficient. Direct Maps, obvious Map wrappers, test/fake/
+memory identities, and the local JSON adapter are rejected in production.
 
-The new filesystem adapter implements asynchronous get/put/delete/has/values/scan,
-compare-and-set, exact atomic Approval Decision consumption, and terminal Task/Receipt
-transactions. Fixture Maps remain restricted to `localFixtureMode`. TypeScript declarations
-match the asynchronous runtime and its capabilities.
+Production redemption now invokes one `installGrantTransactions.redeemInstallGrant`
+operation without a prior grant read. The store operation must atomically verify active
+status, expiry, exact scope, and capability selection; mark the grant redeemed; create
+exactly one Connection; and store the Connection reference. The runtime validates and reads
+back the returned grant/Connection pair and fails closed on malformed or unavailable
+transaction results. A concurrent loser receives
+`INSTALL_GRANT_ALREADY_REDEEMED`.
+
+The filesystem adapter remains useful for deterministic get/put/delete/has/values/scan,
+restart, Approval Decision, terminal-pair, and grant-redemption contract tests. Its
+capabilities now state `persistence: "deterministic_local"`,
+`productionEligible: false`, and false production atomicity flags. It has no cross-process
+or cross-instance lock and is not production persistence evidence. TypeScript declarations
+match the runtime contract.
 
 ## 9. Restart evidence
 
-A deterministic temporary-directory test creates Agent A, writes a Connection, Approval
-Decision, Task, and signed Receipt, then recreates Agent B over the same files. Agent B
-recovers the scoped Connection and terminal pair and observes that the Decision remains
-consumed. The test also detects an invalid terminal pair. This is the required local
-fallback because no isolated local MongoDB process is available.
+A deterministic temporary-directory test writes a Connection, Approval Decision, Task, and
+Receipt through local database instance A, closes it, and recovers the same state through
+instance B. A second test runs two simultaneous local redemption operations: one succeeds,
+one receives `INSTALL_GRANT_ALREADY_REDEEMED`, exactly one Connection exists, the grant
+references it, and the result survives restart. These are deterministic local persistence
+tests only. They do not prove production durability, cross-instance locking, or
+cross-process atomicity; that evidence requires MongoDB CI or another genuinely
+transactional production adapter.
+
+The in-process store harness used by production-mode unit tests is test-only and not
+exported. It exercises runtime fail-closed and transaction-call behavior; it is not cited as
+production persistence evidence.
 
 ## 10. Revocation unknown-state fix
 
@@ -122,10 +141,12 @@ was added.
 
 - Three frontend/API-client installation authentication tests.
 - Two protocol-core approval-action tests with field-by-field digest substitution cases.
-- Nine Native Agent R1 tests covering action binding, terminal consistency, durable-store
-  behavior/restart, and Connection revocation.
+- Native Agent R1 tests covering action binding, terminal consistency, local persistence/
+  restart, production adapter rejection, verified authorization evidence, atomic Install
+  Grant redemption, and Connection revocation.
 - Governed and core black-box conformance assertions for actual implementation errors.
-- Seven focused R1 verifier groups plus one aggregate.
+- Eight focused R1 verifier groups, including the production authorization boundary, plus
+  one aggregate.
 - Two cleanup-verifier regressions prove the full cleanup check works with an empty tool
   `PATH` and that the Node scanner reports a planted uppercase-backend source reference.
 - One direct Trust regression signs a real document, flips a decoded signature byte, reaches
@@ -136,17 +157,19 @@ was added.
 | Command | Result |
 |---|---|
 | `npm ci` | PASS, 297 packages, about 11 s |
-| `npm run typecheck` | PASS, about 29.9 s |
-| `npm run lint` | PASS, about 28.1 s |
-| `npm test` | PASS, all workspaces, 0 failed/skipped, about 17.8 s |
-| `npm run build` | PASS, 122 public pages, about 37 s |
+| `npm run typecheck` | PASS, final production-correction rerun 26.6 s |
+| `npm run lint` | PASS, final production-correction rerun 25.8 s |
+| `npm test` | PASS, all workspaces, 0 failed/skipped, final production-correction rerun 20.0 s |
+| `npm run build` | PASS, 122 public pages, final production-correction rerun 31.0 s |
 | `npm run verify:phase-15c1-cleanup` | PASS, including 2/2 regression tests, 1.3 s |
 | `node --test --test-name-pattern "decoded signature byte mutation" packages/ghostbridge-trust/test/trust.test.js` | PASS, 1/1, 0.6 s |
 | `node scripts/verifyGhostBridgeBlackBoxConformance.mjs --profile=trust` | PASS, 39/39; invalid signature rejected with `SIGNATURE_INVALID`, 2.8 s |
 | `npm run verify:phase-15c1a-conformance` | PASS, 9.1 s |
-| `npm run verify:ghostbridge-phase-15c1` | PASS, 8/8 groups, final regression rerun 19.2 s |
-| `npm run verify:ghostbridge-phase-15c1a` | PASS, final regression rerun 13.2 s |
-| `npm run verify:ghostbridge-phase-15c1a-r1` | PASS, 7/7 groups, final regression rerun 9.6 s |
+| `npm run verify:phase-15c1a-r1-authorization-boundary` | PASS |
+| `npm run verify:phase-15c1a-r1-store-contract` | PASS |
+| `npm run verify:ghostbridge-phase-15c1` | PASS, 8/8 groups, final production-correction rerun 18.7 s |
+| `npm run verify:ghostbridge-phase-15c1a` | PASS, final production-correction rerun 12.3 s |
+| `npm run verify:ghostbridge-phase-15c1a-r1` | PASS, 8/8 groups, final production-correction rerun 8.7 s |
 | `node --test backend/src/tests/releaseReadiness.test.js` | PASS, 11/11 |
 | `npm run verify:phase-15b1-realignment` | PASS, 12/12 checks |
 | `node scripts/verifyGhostBridgeBlackBoxConformance.mjs --profile=core` | PASS, 17/17 |
@@ -245,9 +268,28 @@ Two mandatory failures were observed after the initial R1 pass:
    `SIGNATURE_INVALID` code. Conformance failure output now prints the test ID and
    requirement reference before aborting.
 
+### Independent production-correctness review
+
+Three further production blockers were corrected:
+
+1. `authorizeCapabilityAccess` accepted plain `true` before reaching production evidence
+   validation. Literal `true` and simplified `{ allowed: true }` remain fixture-only.
+   Production now authorizes only through `isVerifiedAuthorizationDecision`, including
+   non-empty principal/policy identifiers, a canonical ISO `evaluatedAt`, and policy
+   version.
+2. The JSON adapter described single-instance serialization as durable atomic production
+   behavior despite having no cross-instance/process lock. It is now explicitly
+   deterministic-local, `productionEligible: false`, advertises no production atomicity,
+   and is rejected by production construction.
+3. Production Install Grant redemption performed a read followed by parallel independent
+   writes. It now requires one production-eligible atomic redemption store operation and
+   validates durable readback. Direct local and production-runtime contract tests prove one
+   concurrent winner, a stable `INSTALL_GRANT_ALREADY_REDEEMED` loser, one Connection, and
+   a matching grant reference; the local persistence result also survives restart.
+
 All requested deterministic local code gates pass. The complete workspace test run has no
 failed or skipped test, the build emits all 122 public pages, both prior phase aggregates
-pass, all seven R1 groups pass, package dry-runs pass, and core/governed conformance reports
+pass, all eight R1 groups pass, package dry-runs pass, and core/governed conformance reports
 contain implementation-produced safe errors. After the regression corrections, the Phase
 15C.1, Phase 15C.1A, and Phase 15C.1A-R1 aggregates all exited zero.
 
@@ -261,7 +303,9 @@ Ubuntu Node 20/22 plus MongoDB 7 workflow result has been observed.
 There is no known deterministic local code blocker. The remaining evidence blockers are:
 
 1. An observed successful pull-request workflow on Ubuntu for both Node matrix entries.
-2. An observed successful isolated MongoDB 7 run of the database-backed verifiers.
+2. An observed successful isolated MongoDB 7 run of the database-backed verifiers,
+   including genuinely transactional production-store evidence. The JSON filesystem
+   adapter cannot satisfy this gate.
 
 The configured live external MongoDB connection was intentionally not used as a substitute
 for isolated test evidence.

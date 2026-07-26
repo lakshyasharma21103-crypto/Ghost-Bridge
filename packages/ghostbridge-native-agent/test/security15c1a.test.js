@@ -7,6 +7,7 @@ const path = require('node:path');
 const test = require('node:test');
 const {
   PROTOCOL_VERSION,
+  boundedSerialize,
   digest,
 } = require('@ghostbridge/protocol-core');
 const {
@@ -335,6 +336,253 @@ function createStores(directory) {
   });
 }
 
+function createProductionContractStores() {
+  const collectionNames = [
+    'installGrants',
+    'connections',
+    'tasks',
+    'taskContexts',
+    'receipts',
+    'approvals',
+    'approvalDecisions',
+    'idempotency',
+    'replay',
+    'revocation',
+  ];
+  const state = Object.fromEntries(
+    collectionNames.map((name) => [name, new Map()]),
+  );
+  let queue = Promise.resolve();
+  const clone = (value) =>
+    value === undefined ? undefined : structuredClone(value);
+  const exclusive = (operation) => {
+    const next = queue.then(operation);
+    queue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  };
+  const read = async (operation) => {
+    await queue;
+    return clone(operation());
+  };
+  const baseCapabilities = Object.freeze({
+    persistence: 'durable',
+    productionEligible: true,
+    atomicCompareAndSet: true,
+    transactionalTerminalWrite: false,
+    atomicInstallGrantRedemption: false,
+    adapterName: 'contract-verification-adapter',
+    adapterVersion: '1',
+  });
+  const collection = (name) => ({
+    capabilities: baseCapabilities,
+    get: (key) => read(() => state[name].get(key)),
+    put: (key, value) =>
+      exclusive(() => {
+        state[name].set(key, clone(value));
+      }),
+    delete: (key) =>
+      exclusive(() => state[name].delete(key)),
+    has: (key) => read(() => state[name].has(key)),
+    values: () => read(() => [...state[name].values()]),
+    scan: () => read(() => [...state[name].values()]),
+    compareAndSet: (key, expectedValue, nextValue) =>
+      exclusive(() => {
+        const current = state[name].get(key);
+        if (
+          boundedSerialize(current ?? null) !==
+          boundedSerialize(expectedValue ?? null)
+        ) {
+          return false;
+        }
+        state[name].set(key, clone(nextValue));
+        return true;
+      }),
+  });
+  const stores = Object.fromEntries(
+    collectionNames.map((name) => [name, collection(name)]),
+  );
+  stores.approvalDecisions.putDecision = (decision) =>
+    exclusive(() => {
+      if (state.approvalDecisions.has(decision.decisionId)) {
+        throw new Error('Approval Decision already exists.');
+      }
+      state.approvalDecisions.set(
+        decision.decisionId,
+        clone(decision),
+      );
+    });
+  stores.approvalDecisions.consumeApprovedDecision = (criteria) =>
+    exclusive(() => {
+      const current = state.approvalDecisions.get(criteria.decisionId);
+      if (
+        !current ||
+        current.used ||
+        current.decision !== 'approved' ||
+        current.invocationId !== criteria.invocationId ||
+        current.actionKey !== criteria.actionKey ||
+        current.approvalActionDigest !== criteria.approvalActionDigest ||
+        current.organizationScope !== criteria.organizationScope ||
+        (current.workspaceScope || undefined) !==
+          (criteria.workspaceScope || undefined) ||
+        Date.parse(current.expiresAt || current.validUntil || '') <=
+          Date.parse(criteria.now)
+      ) {
+        return undefined;
+      }
+      state.approvalDecisions.set(criteria.decisionId, {
+        ...current,
+        used: true,
+        consumedAt: criteria.now,
+      });
+      return clone(current);
+    });
+  stores.terminalTransactions = {
+    capabilities: Object.freeze({
+      ...baseCapabilities,
+      transactionalTerminalWrite: true,
+    }),
+    commitTerminal: ({ task, receipt, expectedTaskStates = [] }) =>
+      exclusive(() => {
+        const current = state.tasks.get(task.taskId);
+        if (
+          current &&
+          ['completed', 'failed', 'cancelled', 'timed_out', 'revoked'].includes(
+            current.state,
+          ) &&
+          current.receiptReference === task.receiptReference
+        ) {
+          return {
+            committed: true,
+            idempotent: true,
+            task: clone(current),
+            receipt: clone(state.receipts.get(current.receiptReference)),
+          };
+        }
+        if (!current || !expectedTaskStates.includes(current.state)) {
+          return {
+            committed: false,
+            recoveryRequired: true,
+            reasonCode: 'TASK_STATE_CHANGED',
+          };
+        }
+        if (
+          !receipt?.receiptId ||
+          receipt.taskId !== task.taskId ||
+          task.receiptReference !== receipt.receiptId
+        ) {
+          throw new Error('Terminal Task and Receipt transaction is invalid.');
+        }
+        state.receipts.set(receipt.receiptId, clone(receipt));
+        state.tasks.set(task.taskId, clone(task));
+        return {
+          committed: true,
+          idempotent: false,
+          task: clone(task),
+          receipt: clone(receipt),
+        };
+      }),
+    recoverTerminalWrites: async () => [],
+  };
+  stores.installGrantTransactions = {
+    capabilities: Object.freeze({
+      ...baseCapabilities,
+      atomicInstallGrantRedemption: true,
+    }),
+    redeemInstallGrant: (input) =>
+      exclusive(() =>
+        applyAtomicInstallGrantRedemption(
+          state.installGrants,
+          state.connections,
+          input,
+        )),
+  };
+  stores.close = async () => {
+    await queue;
+  };
+  return stores;
+}
+
+function applyAtomicInstallGrantRedemption(
+  installGrants,
+  connections,
+  input,
+) {
+  const grant = installGrants.get(input.keyHash);
+  if (!grant) throw storeError('INSTALL_GRANT_INVALID');
+  if (grant.status === 'redeemed') {
+    throw storeError('INSTALL_GRANT_ALREADY_REDEEMED');
+  }
+  if (grant.status === 'revoked') throw storeError('REVOKED');
+  if (
+    grant.status !== 'active' ||
+    !Number.isFinite(Date.parse(input.now))
+  ) {
+    throw storeError('INSTALL_GRANT_INVALID');
+  }
+  if (Date.parse(grant.expiresAt) <= Date.parse(input.now)) {
+    throw storeError('INSTALL_GRANT_EXPIRED');
+  }
+  if (
+    grant.organizationScope !== input.organizationScope ||
+    (grant.workspaceScope || undefined) !==
+      (input.workspaceScope || undefined)
+  ) {
+    throw storeError('SCOPE_MISMATCH');
+  }
+  const enabledCapabilityKeys = [
+    ...new Set(input.approvedCapabilityKeys || []),
+  ];
+  if (
+    enabledCapabilityKeys.length === 0 ||
+    enabledCapabilityKeys.some(
+      (key) => !grant.allowedCapabilityKeys.includes(key),
+    )
+  ) {
+    throw storeError('AUTHORIZATION_DENIED');
+  }
+  const connectionId = input.connection?.connectionId;
+  if (!connectionId || connections.has(connectionId)) {
+    throw storeError('INSTALL_GRANT_INVALID');
+  }
+  const connection = {
+    ...cloneForStore(input.connection),
+    organizationScope: grant.organizationScope,
+    ...(grant.workspaceScope
+      ? { workspaceScope: grant.workspaceScope }
+      : {}),
+    enabledCapabilityKeys,
+    disabledCapabilityKeys: grant.allowedCapabilityKeys.filter(
+      (key) => !enabledCapabilityKeys.includes(key),
+    ),
+  };
+  const updatedGrant = {
+    ...grant,
+    status: 'redeemed',
+    redeemedAt: input.now,
+    connectionId,
+  };
+  connections.set(connectionId, cloneForStore(connection));
+  installGrants.set(input.keyHash, cloneForStore(updatedGrant));
+  return {
+    grant: cloneForStore(updatedGrant),
+    connection: cloneForStore(connection),
+  };
+}
+
+function cloneForStore(value) {
+  return value === undefined ? undefined : structuredClone(value);
+}
+
+function storeError(errorCode) {
+  const error = new Error(errorCode);
+  error.code = errorCode;
+  error.errorCode = errorCode;
+  return error;
+}
+
 function stripTestOnly(jwks) {
   return {
     ...jwks,
@@ -414,7 +662,7 @@ async function createProductionFixture(options = {}) {
       issuer.toolkit.authorizeAgentExecutionKey(issuer.keyIds.execution),
     ],
   };
-  const stores = options.stores || createStores();
+  const stores = options.stores || createProductionContractStores();
   const publishedJwks = stripTestOnly(issuer.toolkit.publishJwks());
   const verificationJwks = options.verificationJwks || publishedJwks;
   const signer = issuer.keyProvider.signer(executionKeyId);
@@ -528,7 +776,7 @@ test('production construction requires transport auth, signed receipts, and ever
     receiptIssuer: () => ({}),
     receiptVerificationJwks: stripTestOnly(issuer.toolkit.publishJwks()),
     agentSigner: issuer.keyProvider.signer(issuer.keyIds.execution),
-    stores: createStores(),
+    stores: createProductionContractStores(),
   };
   assert.throws(
     () => createGhostBridgeAgent({ ...base, authenticateHttpRequest: undefined }),
@@ -541,7 +789,7 @@ test('production construction requires transport auth, signed receipts, and ever
         authenticateHttpRequest: async () => ({}),
         stores: { ...base.stores, approvalDecisions: new Map() },
       }),
-    /approvalDecisions store must be an asynchronous durable adapter/,
+    /approvalDecisions store must be a production-eligible asynchronous durable adapter/,
   );
   assert.throws(
     () =>
@@ -552,21 +800,100 @@ test('production construction requires transport auth, signed receipts, and ever
       }),
     /verifiable signed Receipt configuration/,
   );
+  assert.throws(
+    () =>
+      createGhostBridgeAgent({
+        ...base,
+        authenticateHttpRequest: async () => ({}),
+        stores: createStores(),
+      }),
+    /production-eligible asynchronous durable adapter/,
+  );
+});
+
+test('R1 productionMode rejects the deterministic local JSON adapter', async (context) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'ghostbridge-local-adapter-rejection-r1-'),
+  );
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const stores = createStores(directory);
+  assert.equal(stores.installGrants.capabilities.persistence, 'deterministic_local');
+  assert.equal(stores.installGrants.capabilities.productionEligible, false);
+  assert.equal(stores.installGrants.capabilities.atomicCompareAndSet, false);
+  assert.equal(
+    stores.terminalTransactions.capabilities.transactionalTerminalWrite,
+    false,
+  );
+  await assert.rejects(
+    () => createProductionFixture({ stores, skipInstall: true }),
+    /production-eligible asynchronous durable adapter/,
+  );
+  await stores.close();
 });
 
 test('production authorization evidence and revocation freshness fail closed', async () => {
-  const invalidDecision = await createProductionFixture({
-    authorization: () => ({ allowed: true }),
+  for (const [label, decision] of [
+    ['plain true', true],
+    ['allowed only', { allowed: true }],
+    ['missing principal', {
+      allowed: true,
+      policyDecisionId: 'policy_incomplete',
+      evaluatedAt: new Date().toISOString(),
+      policyVersion: '1',
+    }],
+    ['missing policy decision', {
+      allowed: true,
+      principalId: 'host_security',
+      evaluatedAt: new Date().toISOString(),
+      policyVersion: '1',
+    }],
+    ['missing policy version', {
+      allowed: true,
+      principalId: 'host_security',
+      policyDecisionId: 'policy_incomplete',
+      evaluatedAt: new Date().toISOString(),
+    }],
+    ['malformed evaluatedAt', {
+      allowed: true,
+      principalId: 'host_security',
+      policyDecisionId: 'policy_incomplete',
+      evaluatedAt: 'not-a-timestamp',
+      policyVersion: '1',
+    }],
+  ]) {
+    const invalidDecision = await createProductionFixture({
+      authorization: () => decision,
+    });
+    await assert.rejects(
+      () =>
+        invalidDecision.agent.invoke(
+          invalidDecision.connection.connectionId,
+          invocation(invalidDecision.connection),
+        ),
+      (error) => {
+        assert.equal(error.errorCode, 'AUTHORIZATION_DENIED', label);
+        return true;
+      },
+    );
+    assert.equal(invalidDecision.handlerCalls(), 0, label);
+  }
+
+  const verifiedDecision = await createProductionFixture({
+    authorization: () => ({
+      allowed: true,
+      principalId: 'host_security',
+      policyDecisionId: 'policy_verified',
+      evaluatedAt: new Date().toISOString(),
+      policyVersion: '1',
+    }),
   });
-  await assert.rejects(
-    () =>
-      invalidDecision.agent.invoke(
-        invalidDecision.connection.connectionId,
-        invocation(invalidDecision.connection),
-      ),
-    (error) => error.errorCode === 'AUTHORIZATION_DENIED',
+  assert.equal(
+    (await verifiedDecision.agent.invoke(
+      verifiedDecision.connection.connectionId,
+      invocation(verifiedDecision.connection),
+    )).task.state,
+    'completed',
   );
-  assert.equal(invalidDecision.handlerCalls(), 0);
 
   for (const [label, revocation] of [
     ['missing', undefined],
@@ -741,7 +1068,7 @@ test('production rejects unsigned, copied, mismatched, expired, and unauthorized
 
 test('production cancellation and timeout terminal states have signed Receipts', async () => {
   let runningTaskId;
-  const stores = createStores();
+  const stores = createProductionContractStores();
   const originalPut = stores.tasks.put.bind(stores.tasks);
   stores.tasks.put = async (key, value) => {
     if (value.state === 'running') runningTaskId = key;
@@ -1046,7 +1373,7 @@ test('R1 waiting-for-approval cancellation is signed, atomic, and idempotent', a
 });
 
 test('R1 accepted Task cancellation persists one signed terminal pair', async () => {
-  const stores = createStores();
+  const stores = createProductionContractStores();
   let acceptedTaskId;
   let releaseContext;
   const contextGate = new Promise((resolve) => {
@@ -1102,7 +1429,7 @@ test('R1 terminal failures cannot commit a terminal Task without its Receipt', a
   );
   assert.equal((await issuanceFailure.stores.receipts.values()).length, 0);
 
-  const persistenceFailureStores = createStores();
+  const persistenceFailureStores = createProductionContractStores();
   persistenceFailureStores.terminalTransactions.commitTerminal = async () => {
     throw new Error('persistent adapter unavailable');
   };
@@ -1125,7 +1452,7 @@ test('R1 terminal failures cannot commit a terminal Task without its Receipt', a
     false,
   );
 
-  const recoveryStores = createStores();
+  const recoveryStores = createProductionContractStores();
   recoveryStores.terminalTransactions.commitTerminal = async () => ({
     committed: false,
     recoveryRequired: true,
@@ -1145,7 +1472,7 @@ test('R1 terminal failures cannot commit a terminal Task without its Receipt', a
   assert.equal((await recoveryStores.receipts.values()).length, 0);
 });
 
-test('R1 filesystem store rejects invalid terminal pairs and survives restart', async (context) => {
+test('R1 local filesystem persistence rejects invalid terminal pairs and survives restart', async (context) => {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), 'ghostbridge-agent-restart-r1-'),
   );
@@ -1167,68 +1494,165 @@ test('R1 filesystem store rejects invalid terminal pairs and survives restart', 
       }),
     /invalid/,
   );
-
-  const agentA = await createProductionFixture({
-    stores: storesA,
-    contract: { approvalRequirement: 'required' },
-  });
-  const preparedEnvelope = invocation(agentA.connection, {
-    invocationId: 'invocation_restart_r1',
-  });
-  const waiting = await agentA.agent.invoke(
-    agentA.connection.connectionId,
-    preparedEnvelope,
-  );
+  const connection = {
+    connectionId: 'connection_restart_r1',
+    organizationScope: 'org_security',
+    workspaceScope: 'workspace_security',
+    status: 'active',
+  };
+  const receipt = {
+    receiptId: 'receipt_restart_r1',
+    taskId: 'task_restart_r1',
+  };
+  const acceptedTask = {
+    taskId: receipt.taskId,
+    state: 'running',
+  };
+  const completedTask = {
+    ...acceptedTask,
+    state: 'completed',
+    receiptReference: receipt.receiptId,
+  };
   const decision = {
-    challengeId: waiting.approvalChallenge.challengeId,
     decisionId: 'decision_restart_r1',
     decision: 'approved',
-    approvalActionDigest: waiting.approvalChallenge.approvalActionDigest,
-    approvedLimits: {},
-    decidedBy: 'host_approver',
-    decidedAt: new Date().toISOString(),
-    safeReasonCode: 'APPROVED_FOR_RESTART',
+    used: true,
   };
-  await agentA.agent.submitApprovalDecision(decision);
-  const completed = await agentA.agent.invoke(
-    agentA.connection.connectionId,
-    { ...preparedEnvelope, approvalReference: decision.decisionId },
-  );
+  await storesA.connections.put(connection.connectionId, connection);
+  await storesA.tasks.put(acceptedTask.taskId, acceptedTask);
+  await storesA.approvalDecisions.put(decision.decisionId, decision);
+  const terminalResult = await storesA.terminalTransactions.commitTerminal({
+    task: completedTask,
+    receipt,
+    expectedTaskStates: ['running'],
+  });
+  assert.equal(terminalResult.committed, true);
   await storesA.close();
 
   const storesB = createStores(directory);
-  const agentB = await createProductionFixture({
-    stores: storesB,
-    issuer: agentA.issuer,
-    contract: { approvalRequirement: 'required' },
-    skipInstall: true,
-  });
   assert.equal(
-    (await agentB.agent.getTask(completed.task.taskId)).receiptReference,
-    completed.receipt.receiptId,
+    (await storesB.tasks.get(completedTask.taskId)).receiptReference,
+    receipt.receiptId,
   );
   assert.equal(
-    (await agentB.agent.getReceipt(completed.receipt.receiptId)).taskId,
-    completed.task.taskId,
+    (await storesB.receipts.get(receipt.receiptId)).taskId,
+    completedTask.taskId,
   );
   assert.equal(
-    (await agentB.agent.checkRevocation(
-      'connection',
-      agentA.connection.connectionId,
-    )).status,
+    (await storesB.connections.get(connection.connectionId)).status,
     'active',
   );
   assert.equal(
     (await storesB.approvalDecisions.get(decision.decisionId)).used,
     true,
   );
-  assert.equal(await agentB.agent.getConnectionCount(), 1);
+  assert.equal((await storesB.connections.values()).length, 1);
   await storesB.close();
+});
+
+test('R1 atomic Install Grant redemption permits one winner and survives local restart', async (context) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'ghostbridge-grant-redemption-r1-'),
+  );
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const storesA = createStores(directory);
+  const keyHash = digest({ key: 'install-grant-restart-r1' });
+  await storesA.installGrants.put(keyHash, {
+    grantId: 'grant_atomic_restart_r1',
+    keyHash,
+    organizationScope: 'org_security',
+    workspaceScope: 'workspace_security',
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    status: 'active',
+    allowedCapabilityKeys: [CAPABILITY_KEY],
+  });
+  const now = new Date().toISOString();
+  const redemption = (connectionId) =>
+    storesA.installGrantTransactions.redeemInstallGrant({
+      keyHash,
+      now,
+      organizationScope: 'org_security',
+      workspaceScope: 'workspace_security',
+      approvedCapabilityKeys: [CAPABILITY_KEY],
+      connection: {
+        connectionId,
+        agentId: 'agent_security_15c1a',
+        passportVersion: '1',
+        status: 'active',
+        authenticationMode: 'none',
+        authenticationState: 'not_required',
+        createdAt: now,
+        revocationReference: `revocations/connection/${connectionId}`,
+      },
+    });
+  const results = await Promise.allSettled([
+    redemption('connection_atomic_restart_a'),
+    redemption('connection_atomic_restart_b'),
+  ]);
+  const succeeded = results.filter((result) => result.status === 'fulfilled');
+  const rejected = results.filter((result) => result.status === 'rejected');
+  assert.equal(succeeded.length, 1);
+  assert.equal(rejected.length, 1);
+  assert.equal(
+    rejected[0].reason.errorCode,
+    'INSTALL_GRANT_ALREADY_REDEEMED',
+  );
+  const connection = succeeded[0].value.connection;
+  const redeemedGrant = await storesA.installGrants.get(keyHash);
+  assert.equal((await storesA.connections.values()).length, 1);
+  assert.equal(redeemedGrant.status, 'redeemed');
+  assert.equal(redeemedGrant.connectionId, connection.connectionId);
+  await storesA.close();
+
+  const storesB = createStores(directory);
+  assert.equal((await storesB.connections.values()).length, 1);
+  assert.equal(
+    (await storesB.installGrants.get(keyHash)).connectionId,
+    connection.connectionId,
+  );
+  await storesB.close();
+});
+
+test('R1 production redemption uses one atomic transaction and rejects the concurrent loser', async () => {
+  const fixture = await createProductionFixture({ skipInstall: true });
+  const grant = await fixture.agent.issueInstallGrant({
+    organizationScope: 'org_security',
+    workspaceScope: 'workspace_security',
+    allowedCapabilityKeys: [CAPABILITY_KEY],
+  });
+  const scope = {
+    organizationScope: 'org_security',
+    workspaceScope: 'workspace_security',
+    approvedCapabilityKeys: [CAPABILITY_KEY],
+    hostAudience: 'host-security-audience',
+  };
+  const results = await Promise.allSettled([
+    fixture.agent.redeemInstallGrant(grant.key, scope),
+    fixture.agent.redeemInstallGrant(grant.key, scope),
+  ]);
+  const succeeded = results.filter((result) => result.status === 'fulfilled');
+  const rejected = results.filter((result) => result.status === 'rejected');
+  assert.equal(succeeded.length, 1);
+  assert.equal(rejected.length, 1);
+  assert.equal(
+    rejected[0].reason.errorCode,
+    'INSTALL_GRANT_ALREADY_REDEEMED',
+  );
+  const connections = await fixture.stores.connections.values();
+  const storedGrant = await fixture.stores.installGrants.get(
+    digest({ key: grant.key }),
+  );
+  assert.equal(connections.length, 1);
+  assert.equal(storedGrant.connectionId, connections[0].connectionId);
+  assert.equal(
+    succeeded[0].value.connectionId,
+    connections[0].connectionId,
+  );
 });
 
 test('R1 production rejects a metadata-decorated Map wrapper', async () => {
   const issuer = await createSyntheticIssuer({ issuerId: 'https://issuer.example' });
-  const stores = createStores();
+  const stores = createProductionContractStores();
   const wrappedMap = {
     capabilities: {
       persistence: 'durable',
@@ -1264,7 +1688,7 @@ test('R1 production rejects a metadata-decorated Map wrapper', async () => {
         authenticateHttpRequest: async () => ({}),
         stores: { ...stores, connections: wrappedMap },
       }),
-    /connections store must be an asynchronous durable adapter/,
+    /connections store must be a production-eligible asynchronous durable adapter/,
   );
 });
 

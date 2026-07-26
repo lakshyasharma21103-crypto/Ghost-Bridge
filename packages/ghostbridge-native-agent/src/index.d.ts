@@ -26,9 +26,11 @@ export interface AuthenticatedHostPrincipal {
 }
 
 export interface ProtocolStoreCapabilities {
-  readonly persistence: 'durable';
+  readonly persistence: 'durable' | 'deterministic_local';
+  readonly productionEligible: boolean;
   readonly atomicCompareAndSet: boolean;
   readonly transactionalTerminalWrite: boolean;
+  readonly atomicInstallGrantRedemption: boolean;
   readonly adapterName: string;
   readonly adapterVersion: string;
 }
@@ -58,7 +60,7 @@ export interface DurableApprovalDecisionStore
 
 export interface TerminalTransactionStore {
   readonly capabilities: ProtocolStoreCapabilities & {
-    readonly transactionalTerminalWrite: true;
+    readonly transactionalTerminalWrite: boolean;
   };
   commitTerminal(input: {
     task: ExecutionTask;
@@ -75,6 +77,25 @@ export interface TerminalTransactionStore {
   recoverTerminalWrites(): Promise<Array<Record<string, unknown>>>;
 }
 
+export interface InstallGrantTransactionStore {
+  readonly capabilities: ProtocolStoreCapabilities & {
+    readonly atomicInstallGrantRedemption: boolean;
+  };
+  redeemInstallGrant(input: {
+    keyHash: string;
+    now: string;
+    organizationScope: string;
+    workspaceScope?: string;
+    approvedCapabilityKeys: string[];
+    connection: Record<string, unknown> & {
+      connectionId: string;
+    };
+  }): Promise<{
+    grant: Record<string, unknown>;
+    connection: Record<string, unknown>;
+  }>;
+}
+
 export interface ProtocolStores {
   installGrants: DurableProtocolStore;
   connections: DurableProtocolStore;
@@ -87,6 +108,7 @@ export interface ProtocolStores {
   replay: DurableProtocolStore;
   revocation: DurableProtocolStore;
   terminalTransactions: TerminalTransactionStore;
+  installGrantTransactions: InstallGrantTransactionStore;
   close?(): Promise<void>;
 }
 

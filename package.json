@@ -92,6 +92,7 @@
     "verify:ghostbridge-phase-15c1a": "node scripts/verifyPhase15c1a.mjs all",
     "verify:phase-15c1a-r1-frontend-auth": "node scripts/verifyPhase15c1aR1.mjs frontend-auth",
     "verify:phase-15c1a-r1-approval-binding": "node scripts/verifyPhase15c1aR1.mjs approval-binding",
+    "verify:phase-15c1a-r1-authorization-boundary": "node scripts/verifyPhase15c1aR1.mjs authorization-boundary",
     "verify:phase-15c1a-r1-task-receipt": "node scripts/verifyPhase15c1aR1.mjs task-receipt",
     "verify:phase-15c1a-r1-store-contract": "node scripts/verifyPhase15c1aR1.mjs store-contract",
     "verify:phase-15c1a-r1-revocation": "node scripts/verifyPhase15c1aR1.mjs revocation",
