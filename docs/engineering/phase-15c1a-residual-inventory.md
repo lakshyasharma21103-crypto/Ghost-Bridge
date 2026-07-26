@@ -2,6 +2,13 @@
 
 Recorded: 2026-07-26 (Asia/Calcutta)
 
+> **R1 correction notice:** The original inventory below did not identify every residual
+> blocker. Independent review found additional issues in frontend authentication and
+> organization confirmation, approval action binding, terminal Task/Receipt consistency,
+> durable store proof, unknown-Connection revocation, conformance paths, and CI preparation.
+> They are tracked with current evidence in `phase-15c1a-r1-residual-inventory.md`; the R1
+> correction report supersedes any broader completion claim here.
+
 | ID | Finding | Affected paths | Security/correctness impact | Current behavior | Required behavior | Action | Tests | Status | Remaining risk |
 |---|---|---|---|---|---|---|---|---|---|
 | 15C1A-01 | Installation route had no authenticated Host principal | Platform auth middleware/routes/controller | Body identity could create installation authority | Partner credential and active workspaces now create a bounded server principal | Real HTTP auth and server-derived scope | Added middleware; removed browser user/org authority | 10 Express-stack cases | Complete | Partner API key is the repository's only suitable existing identity source |
@@ -19,5 +26,8 @@ Recorded: 2026-07-26 (Asia/Calcutta)
 | 15C1A-13 | Linux/Mongo CI absent | Workflow/verifier | Linux and DB behavior unobserved | Least-privilege Node 20/22 + MongoDB 7 workflow is locally contract-checked | Successful remote run | Added workflow/casing/package/DB gates | Local CI contract passes | Blocked | No push/run authorized |
 | 15C1A-14 | Mandatory local DB evidence absent | Local environment | DB behavior unverified locally | No local Mongo/service/binary/Docker; configured external SRV was not touched | Isolated Mongo | Added ephemeral CI DB | Availability probes | Blocked | Four DB verifiers await CI |
 
-Implementation and deterministic local gates are complete. The phase remains **BLOCKED**
-solely on observed Linux CI and isolated MongoDB execution evidence.
+This table is the historical Phase 15C.1A inventory and is not a standalone current
+completion claim. The R1 inventory records the subsequently discovered code findings, their
+corrections, and the remaining remote evidence blockers. After R1 correction, deterministic
+local gates pass and the phase remains **BLOCKED** on observed Linux CI and isolated
+MongoDB execution evidence.

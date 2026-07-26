@@ -79,6 +79,10 @@ function isPhase13B3Control(path, method) {
   );
 }
 
+function isAuthenticatedPassportInstallation(path) {
+  return String(path || '').split(/[?#]/, 1)[0] === '/passports/resolve';
+}
+
 async function parseResponse(response) {
   const text = await response.text();
   let body = {};
@@ -119,6 +123,7 @@ export async function apiRequest(path, options = {}) {
   const headers = new Headers(options.headers);
   headers.set('X-Request-Id', headers.get('X-Request-Id') || requestId());
   const requiresPartnerAuthentication =
+    isAuthenticatedPassportInstallation(path) ||
     path.startsWith('/partner') ||
     path.startsWith('/enterprise') ||
     path.startsWith('/policies') ||

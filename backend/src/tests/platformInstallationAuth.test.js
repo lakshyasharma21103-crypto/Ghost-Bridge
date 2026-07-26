@@ -87,10 +87,21 @@ async function installRequest(origin, body, options = {}) {
 
 test('authenticated Host principal may install into a permitted workspace', async () => {
   await withServer(async ({ origin, resolvedInput }) => {
-    const response = await installRequest(origin, { receivingWorkspaceId: 'workspace_allowed' });
+    const response = await installRequest(origin, {
+      key: 'gb-install-platform-r1',
+      receivingWorkspaceId: 'workspace_allowed',
+      receivingOrganizationId: 'organization_allowed',
+    });
     assert.equal(response.status, 200);
     assert.equal(resolvedInput().receivingUserId, 'partner:partner_phase15c1a');
     assert.equal(resolvedInput().receivingWorkspaceId, 'workspace_allowed');
+    assert.equal(resolvedInput().receivingOrganizationId, 'organization_allowed');
+    assert.deepEqual(Object.keys(resolvedInput()).sort(), [
+      'key',
+      'receivingOrganizationId',
+      'receivingUserId',
+      'receivingWorkspaceId',
+    ]);
   });
 });
 

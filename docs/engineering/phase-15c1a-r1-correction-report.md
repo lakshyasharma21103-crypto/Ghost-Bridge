@@ -1,0 +1,272 @@
+# Phase 15C.1A-R1 correction report
+
+Recorded: 2026-07-26 (Asia/Calcutta)
+
+## 1. Starting branch and SHA
+
+- Branch: `phase-15c1a-r1`
+- Starting SHA: `064cd66d11ead4b382a38fb16cd704a4ba39b6b5`
+- Expected SHA: exact match
+
+## 2. Initial git state
+
+The working tree was clean. The required audit was completed and recorded in
+`phase-15c1a-r1-audit-baseline.md` before any source file was changed.
+
+## 3. Frontend authentication fix
+
+The frontend API client now classifies `/passports/resolve` as a Partner-authenticated
+route. It attaches the configured credential only through `X-Partner-Api-Key`. A missing
+credential fails before transport with the existing safe client error. Tests inspect the
+actual URL, headers, and body and prove that the credential is absent from the URL and
+body.
+
+## 4. Organization-scope fix
+
+`ResolvePassportKey` now sends `key`, `receivingWorkspaceId`, and
+`receivingOrganizationId`; it does not send `receivingUserId`. The Platform controller
+constructs a bounded resolver input from the authenticated principal and the two submitted
+scope confirmations instead of spreading caller-controlled body fields. Existing
+server-side workspace and organization checks remain authoritative, and a mismatched
+organization fails.
+
+## 5. Approval action digest design
+
+Protocol core now exposes one canonical `createApprovalAction` /
+`approvalActionDigest` contract. It binds invocation ID, Connection ID, capability key and
+version, organization and optional workspace scope, input contract reference, the canonical
+payload digest, optional side-effect category, approval limits, policy decision reference,
+and expiry. Recursive object-key canonicalization makes semantically equivalent object
+ordering stable without changing the repository's general digest behavior.
+
+Approval Challenge and Approval Decision schemas require the digest. The Native Agent
+creates it from the actual invocation and current authority context, repeats it in the
+Decision, persists it, and recalculates it from the invocation presented at atomic
+consumption time. An invocation ID alone is insufficient, and one Decision still authorizes
+at most one exact action.
+
+## 6. Payload substitution tests
+
+Behavioral tests prove that the exact approved payload succeeds while a changed scalar
+value, changed nested field, capability version, Connection, input contract, organization,
+workspace, or limits fails. They also cover absent and malformed digests, canonical
+object-key reordering, and concurrent single-use consumption. Governed black-box
+conformance retains the same approval reference, substitutes the payload, and observes
+`APPROVAL_INVALID`.
+
+## 7. Task/Receipt terminal consistency
+
+Accepted, queued, waiting-for-approval, and running Tasks retain bounded Receipt context
+without raw payloads, secrets, or transport credentials. Cancellation, handler failure,
+and timeout construct and verify a signed Receipt before committing the terminal pair.
+
+Fixture stores use ordered persistence with rollback on failure. Production requires the
+terminal unit-of-work contract: the deterministic adapter writes the signed Receipt and
+terminal Task together using atomic replacement, validates the pair, and exposes recovery.
+Concurrent/repeated cancellation converges on one terminal Task and one Receipt. Receipt
+issuance, Receipt persistence, or Task persistence failure cannot leave a committed
+terminal Task without its required Receipt.
+
+## 8. Store contract changes
+
+Production store methods are Promise-compatible and have explicit capability metadata:
+durable persistence, atomic compare-and-set, terminal transaction support, adapter name,
+and adapter version. A boolean `durable` claim is no longer accepted. Direct Maps, obvious
+Map wrappers, and test/fake/memory adapter identities are rejected in production.
+
+The new filesystem adapter implements asynchronous get/put/delete/has/values/scan,
+compare-and-set, exact atomic Approval Decision consumption, and terminal Task/Receipt
+transactions. Fixture Maps remain restricted to `localFixtureMode`. TypeScript declarations
+match the asynchronous runtime and its capabilities.
+
+## 9. Restart evidence
+
+A deterministic temporary-directory test creates Agent A, writes a Connection, Approval
+Decision, Task, and signed Receipt, then recreates Agent B over the same files. Agent B
+recovers the scoped Connection and terminal pair and observes that the Decision remains
+consumed. The test also detects an invalid terminal pair. This is the required local
+fallback because no isolated local MongoDB process is available.
+
+## 10. Revocation unknown-state fix
+
+Connection revocation lookup now distinguishes a missing subject reference from an unknown
+subject. Missing input fails with `INVALID_MESSAGE`; an unknown Connection fails with
+`CONNECTION_NOT_ACTIVE`; known active and revoked Connections retain their canonical
+statuses. Unit and authenticated raw HTTP tests prove that unknown authority is never
+reported active.
+
+## 11. Conformance changes
+
+The raw Agent now serves malformed discovery documents for the missing-endpoint and
+cross-origin cases. The separate Host process routes those documents through the real
+Native Client and attempts the relevant operation. Both are rejected with
+`INVALID_MESSAGE`, not a hand-written assertion. Wrong-media discovery also uses the Native
+Client path and reports its actual safe error. Host and Agent remain separate processes,
+and the Host does not import Native Agent.
+
+Governed conformance adds exact-action substitution evidence. This remains
+separate-process black-box conformance for the current JavaScript implementation, not
+independent cross-language conformance.
+
+## 12. CI changes
+
+The Phase workflow now triggers on pull requests targeting `main`, preserves `contents:
+read` and concurrency cancellation, sets a 45-minute job timeout, and keeps Ubuntu,
+Node 20/22, and MongoDB 7. Checkout and setup-node are pinned to full commit SHAs. The
+workflow runs the R1 aggregate in addition to the existing typecheck, lint, tests, build,
+Phase 15C.1, Phase 15C.1A, database, casing, package-integrity, and package dry-run gates.
+No manual, external-provider, migration, deployment, publication, or performance command
+was added.
+
+## 13. Tests added
+
+- Three frontend/API-client installation authentication tests.
+- Two protocol-core approval-action tests with field-by-field digest substitution cases.
+- Nine Native Agent R1 tests covering action binding, terminal consistency, durable-store
+  behavior/restart, and Connection revocation.
+- Governed and core black-box conformance assertions for actual implementation errors.
+- Seven focused R1 verifier groups plus one aggregate.
+- Two cleanup-verifier regressions prove the full cleanup check works with an empty tool
+  `PATH` and that the Node scanner reports a planted uppercase-backend source reference.
+- One direct Trust regression signs a real document, flips a decoded signature byte, reaches
+  `verifyDocument`, and requires `SIGNATURE_INVALID`.
+
+## 14. Commands run
+
+| Command | Result |
+|---|---|
+| `npm ci` | PASS, 297 packages, about 11 s |
+| `npm run typecheck` | PASS, about 29.9 s |
+| `npm run lint` | PASS, about 28.1 s |
+| `npm test` | PASS, all workspaces, 0 failed/skipped, about 17.8 s |
+| `npm run build` | PASS, 122 public pages, about 37 s |
+| `npm run verify:phase-15c1-cleanup` | PASS, including 2/2 regression tests, 1.3 s |
+| `node --test --test-name-pattern "decoded signature byte mutation" packages/ghostbridge-trust/test/trust.test.js` | PASS, 1/1, 0.6 s |
+| `node scripts/verifyGhostBridgeBlackBoxConformance.mjs --profile=trust` | PASS, 39/39; invalid signature rejected with `SIGNATURE_INVALID`, 2.8 s |
+| `npm run verify:phase-15c1a-conformance` | PASS, 9.1 s |
+| `npm run verify:ghostbridge-phase-15c1` | PASS, 8/8 groups, final regression rerun 19.2 s |
+| `npm run verify:ghostbridge-phase-15c1a` | PASS, final regression rerun 13.2 s |
+| `npm run verify:ghostbridge-phase-15c1a-r1` | PASS, 7/7 groups, final regression rerun 9.6 s |
+| `node --test backend/src/tests/releaseReadiness.test.js` | PASS, 11/11 |
+| `npm run verify:phase-15b1-realignment` | PASS, 12/12 checks |
+| `node scripts/verifyGhostBridgeBlackBoxConformance.mjs --profile=core` | PASS, 17/17 |
+| Focused R1 Native Agent cancellation/revocation tests | PASS, 2/2 |
+| Protocol-core approval tests | PASS, 14/14 full package |
+| Frontend R1 installation-auth tests | PASS, 3/3 |
+| Existing public-package verifier/dry-runs | PASS through Phase 15C.1 |
+| `git diff --check` | PASS; only Git line-ending notices |
+| Local MongoDB/Docker/process probes | UNAVAILABLE |
+
+The existing Vite 906.32 kB chunk warning and the npm
+`node-domexception` deprecation warning were recorded; neither is an R1 gate failure.
+
+## 15. Commands intentionally not run
+
+The Gemini and external-flow verifiers, external/live providers, all local or regional
+performance commands, migrations, deployment, publication, repository transfer, package
+publication, production databases, and the configured external MongoDB SRV target were not
+run. Normal unit tests contain mocked Gemini-labelled cases but did not contact a provider.
+No commit, push, merge, or Phase 15C.2 work occurred.
+
+## 16. Files added, modified, and deleted
+
+Added:
+
+- `docs/engineering/phase-15c1a-r1-audit-baseline.md`
+- `docs/engineering/phase-15c1a-r1-correction-report.md`
+- `docs/engineering/phase-15c1a-r1-residual-inventory.md`
+- `frontend/tests/phase15c1aR1InstallationAuth.test.mjs`
+- `packages/ghostbridge-native-agent/src/fileProtocolStores.js`
+- `packages/ghostbridge-protocol-core/test/approvalAction15c1aR1.test.js`
+- `scripts/lib/phase15c1Cleanup.mjs`
+- `scripts/test/verifyPhase15c1Cleanup.test.mjs`
+- `scripts/verifyPhase15c1aR1.mjs`
+
+Modified:
+
+- `.github/workflows/phase-15c1a.yml`
+- `backend/scripts/verifyExternalFlow.js`
+- `backend/scripts/verifyReleaseReadiness.js`
+- `backend/src/controllers/passportController.js`
+- `backend/src/services/evidence.service.js`
+- `backend/src/tests/platformInstallationAuth.test.js`
+- `backend/src/tests/releaseReadiness.test.js`
+- `docs/engineering/phase-15c1a-hardening-report.md`
+- `docs/engineering/phase-15c1a-residual-inventory.md`
+- `frontend/src/api/apiClient.js`
+- `frontend/src/pages/ResolvePassportKey.jsx`
+- `package.json`
+- `packages/ghostbridge-native-agent/src/index.d.ts`
+- `packages/ghostbridge-native-agent/src/index.js`
+- `packages/ghostbridge-native-agent/test/security15c1a.test.js`
+- `packages/ghostbridge-protocol-core/src/index.d.ts`
+- `packages/ghostbridge-protocol-core/src/index.js`
+- `packages/ghostbridge-trust/test/trust.test.js`
+- `protocol/examples/two-agent-workflow/index.js`
+- both 0.1-draft Approval schemas
+- `scripts/black-box/raw-agent.mjs`
+- `scripts/verifyGhostBridgeBlackBoxConformance.mjs`
+- `scripts/verifyGhostBridgeInspector.js`
+- `scripts/verifyGovernedHostAgentCompatibility.js`
+- `scripts/verifyPhase15b1Realignment.mjs`
+- `scripts/verifyPhase15c1.mjs`
+- `scripts/verifyPhase15c1a.mjs`
+
+Deleted: none.
+
+## 17. Dependencies added or removed
+
+None. `package-lock.json` is unchanged.
+
+## 18. Environment variables changed
+
+None.
+
+## 19. Local verification results
+
+### Mandatory regression failures and root causes
+
+Two mandatory failures were observed after the initial R1 pass:
+
+1. `verify:phase-15c1-cleanup` received `spawnSync('rg').status === null`
+   because the Node child environment could not start a globally supplied ripgrep binary.
+   The verifier incorrectly depended on tooling not declared by the repository. The scan is
+   now a deterministic Node filesystem walk over intended source/configuration roots and
+   extensions, with generated/vendor directories excluded and the three existing historical
+   engineering-report exclusions preserved explicitly. General child execution now reports
+   startup errors and missing exit status separately. Stale uppercase-backend references in
+   intended source files were corrected to the canonical lowercase path.
+2. Trust case `GB-T-INVALID-SIGNATURE-001` (`15.8 invalid signature`) replaced only the
+   final Base64URL character with `A`. An Ed25519 signature whose canonical encoding already
+   ended in `A` was not changed, so the real Trust verifier accepted the still-valid object.
+   The Trust implementation was not bypassed or weakened; the defect was nondeterministic
+   fixture mutation. The case now decodes the JWS signature, flips one actual byte,
+   re-encodes it, reaches `verifyDocument`, and requires the stable
+   `SIGNATURE_INVALID` code. Conformance failure output now prints the test ID and
+   requirement reference before aborting.
+
+All requested deterministic local code gates pass. The complete workspace test run has no
+failed or skipped test, the build emits all 122 public pages, both prior phase aggregates
+pass, all seven R1 groups pass, package dry-runs pass, and core/governed conformance reports
+contain implementation-produced safe errors. After the regression corrections, the Phase
+15C.1, Phase 15C.1A, and Phase 15C.1A-R1 aggregates all exited zero.
+
+## 20. Remote CI status
+
+**BLOCKED.** The workflow is prepared but no pull request was created or pushed, so no
+Ubuntu Node 20/22 plus MongoDB 7 workflow result has been observed.
+
+## 21. Remaining blockers
+
+There is no known deterministic local code blocker. The remaining evidence blockers are:
+
+1. An observed successful pull-request workflow on Ubuntu for both Node matrix entries.
+2. An observed successful isolated MongoDB 7 run of the database-backed verifiers.
+
+The configured live external MongoDB connection was intentionally not used as a substitute
+for isolated test evidence.
+
+## 22. Final status
+
+**BLOCKED** - all R1 code and deterministic local gates pass, while mandatory remote
+Linux/MongoDB evidence remains unavailable.

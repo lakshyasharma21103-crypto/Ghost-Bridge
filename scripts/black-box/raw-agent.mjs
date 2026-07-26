@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   DEFAULT_PROFILE_DECLARATIONS,
   PROTOCOL_VERSION,
+  approvalActionDigest,
 } = require('@ghostbridge/protocol-core');
 const {
   TRUST_PROFILE_VERSION,
@@ -129,6 +130,24 @@ const decisions = new Map();
 const idempotency = new Map();
 let approvalChallenge;
 let connectionRevoked = false;
+let servedDiscovery;
+
+function actionDigestFor(envelope, connection, validityBoundary) {
+  return approvalActionDigest({
+    invocationId: envelope.invocationId,
+    connectionId: connection.connectionId,
+    capabilityKey: envelope.capabilityKey,
+    capabilityVersion: envelope.capabilityVersion,
+    organizationScope: envelope.organizationScope,
+    workspaceScope: envelope.workspaceScope,
+    inputContractReference: envelope.inputContractReference,
+    payload: envelope.payload,
+    sideEffectCategory: capability.sideEffectCategory,
+    approvalLimits: {},
+    policyDecisionReference: 'policy:black-box',
+    validityBoundary,
+  });
+}
 
 function authenticated(request) {
   return request.headers.authorization === 'Bearer raw-host-fixture';
@@ -269,7 +288,7 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, origin);
   try {
     if (request.method === 'GET' && url.pathname === '/.well-known/ghostbridge') {
-      send(response, 200, {
+      servedDiscovery = {
         protocol: 'ghostbridge',
         supportedVersions: [PROTOCOL_VERSION],
         preferredVersion: PROTOCOL_VERSION,
@@ -302,7 +321,8 @@ const server = http.createServer(async (request, response) => {
             : {}),
         },
         extensionNamespaces: [],
-      });
+      };
+      send(response, 200, servedDiscovery);
       return;
     }
     if (request.method === 'GET' && url.pathname === '/ghostbridge/passport') {
@@ -339,6 +359,18 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'GET' && url.pathname === '/negative/malformed-discovery') {
       send(response, 200, { protocol: 'not-ghostbridge' });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/negative/missing-endpoint-discovery') {
+      const changed = structuredClone(servedDiscovery);
+      delete changed.endpoints.passport;
+      send(response, 200, changed);
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/negative/cross-origin-discovery') {
+      const changed = structuredClone(servedDiscovery);
+      changed.endpoints.passport = 'https://other.example/ghostbridge/passport';
+      send(response, 200, changed);
       return;
     }
     if (request.method === 'GET' && url.pathname === '/negative/wrong-content-type') {
@@ -475,17 +507,37 @@ const server = http.createServer(async (request, response) => {
       }
       if (governed) {
         const decision = decisions.get(envelope.approvalReference);
-        if (!decision || decision.used || decision.actionKey !== capabilityKey) {
+        if (
+          decision &&
+          !decision.used &&
+          (decision.actionKey !== capabilityKey ||
+            decision.approvalActionDigest !==
+              actionDigestFor(envelope, connection, decision.expiresAt))
+        ) {
+          return safeError(
+            response,
+            409,
+            'APPROVAL_INVALID',
+            'The Approval Decision does not bind this exact action.',
+          );
+        }
+        if (!decision || decision.used) {
+          const expiresAt = new Date(Date.now() + 60_000).toISOString();
           approvalChallenge ||= {
             challengeId: 'challenge_black_box',
             invocationId: envelope.invocationId,
             organizationScope,
             workspaceScope,
             actionKey: capabilityKey,
+            approvalActionDigest: actionDigestFor(
+              envelope,
+              connection,
+              expiresAt,
+            ),
             safeSummary: 'Approve the echo fixture.',
             requiredRoleCategories: ['approver'],
             approvalLimits: {},
-            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            expiresAt,
             requestedBy: passport.agentId,
             policyDecisionReference: 'policy:black-box',
             status: 'pending',
@@ -544,7 +596,8 @@ const server = http.createServer(async (request, response) => {
       if (
         !approvalChallenge ||
         body.challengeId !== approvalChallenge.challengeId ||
-        approvalMatch[1] !== approvalChallenge.challengeId
+        approvalMatch[1] !== approvalChallenge.challengeId ||
+        body.approvalActionDigest !== approvalChallenge.approvalActionDigest
       ) {
         return safeError(response, 409, 'APPROVAL_INVALID', 'Approval binding is invalid.');
       }
@@ -552,6 +605,7 @@ const server = http.createServer(async (request, response) => {
         ...body,
         invocationId: approvalChallenge.invocationId,
         actionKey: approvalChallenge.actionKey,
+        approvalActionDigest: approvalChallenge.approvalActionDigest,
         organizationScope,
         workspaceScope,
         expiresAt: approvalChallenge.expiresAt,

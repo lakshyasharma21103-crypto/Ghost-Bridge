@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
 const {
   PROTOCOL_VERSION,
@@ -15,6 +18,7 @@ const {
   createSyntheticIssuer,
 } = require('@ghostbridge/issuer');
 const {
+  createFileProtocolStores,
   createGhostBridgeAgent,
 } = require('../src');
 
@@ -157,10 +161,14 @@ function fixtureSecurityAgent(options = {}) {
     approveAllFixtureCapabilities: true,
     authorization: options.authorization || (() => true),
     authenticateHttpRequest: options.authenticateHttpRequest,
+    fixtureHttpPrincipal: options.fixtureHttpPrincipal,
     authorizationTimeoutMs: options.authorizationTimeoutMs,
   });
   agent.capability(CAPABILITY_KEY, {
     contract: fixtureContract(options.contract),
+    ...(options.approvalLimits
+      ? { approvalLimits: options.approvalLimits }
+      : {}),
     handler: options.handler || (async ({ input }) => {
       handlerCalls += 1;
       return { outcome: 'completed', output: input };
@@ -319,19 +327,12 @@ test('authorization denies every non-authorizing and unavailable result shape', 
   }
 });
 
-function createStores() {
-  return {
-    installGrants: new DurableStore(),
-    connections: new DurableStore(),
-    tasks: new DurableStore(),
-    taskContexts: new DurableStore(),
-    receipts: new DurableStore(),
-    approvals: new DurableStore(),
-    approvalDecisions: new AtomicDecisionStore(),
-    idempotency: new DurableStore(),
-    replay: new DurableStore(),
-    revocation: new DurableStore(),
-  };
+function createStores(directory) {
+  return createFileProtocolStores({
+    directory:
+      directory ||
+      fs.mkdtempSync(path.join(os.tmpdir(), 'ghostbridge-agent-15c1a-')),
+  });
 }
 
 function stripTestOnly(jwks) {
@@ -488,15 +489,18 @@ async function createProductionFixture(options = {}) {
     organizationScope: 'org_security',
     workspaceScope: 'workspace_security',
   };
-  const grant = agent.issueInstallGrant({
-    ...scope,
-    allowedCapabilityKeys: [CAPABILITY_KEY],
-  });
-  const connection = agent.redeemInstallGrant(grant.key, {
-    ...scope,
-    approvedCapabilityKeys: [CAPABILITY_KEY],
-    hostAudience: 'host-security-audience',
-  });
+  let connection;
+  if (options.skipInstall !== true) {
+    const grant = await agent.issueInstallGrant({
+      ...scope,
+      allowedCapabilityKeys: [CAPABILITY_KEY],
+    });
+    connection = await agent.redeemInstallGrant(grant.key, {
+      ...scope,
+      approvedCapabilityKeys: [CAPABILITY_KEY],
+      hostAudience: 'host-security-audience',
+    });
+  }
   return {
     agent,
     connection,
@@ -537,7 +541,7 @@ test('production construction requires transport auth, signed receipts, and ever
         authenticateHttpRequest: async () => ({}),
         stores: { ...base.stores, approvalDecisions: new Map() },
       }),
-    /approvalDecisions store must be durable/,
+    /approvalDecisions store must be an asynchronous durable adapter/,
   );
   assert.throws(
     () =>
@@ -643,11 +647,11 @@ test('production emits verified signed success and failure Receipts', async () =
       return true;
     },
   );
-  const failedTask = [...failedFixture.stores.tasks.values()].find(
+  const failedTask = (await failedFixture.stores.tasks.values()).find(
     (task) => task.state === 'failed',
   );
   assert.ok(failedTask.receiptReference);
-  const failureReceipt = failedFixture.stores.receipts.get(failedTask.receiptReference);
+  const failureReceipt = await failedFixture.stores.receipts.get(failedTask.receiptReference);
   assert.equal(failureReceipt.outcome, 'failed');
   assert.equal(failureReceipt.safeFailureCode, 'INTERNAL_ERROR');
   assert.ok(failureReceipt.proof.protectedJws);
@@ -738,10 +742,10 @@ test('production rejects unsigned, copied, mismatched, expired, and unauthorized
 test('production cancellation and timeout terminal states have signed Receipts', async () => {
   let runningTaskId;
   const stores = createStores();
-  const originalSet = stores.tasks.set.bind(stores.tasks);
-  stores.tasks.set = (key, value) => {
+  const originalPut = stores.tasks.put.bind(stores.tasks);
+  stores.tasks.put = async (key, value) => {
     if (value.state === 'running') runningTaskId = key;
-    return originalSet(key, value);
+    return originalPut(key, value);
   };
   const cancellation = await createProductionFixture({
     stores,
@@ -761,7 +765,7 @@ test('production cancellation and timeout terminal states have signed Receipts',
   while (!runningTaskId) await new Promise((resolve) => setImmediate(resolve));
   const cancelled = await cancellation.agent.cancelTask(runningTaskId);
   await assert.rejects(() => pending, (error) => error.errorCode === 'TASK_CANCELLED');
-  const cancellationReceipt = stores.receipts.get(cancelled.receiptReference);
+  const cancellationReceipt = await stores.receipts.get(cancelled.receiptReference);
   assert.equal(cancellationReceipt.outcome, 'cancelled');
   assert.ok(cancellationReceipt.proof);
 
@@ -773,10 +777,10 @@ test('production cancellation and timeout terminal states have signed Receipts',
     () => timeout.agent.invoke(timeout.connection.connectionId, invocation(timeout.connection)),
     (error) => error.errorCode === 'DEADLINE_EXCEEDED',
   );
-  const timedOutTask = [...timeout.stores.tasks.values()].find(
+  const timedOutTask = (await timeout.stores.tasks.values()).find(
     (task) => task.state === 'timed_out',
   );
-  const timeoutReceipt = timeout.stores.receipts.get(timedOutTask.receiptReference);
+  const timeoutReceipt = await timeout.stores.receipts.get(timedOutTask.receiptReference);
   assert.equal(timeoutReceipt.outcome, 'timed_out');
   assert.ok(timeoutReceipt.proof);
 });
@@ -800,6 +804,7 @@ test('durable Approval Decision consumption is atomic across competing execution
     challengeId: waiting.approvalChallenge.challengeId,
     decisionId: 'decision_atomic_approval',
     decision: 'approved',
+    approvalActionDigest: waiting.approvalChallenge.approvalActionDigest,
     approvedLimits: {},
     decidedBy: 'host_approver',
     decidedAt: new Date().toISOString(),
@@ -820,4 +825,490 @@ test('durable Approval Decision consumption is atomic across competing execution
     results.filter((result) => result.task.state === 'waiting_for_approval').length,
     1,
   );
+});
+
+async function prepareApprovedInvocation(options = {}) {
+  const fixture = await createProductionFixture({
+    contract: {
+      approvalRequirement: 'required',
+      sideEffectCategory: 'irreversible_write',
+      ...(options.contract || {}),
+    },
+    approvalLimits: options.approvalLimits,
+  });
+  const envelope = invocation(fixture.connection, {
+    invocationId:
+      options.invocationId ||
+      `invocation_r1_${Math.random().toString(16).slice(2)}`,
+    idempotencyKey: `idempotency_r1_${Math.random().toString(16).slice(2)}`,
+    payload: options.payload || {
+      amount: 1250,
+      beneficiary: { accountId: 'approved', routing: 'domestic' },
+    },
+  });
+  const waiting = await fixture.agent.invoke(
+    fixture.connection.connectionId,
+    envelope,
+  );
+  const decision = {
+    challengeId: waiting.approvalChallenge.challengeId,
+    decisionId: `decision_r1_${Math.random().toString(16).slice(2)}`,
+    decision: 'approved',
+    approvalActionDigest: waiting.approvalChallenge.approvalActionDigest,
+    approvedLimits: {},
+    decidedBy: 'host_approver',
+    decidedAt: new Date().toISOString(),
+    safeReasonCode: 'APPROVED_FOR_R1',
+  };
+  await fixture.agent.submitApprovalDecision(decision);
+  return {
+    ...fixture,
+    envelope,
+    waiting,
+    decision,
+    approvedEnvelope: {
+      ...envelope,
+      approvalReference: decision.decisionId,
+    },
+  };
+}
+
+test('R1 exact-action approval accepts only the canonical approved invocation', async () => {
+  const exact = await prepareApprovedInvocation();
+  const reordered = {
+    ...exact.approvedEnvelope,
+    payload: {
+      beneficiary: { routing: 'domestic', accountId: 'approved' },
+      amount: 1250,
+    },
+  };
+  const completed = await exact.agent.invoke(
+    exact.connection.connectionId,
+    reordered,
+  );
+  assert.equal(completed.task.state, 'completed');
+  assert.equal(exact.handlerCalls(), 1);
+
+  for (const [label, mutate] of [
+    ['changed amount', (prepared) => ({
+      ...prepared.approvedEnvelope,
+      payload: { ...prepared.approvedEnvelope.payload, amount: 1251 },
+    })],
+    ['changed nested field', (prepared) => ({
+      ...prepared.approvedEnvelope,
+      payload: {
+        ...prepared.approvedEnvelope.payload,
+        beneficiary: {
+          ...prepared.approvedEnvelope.payload.beneficiary,
+          accountId: 'substituted',
+        },
+      },
+    })],
+  ]) {
+    const prepared = await prepareApprovedInvocation();
+    const rejected = await prepared.agent.invoke(
+      prepared.connection.connectionId,
+      mutate(prepared),
+    );
+    assert.equal(rejected.task.state, 'waiting_for_approval', label);
+    assert.equal(prepared.handlerCalls(), 0, label);
+  }
+});
+
+test('R1 exact-action approval binds capability, Connection, contract, scope, and limits', async () => {
+  const changedVersion = await prepareApprovedInvocation();
+  await assert.rejects(
+    () =>
+      changedVersion.agent.invoke(
+        changedVersion.connection.connectionId,
+        { ...changedVersion.approvedEnvelope, capabilityVersion: '2' },
+      ),
+    (error) => error.errorCode === 'CAPABILITY_VERSION_MISMATCH',
+  );
+  assert.equal(changedVersion.handlerCalls(), 0);
+
+  const changedContract = await prepareApprovedInvocation();
+  await assert.rejects(
+    () =>
+      changedContract.agent.invoke(
+        changedContract.connection.connectionId,
+        {
+          ...changedContract.approvedEnvelope,
+          inputContractReference: 'data:other-input@1',
+        },
+      ),
+    (error) => error.errorCode === 'DATA_CONTRACT_VIOLATION',
+  );
+
+  const changedScope = await prepareApprovedInvocation();
+  await assert.rejects(
+    () =>
+      changedScope.agent.invoke(
+        changedScope.connection.connectionId,
+        { ...changedScope.approvedEnvelope, workspaceScope: 'workspace_other' },
+      ),
+    (error) => error.errorCode === 'SCOPE_MISMATCH',
+  );
+
+  const changedConnection = await prepareApprovedInvocation();
+  const secondGrant = await changedConnection.agent.issueInstallGrant({
+    organizationScope: changedConnection.connection.organizationScope,
+    workspaceScope: changedConnection.connection.workspaceScope,
+    allowedCapabilityKeys: [CAPABILITY_KEY],
+  });
+  const secondConnection = await changedConnection.agent.redeemInstallGrant(
+    secondGrant.key,
+    {
+      organizationScope: changedConnection.connection.organizationScope,
+      workspaceScope: changedConnection.connection.workspaceScope,
+      approvedCapabilityKeys: [CAPABILITY_KEY],
+      hostAudience: 'host-security-audience',
+    },
+  );
+  const connectionRejected = await changedConnection.agent.invoke(
+    secondConnection.connectionId,
+    changedConnection.approvedEnvelope,
+  );
+  assert.equal(connectionRejected.task.state, 'waiting_for_approval');
+  assert.equal(changedConnection.handlerCalls(), 0);
+
+  const changedLimits = await prepareApprovedInvocation({
+    approvalLimits: { maximumAmount: 2000 },
+  });
+  changedLimits.agent.capability(CAPABILITY_KEY, {
+    contract: fixtureContract({
+      approvalRequirement: 'required',
+      sideEffectCategory: 'irreversible_write',
+    }),
+    approvalLimits: { maximumAmount: 1000 },
+    handler: async ({ input }) => ({ outcome: 'completed', output: input }),
+  });
+  const limitsRejected = await changedLimits.agent.invoke(
+    changedLimits.connection.connectionId,
+    changedLimits.approvedEnvelope,
+  );
+  assert.equal(limitsRejected.task.state, 'waiting_for_approval');
+});
+
+test('R1 approval Decisions reject missing and malformed action digests', async () => {
+  const prepared = await createProductionFixture({
+    contract: { approvalRequirement: 'required' },
+  });
+  const waiting = await prepared.agent.invoke(
+    prepared.connection.connectionId,
+    invocation(prepared.connection),
+  );
+  const base = {
+    challengeId: waiting.approvalChallenge.challengeId,
+    decisionId: 'decision_missing_digest_r1',
+    decision: 'approved',
+    approvedLimits: {},
+    decidedBy: 'host_approver',
+    decidedAt: new Date().toISOString(),
+    safeReasonCode: 'APPROVED_FOR_R1',
+  };
+  await assert.rejects(
+    () => prepared.agent.submitApprovalDecision(base),
+    (error) =>
+      ['INVALID_MESSAGE', 'APPROVAL_INVALID'].includes(error.errorCode),
+  );
+  await assert.rejects(
+    () =>
+      prepared.agent.submitApprovalDecision({
+        ...base,
+        decisionId: 'decision_malformed_digest_r1',
+        approvalActionDigest: 'malformed',
+      }),
+    (error) => error.errorCode === 'APPROVAL_INVALID',
+  );
+});
+
+test('R1 waiting-for-approval cancellation is signed, atomic, and idempotent', async () => {
+  const fixture = await createProductionFixture({
+    contract: { approvalRequirement: 'required' },
+  });
+  const waiting = await fixture.agent.invoke(
+    fixture.connection.connectionId,
+    invocation(fixture.connection),
+  );
+  const [first, concurrent] = await Promise.all([
+    fixture.agent.cancelTask(waiting.task.taskId),
+    fixture.agent.cancelTask(waiting.task.taskId),
+  ]);
+  const second = await fixture.agent.cancelTask(waiting.task.taskId);
+  assert.equal(first.state, 'cancelled');
+  assert.equal(concurrent.receiptReference, first.receiptReference);
+  assert.equal(second.receiptReference, first.receiptReference);
+  const receipt = await fixture.stores.receipts.get(first.receiptReference);
+  assert.equal(receipt.outcome, 'cancelled');
+  assert.ok(receipt.proof);
+  assert.equal((await fixture.stores.receipts.values()).length, 1);
+});
+
+test('R1 accepted Task cancellation persists one signed terminal pair', async () => {
+  const stores = createStores();
+  let acceptedTaskId;
+  let releaseContext;
+  const contextGate = new Promise((resolve) => {
+    releaseContext = resolve;
+  });
+  const originalTaskPut = stores.tasks.put.bind(stores.tasks);
+  stores.tasks.put = async (key, value) => {
+    await originalTaskPut(key, value);
+    if (value.state === 'accepted') acceptedTaskId = key;
+  };
+  const originalContextPut = stores.taskContexts.put.bind(stores.taskContexts);
+  let contextPersisted = false;
+  stores.taskContexts.put = async (key, value) => {
+    await originalContextPut(key, value);
+    contextPersisted = true;
+    await contextGate;
+  };
+  const fixture = await createProductionFixture({ stores });
+  const pending = fixture.agent.invoke(
+    fixture.connection.connectionId,
+    invocation(fixture.connection),
+  );
+  while (!acceptedTaskId || !contextPersisted) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const cancelled = await fixture.agent.cancelTask(acceptedTaskId);
+  releaseContext();
+  await assert.rejects(
+    () => pending,
+    (error) => error.errorCode === 'TASK_CANCELLED',
+  );
+  assert.equal(cancelled.state, 'cancelled');
+  assert.ok((await stores.receipts.get(cancelled.receiptReference)).proof);
+});
+
+test('R1 terminal failures cannot commit a terminal Task without its Receipt', async () => {
+  const issuanceFailure = await createProductionFixture({
+    receiptIssuer: async () => {
+      throw new Error('private signer failure');
+    },
+  });
+  await assert.rejects(() =>
+    issuanceFailure.agent.invoke(
+      issuanceFailure.connection.connectionId,
+      invocation(issuanceFailure.connection),
+    ),
+  );
+  assert.equal(
+    (await issuanceFailure.stores.tasks.values()).some((task) =>
+      ['completed', 'failed', 'cancelled', 'timed_out'].includes(task.state),
+    ),
+    false,
+  );
+  assert.equal((await issuanceFailure.stores.receipts.values()).length, 0);
+
+  const persistenceFailureStores = createStores();
+  persistenceFailureStores.terminalTransactions.commitTerminal = async () => {
+    throw new Error('persistent adapter unavailable');
+  };
+  const persistenceFailure = await createProductionFixture({
+    stores: persistenceFailureStores,
+  });
+  await assert.rejects(
+    () =>
+      persistenceFailure.agent.invoke(
+        persistenceFailure.connection.connectionId,
+        invocation(persistenceFailure.connection),
+      ),
+    (error) => error.errorCode === 'TERMINAL_PERSISTENCE_REQUIRED',
+  );
+  assert.equal((await persistenceFailureStores.receipts.values()).length, 0);
+  assert.equal(
+    (await persistenceFailureStores.tasks.values()).some((task) =>
+      ['completed', 'failed', 'cancelled', 'timed_out'].includes(task.state),
+    ),
+    false,
+  );
+
+  const recoveryStores = createStores();
+  recoveryStores.terminalTransactions.commitTerminal = async () => ({
+    committed: false,
+    recoveryRequired: true,
+    reasonCode: 'TASK_WRITE_FAILED',
+  });
+  const recovery = await createProductionFixture({ stores: recoveryStores });
+  await assert.rejects(
+    () =>
+      recovery.agent.invoke(
+        recovery.connection.connectionId,
+        invocation(recovery.connection),
+      ),
+    (error) =>
+      error.errorCode === 'TERMINAL_PERSISTENCE_REQUIRED' &&
+      error.details?.recoveryRequired === true,
+  );
+  assert.equal((await recoveryStores.receipts.values()).length, 0);
+});
+
+test('R1 filesystem store rejects invalid terminal pairs and survives restart', async (context) => {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'ghostbridge-agent-restart-r1-'),
+  );
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const storesA = createStores(directory);
+  await assert.rejects(
+    () =>
+      storesA.terminalTransactions.commitTerminal({
+        task: {
+          taskId: 'task_invalid_pair',
+          state: 'cancelled',
+          receiptReference: 'receipt_invalid_pair',
+        },
+        receipt: {
+          receiptId: 'receipt_other',
+          taskId: 'task_other',
+        },
+        expectedTaskStates: ['running'],
+      }),
+    /invalid/,
+  );
+
+  const agentA = await createProductionFixture({
+    stores: storesA,
+    contract: { approvalRequirement: 'required' },
+  });
+  const preparedEnvelope = invocation(agentA.connection, {
+    invocationId: 'invocation_restart_r1',
+  });
+  const waiting = await agentA.agent.invoke(
+    agentA.connection.connectionId,
+    preparedEnvelope,
+  );
+  const decision = {
+    challengeId: waiting.approvalChallenge.challengeId,
+    decisionId: 'decision_restart_r1',
+    decision: 'approved',
+    approvalActionDigest: waiting.approvalChallenge.approvalActionDigest,
+    approvedLimits: {},
+    decidedBy: 'host_approver',
+    decidedAt: new Date().toISOString(),
+    safeReasonCode: 'APPROVED_FOR_RESTART',
+  };
+  await agentA.agent.submitApprovalDecision(decision);
+  const completed = await agentA.agent.invoke(
+    agentA.connection.connectionId,
+    { ...preparedEnvelope, approvalReference: decision.decisionId },
+  );
+  await storesA.close();
+
+  const storesB = createStores(directory);
+  const agentB = await createProductionFixture({
+    stores: storesB,
+    issuer: agentA.issuer,
+    contract: { approvalRequirement: 'required' },
+    skipInstall: true,
+  });
+  assert.equal(
+    (await agentB.agent.getTask(completed.task.taskId)).receiptReference,
+    completed.receipt.receiptId,
+  );
+  assert.equal(
+    (await agentB.agent.getReceipt(completed.receipt.receiptId)).taskId,
+    completed.task.taskId,
+  );
+  assert.equal(
+    (await agentB.agent.checkRevocation(
+      'connection',
+      agentA.connection.connectionId,
+    )).status,
+    'active',
+  );
+  assert.equal(
+    (await storesB.approvalDecisions.get(decision.decisionId)).used,
+    true,
+  );
+  assert.equal(await agentB.agent.getConnectionCount(), 1);
+  await storesB.close();
+});
+
+test('R1 production rejects a metadata-decorated Map wrapper', async () => {
+  const issuer = await createSyntheticIssuer({ issuerId: 'https://issuer.example' });
+  const stores = createStores();
+  const wrappedMap = {
+    capabilities: {
+      persistence: 'durable',
+      atomicCompareAndSet: true,
+      transactionalTerminalWrite: false,
+      adapterName: 'claimed-durable-adapter',
+      adapterVersion: '1',
+    },
+    records: new Map(),
+    async get(key) { return this.records.get(key); },
+    async put(key, value) { this.records.set(key, value); },
+    async delete(key) { return this.records.delete(key); },
+    async has(key) { return this.records.has(key); },
+    async compareAndSet() { return true; },
+    async values() { return [...this.records.values()]; },
+  };
+  assert.throws(
+    () =>
+      createGhostBridgeAgent({
+        mode: 'productionMode',
+        publicBaseUrl: 'https://agent.example',
+        passport: {
+          ...fixturePassport(),
+          authorizedAgentExecutionKeys: [
+            issuer.toolkit.authorizeAgentExecutionKey(issuer.keyIds.execution),
+          ],
+        },
+        authorization: () => true,
+        revocationResolver: () => ({ status: 'active', freshness: 'fresh' }),
+        receiptIssuer: () => ({}),
+        receiptVerificationJwks: stripTestOnly(issuer.toolkit.publishJwks()),
+        agentSigner: issuer.keyProvider.signer(issuer.keyIds.execution),
+        authenticateHttpRequest: async () => ({}),
+        stores: { ...stores, connections: wrappedMap },
+      }),
+    /connections store must be an asynchronous durable adapter/,
+  );
+});
+
+test('R1 unknown Connection revocation is never reported active', async (context) => {
+  const fixture = fixtureSecurityAgent({
+    fixtureHttpPrincipal: {
+      subjectId: 'host_r1',
+      authenticationMethod: 'fixture',
+      organizationScope: 'org_revocation_r1',
+    },
+  });
+  const scope = { organizationScope: 'org_revocation_r1' };
+  const grant = fixture.agent.issueInstallGrant(scope);
+  const connection = fixture.agent.redeemInstallGrant(grant.key, scope);
+  assert.equal(
+    fixture.agent.checkRevocation('connection', connection.connectionId).status,
+    'active',
+  );
+  assert.throws(
+    () => fixture.agent.checkRevocation('connection', 'connection_unknown_r1'),
+    (error) => error.errorCode === 'CONNECTION_NOT_ACTIVE',
+  );
+  assert.throws(
+    () => fixture.agent.checkRevocation('connection', ''),
+    (error) => error.errorCode === 'INVALID_MESSAGE',
+  );
+  fixture.agent.revokeConnection(connection.connectionId);
+  assert.equal(
+    fixture.agent.checkRevocation('connection', connection.connectionId).status,
+    'revoked',
+  );
+
+  const listener = await fixture.agent.listen();
+  context.after(() => listener.close());
+  const response = await fetch(
+    `${listener.baseUrl}/ghostbridge/revocations/connection/connection_unknown_r1`,
+  );
+  const body = await response.json();
+  assert.equal(response.status, 403);
+  assert.equal(body.errorCode, 'CONNECTION_NOT_ACTIVE');
+  const missingResponse = await fetch(
+    `${listener.baseUrl}/ghostbridge/revocations/connection/`,
+  );
+  const missingBody = await missingResponse.json();
+  assert.equal(missingResponse.status, 404);
+  assert.equal(missingBody.errorCode, 'INVALID_MESSAGE');
 });

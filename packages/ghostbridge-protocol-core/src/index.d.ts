@@ -273,6 +273,7 @@ export interface ApprovalChallenge {
   organizationScope: string;
   workspaceScope?: string;
   actionKey: string;
+  approvalActionDigest: string;
   safeSummary: string;
   requiredRoleCategories: string[];
   approvalLimits: Record<string, unknown>;
@@ -286,6 +287,7 @@ export interface ApprovalDecision {
   challengeId: string;
   decisionId: string;
   decision: 'approved' | 'rejected' | 'more_information_required' | 'expired' | 'cancelled';
+  approvalActionDigest: string;
   approvedLimits: Record<string, unknown>;
   decidedBy: string;
   decidedAt: string;
@@ -432,6 +434,36 @@ export function assertCompatibility(input: Record<string, unknown>): Compatibili
 export function createInstallationPreview(input: Record<string, unknown>): Record<string, unknown>;
 export function assertPlainData<T>(value: T, limits?: Partial<WireLimits>): T;
 export function boundedSerialize(value: unknown, limits?: Partial<WireLimits>): string;
+export interface ApprovalAction {
+  invocationId: string;
+  connectionId: string;
+  capabilityKey: string;
+  capabilityVersion: string;
+  organizationScope: string;
+  workspaceScope?: string;
+  inputContractReference: string;
+  payloadDigest: string;
+  sideEffectCategory?: string;
+  approvalLimits: Record<string, unknown>;
+  policyDecisionReference: string;
+  validityBoundary: string;
+}
+export function createApprovalAction(input: {
+  invocationId: string;
+  connectionId: string;
+  capabilityKey: string;
+  capabilityVersion: string;
+  organizationScope: string;
+  workspaceScope?: string;
+  inputContractReference: string;
+  payload?: unknown;
+  payloadDigest?: string;
+  sideEffectCategory?: string;
+  approvalLimits: Record<string, unknown>;
+  policyDecisionReference: string;
+  validityBoundary: string;
+}): Readonly<ApprovalAction>;
+export function approvalActionDigest(input: Parameters<typeof createApprovalAction>[0]): string;
 export function safeParse<T = unknown>(value: string, limits?: Partial<WireLimits>): T;
 export function protocolError(
   code: string,

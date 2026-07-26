@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const test = require('node:test');
 const {
   AntiRollbackStore,
@@ -15,9 +16,11 @@ const {
   issuerDiscoveryUrl,
   normalizeIssuerId,
   parseJsonStrict,
+  signDocument,
   validateAudience,
   validateIssuerMetadata,
   validateJwks,
+  verifyDocument,
 } = require('../src');
 
 function expectCode(operation, code) {
@@ -68,6 +71,61 @@ test('canonicalization is deterministic and bounded', () => {
   assert.equal(digest({ a: 1, b: 2 }), digest({ b: 2, a: 1 }));
   assert.throws(() => canonicalize({ value: Number.NaN }), GhostBridgeTrustError);
   assert.throws(() => canonicalize({ value: '\ud800' }), GhostBridgeTrustError);
+});
+
+test('decoded signature byte mutation is rejected with SIGNATURE_INVALID', async () => {
+  const issuedAt = '2026-07-26T10:00:00.000Z';
+  const expiresAt = '2026-07-26T11:00:00.000Z';
+  const issuer = 'https://issuer.example';
+  const kid = 'signature_regression_key';
+  const { privateKey, publicKey } = crypto.generateKeyPairSync('ed25519');
+  const publicJwk = publicKey.export({ format: 'jwk' });
+  const signingKey = {
+    ...publicJwk,
+    kid,
+    use: 'sig',
+    alg: 'EdDSA',
+    state: 'active',
+    notBefore: issuedAt,
+    expiresAt,
+    purpose: ['passport_signing'],
+  };
+  signingKey.thumbprint = calculateJwkThumbprint(signingKey);
+  const signed = await signDocument(
+    {
+      issuer,
+      issuedAt,
+      expiresAt,
+      subject: 'signature-regression',
+    },
+    {
+      kid,
+      algorithm: 'EdDSA',
+      sign: (input) => crypto.sign(null, input, privateKey),
+    },
+    {
+      purpose: 'passport_signing',
+    },
+  );
+
+  const changed = structuredClone(signed);
+  const segments = changed.proof.protectedJws.split('.');
+  const originalSignature = Buffer.from(segments[2], 'base64url');
+  const corruptedSignature = Buffer.from(originalSignature);
+  corruptedSignature[0] ^= 0x01;
+  assert.notDeepEqual(corruptedSignature, originalSignature);
+  segments[2] = corruptedSignature.toString('base64url');
+  changed.proof.protectedJws = segments.join('.');
+
+  expectCode(
+    () =>
+      verifyDocument(changed, { keys: [signingKey] }, {
+        purpose: 'passport_signing',
+        expectedIssuer: issuer,
+        clock: () => Date.parse('2026-07-26T10:30:00.000Z'),
+      }),
+    'SIGNATURE_INVALID',
+  );
 });
 
 test('strict JSON rejects duplicate and prototype-pollution keys', () => {

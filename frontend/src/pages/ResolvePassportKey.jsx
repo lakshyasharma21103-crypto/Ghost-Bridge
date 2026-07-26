@@ -23,6 +23,7 @@ export function ResolvePassportKey() {
       const data = await apiClient.post('/passports/resolve', {
         key,
         receivingWorkspaceId: scope.workspaceScope,
+        receivingOrganizationId: scope.organizationScope,
       });
       setKey('');
       setState({ resolving: false, error: null, result: data });

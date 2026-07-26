@@ -101,6 +101,7 @@ const ERROR_CODES = Object.freeze([
   'TASK_NOT_FOUND',
   'TASK_NOT_CANCELLABLE',
   'TASK_CANCELLED',
+  'TERMINAL_PERSISTENCE_REQUIRED',
   'REVOKED',
   'PROVIDER_UNAVAILABLE',
   'RATE_LIMITED',
@@ -1138,11 +1139,12 @@ function projectDataContract(input, contract, options = {}) {
 }
 
 function validateApprovalChallenge(document) {
-  return assertRequired(document, [
+  assertRequired(document, [
     'challengeId',
     'invocationId',
     'organizationScope',
     'actionKey',
+    'approvalActionDigest',
     'safeSummary',
     'requiredRoleCategories',
     'approvalLimits',
@@ -1151,6 +1153,8 @@ function validateApprovalChallenge(document) {
     'policyDecisionReference',
     'status',
   ]);
+  assertApprovalActionDigest(document.approvalActionDigest);
+  return document;
 }
 
 function validateApprovalDecision(document, challenge, options = {}) {
@@ -1158,6 +1162,7 @@ function validateApprovalDecision(document, challenge, options = {}) {
     'challengeId',
     'decisionId',
     'decision',
+    'approvalActionDigest',
     'approvedLimits',
     'decidedBy',
     'decidedAt',
@@ -1167,6 +1172,12 @@ function validateApprovalDecision(document, challenge, options = {}) {
     validateApprovalChallenge(challenge);
     if (document.challengeId !== challenge.challengeId) {
       throw protocolError('APPROVAL_INVALID', 'The Approval Decision is not bound to this challenge.');
+    }
+    if (document.approvalActionDigest !== challenge.approvalActionDigest) {
+      throw protocolError(
+        'APPROVAL_INVALID',
+        'The Approval Decision is not bound to the challenged action.',
+      );
     }
     if (Date.parse(challenge.expiresAt) <= (options.clock || Date.now)()) {
       throw protocolError('APPROVAL_EXPIRED', 'The Approval Challenge has expired.');
@@ -1178,7 +1189,103 @@ function validateApprovalDecision(document, challenge, options = {}) {
       throw protocolError('APPROVAL_INVALID', 'The Approval Decision exceeds the challenged limits.');
     }
   }
+  assertApprovalActionDigest(document.approvalActionDigest);
   return document;
+}
+
+function createApprovalAction(input = {}) {
+  assertRequired(input, [
+    'invocationId',
+    'connectionId',
+    'capabilityKey',
+    'capabilityVersion',
+    'organizationScope',
+    'inputContractReference',
+    'approvalLimits',
+    'policyDecisionReference',
+    'validityBoundary',
+  ], 'APPROVAL_INVALID');
+  const requiredStrings = [
+    'invocationId',
+    'connectionId',
+    'capabilityKey',
+    'capabilityVersion',
+    'organizationScope',
+    'inputContractReference',
+    'policyDecisionReference',
+    'validityBoundary',
+  ];
+  if (
+    requiredStrings.some(
+      (field) =>
+        typeof input[field] !== 'string' ||
+        !input[field].trim() ||
+        input[field].length > 500,
+    ) ||
+    (input.workspaceScope !== undefined &&
+      (typeof input.workspaceScope !== 'string' ||
+        !input.workspaceScope.trim() ||
+        input.workspaceScope.length > 200)) ||
+    (input.sideEffectCategory !== undefined &&
+      (typeof input.sideEffectCategory !== 'string' ||
+        !input.sideEffectCategory.trim() ||
+        input.sideEffectCategory.length > 100)) ||
+    !Number.isFinite(Date.parse(input.validityBoundary)) ||
+    !input.approvalLimits ||
+    typeof input.approvalLimits !== 'object' ||
+    Array.isArray(input.approvalLimits)
+  ) {
+    throw protocolError('APPROVAL_INVALID', 'The approval action binding is invalid.');
+  }
+  const payloadDigest = input.payload !== undefined
+    ? canonicalApprovalDigest(input.payload)
+    : input.payloadDigest;
+  assertApprovalActionDigest(payloadDigest);
+  const action = removeUndefined({
+    invocationId: input.invocationId,
+    connectionId: input.connectionId,
+    capabilityKey: input.capabilityKey,
+    capabilityVersion: input.capabilityVersion,
+    organizationScope: input.organizationScope,
+    workspaceScope: input.workspaceScope,
+    inputContractReference: input.inputContractReference,
+    payloadDigest,
+    sideEffectCategory: input.sideEffectCategory,
+    approvalLimits: clonePlain(input.approvalLimits),
+    policyDecisionReference: input.policyDecisionReference,
+    validityBoundary: input.validityBoundary,
+  });
+  assertPlainData(action, {
+    ...DEFAULT_LIMITS,
+    maximumMessageBytes: Math.min(DEFAULT_LIMITS.maximumMessageBytes, 32_768),
+  });
+  return Object.freeze(action);
+}
+
+function approvalActionDigest(input) {
+  return canonicalApprovalDigest(createApprovalAction(input));
+}
+
+function assertApprovalActionDigest(value) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(value)) {
+    throw protocolError('APPROVAL_INVALID', 'The approval action digest is invalid.');
+  }
+  return value;
+}
+
+function canonicalApprovalDigest(value) {
+  assertPlainData(value);
+  return digest(canonicalizeApprovalValue(value));
+}
+
+function canonicalizeApprovalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeApprovalValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalizeApprovalValue(value[key])]),
+  );
 }
 
 const TASK_TRANSITIONS = Object.freeze({
@@ -1441,6 +1548,8 @@ module.exports = {
   TASK_TRANSITIONS,
   assertPlainData,
   boundedSerialize,
+  approvalActionDigest,
+  createApprovalAction,
   createDeterministicTestSigner,
   createInstallationPreview,
   createSchemaValidators,

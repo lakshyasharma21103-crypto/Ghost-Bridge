@@ -78,6 +78,10 @@ function inspector() {
 }
 
 function conformance() {
+  nodeTest(
+    ['packages/ghostbridge-trust/test/trust.test.js'],
+    'decoded signature byte mutation',
+  );
   for (const profile of ['core', 'governed', 'trust']) {
     const output = run(process.execPath, [
       'scripts/verifyGhostBridgeBlackBoxConformance.mjs',

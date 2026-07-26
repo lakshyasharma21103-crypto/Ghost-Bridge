@@ -8,11 +8,13 @@ const {
   DEFAULT_PROFILE_DECLARATIONS,
   GhostBridgeProtocolError,
   PROTOCOL_VERSION,
+  approvalActionDigest,
   assertPlainData,
   boundedSerialize,
   digest,
   protocolError,
   transitionTask,
+  validateApprovalChallenge,
   validateApprovalDecision,
   validateCapabilityContract,
   validateContractValue,
@@ -31,6 +33,7 @@ const {
   verifyReceipt: verifyTrustedReceipt,
   verifyRequest,
 } = require('@ghostbridge/trust');
+const { createFileProtocolStores } = require('./fileProtocolStores');
 
 const AUDIT_EVENTS = Object.freeze([
   'protocol.discovery.requested',
@@ -93,6 +96,7 @@ function createGhostBridgeAgent(options = {}) {
     'idempotency',
     'replay',
     'revocation',
+    'terminalTransactions',
   ];
   if (
     productionMode &&
@@ -105,10 +109,14 @@ function createGhostBridgeAgent(options = {}) {
       connections: ['values'],
       approvals: ['values'],
       approvalDecisions: ['putDecision', 'consumeApprovedDecision'],
-      idempotency: ['has'],
+      terminalTransactions: ['commitTerminal', 'recoverTerminalWrites'],
     };
     for (const name of requiredProductionStores) {
-      assertDurableStore(options.stores[name], name, storeMethods[name]);
+      if (name === 'terminalTransactions') {
+        assertTerminalTransactionStore(options.stores[name]);
+      } else {
+        assertDurableStore(options.stores[name], name, storeMethods[name]);
+      }
     }
   }
   if (productionMode && !options.publicBaseUrl) {
@@ -185,7 +193,9 @@ function createGhostBridgeAgent(options = {}) {
   const challenges = options.stores?.approvals || new Map();
   const decisions = options.stores?.approvalDecisions || new Map();
   const idempotency = options.stores?.idempotency || new Map();
+  const terminalTransactions = options.stores?.terminalTransactions;
   const activeExecutions = new Map();
+  const terminalOperations = new Map();
   const metrics = new Map();
   const auditSink = typeof options.auditSink === 'function' ? options.auditSink : () => undefined;
   let runtimePublicBaseUrl = options.publicBaseUrl;
@@ -231,7 +241,13 @@ function createGhostBridgeAgent(options = {}) {
       return agent;
     },
     configureTaskStore(value) {
-      if (!value || typeof value.get !== 'function' || typeof value.set !== 'function') {
+      if (productionMode) {
+        assertDurableStore(value, 'tasks');
+      } else if (
+        !value ||
+        typeof value.get !== 'function' ||
+        typeof value.set !== 'function'
+      ) {
         throw new TypeError('Task store must implement get() and set().');
       }
       taskStore = value;
@@ -437,49 +453,23 @@ function createGhostBridgeAgent(options = {}) {
         allowedCapabilityKeys:
           scope.allowedCapabilityKeys || [...capabilities.keys()],
       };
+      if (productionMode) {
+        return storePut(installGrants, grant.keyHash, grant).then(() => ({
+          key,
+          expiresAt: grant.expiresAt,
+          grantReference: grantId,
+        }));
+      }
       installGrants.set(grant.keyHash, grant);
       return { key, expiresAt: grant.expiresAt, grantReference: grantId };
     },
     resolveInstallGrant(key, scope = {}) {
-      const grant = findGrant(key);
-      assertGrantScope(grant, scope, clock);
-      metric('install_grant', 'resolved');
-      audit('protocol.install_grant.resolved', {
-        organizationScope: grant.organizationScope,
-        workspaceScope: grant.workspaceScope,
-        outcome: 'resolved',
-      });
-      return {
-        protocolVersion: PROTOCOL_VERSION,
-        grantReference: grant.grantId,
-        passport: agent.getPassport(),
-        capabilities: agent
-          .listCapabilities()
-          .filter((capability) => grant.allowedCapabilityKeys.includes(capability.capabilityKey)),
-        connectionOffer: connectionOffer(
-          grant,
-          passport,
-          authenticationModes,
-          options.authenticationSetupReference,
-          options.hostAudience,
-        ),
-        issuerVerification: {
-          cryptographicStatus: 'not_evaluated',
-          hostTrustStatus: 'not_evaluated',
-          issuer: passport.issuer,
-          trustProfile: passport.trustProfileVersion || 'not_declared',
-        },
-        requestedScope: {
-          organizationScope: grant.organizationScope,
-          ...(grant.workspaceScope ? { workspaceScope: grant.workspaceScope } : {}),
-        },
-        restrictions: [...grant.restrictions],
-        expiresAt: grant.expiresAt,
-        redemptionState: grant.status === 'active' ? 'available' : grant.status,
-      };
+      const complete = (grant) => installResolution(grant, scope);
+      const found = findGrant(key);
+      return productionMode ? Promise.resolve(found).then(complete) : complete(found);
     },
     async resolveInstallGrantTrusted(key, scope = {}) {
-      const resolution = agent.resolveInstallGrant(key, scope);
+      const resolution = await agent.resolveInstallGrant(key, scope);
       if (
         typeof options.connectionOfferSigner !== 'function' ||
         typeof options.installResolutionSigner !== 'function' ||
@@ -527,93 +517,10 @@ function createGhostBridgeAgent(options = {}) {
       return options.installResolutionSigner(trustedPayload);
     },
     redeemInstallGrant(key, scope = {}, requestContext = {}) {
-      const grant = findGrant(key);
-      assertGrantScope(grant, scope, clock, { allowRedeemed: true });
-      if (grant.status === 'redeemed') {
-        const connection = connections.get(grant.connectionId);
-        return { ...publicConnection(connection), idempotentReplay: true };
-      }
-      const selectedAuthenticationMode = scope.authenticationMode || authenticationModes[0];
-      if (!authenticationModes.includes(selectedAuthenticationMode)) {
-        throw protocolError(
-          'NO_COMPATIBLE_AUTHENTICATION_MODE',
-          'The selected authentication mode is not supported.',
-        );
-      }
-      const enabledCapabilityKeys =
-        scope.approvedCapabilityKeys ||
-        (mode === 'localFixtureMode' && options.approveAllFixtureCapabilities === true
-          ? grant.allowedCapabilityKeys
-          : undefined);
-      if (
-        !Array.isArray(enabledCapabilityKeys) ||
-        enabledCapabilityKeys.length === 0 ||
-        enabledCapabilityKeys.some((key) => !grant.allowedCapabilityKeys.includes(key))
-      ) {
-        throw protocolError(
-          'AUTHORIZATION_DENIED',
-          'The requested capability enablement is not authorized by the Install Grant.',
-        );
-      }
-      if (
-        selectedAuthenticationMode !== 'none' &&
-        (!scope.authenticationBinding ||
-          (!scope.authenticationBinding.credentialReference &&
-            !scope.authenticationBinding.transportBindingReference) ||
-          scope.authenticationBinding.authenticationMode !== selectedAuthenticationMode ||
-          scope.authenticationBinding.organizationScope !== grant.organizationScope ||
-          (scope.authenticationBinding.workspaceScope || undefined) !==
-            (grant.workspaceScope || undefined))
-      ) {
-        throw protocolError(
-          'AUTHENTICATION_REQUIRED',
-          'The selected authentication mode requires a scope-bound opaque binding.',
-        );
-      }
-      const connectionId = `connection_${crypto.randomUUID()}`;
-      const now = new Date(clock()).toISOString();
-      const connection = {
-        connectionId,
-        agentId: passport.agentId,
-        passportVersion: passport.passportVersion,
-        organizationScope: grant.organizationScope,
-        workspaceScope: grant.workspaceScope,
-        status: 'active',
-        authenticationMode: selectedAuthenticationMode,
-        authenticationState:
-          selectedAuthenticationMode === 'none' ? 'not_required' : 'verified_and_bound',
-        ...(scope.authenticationBinding
-          ? {
-              authenticationBindingReference:
-                scope.authenticationBinding.credentialReference ||
-                scope.authenticationBinding.transportBindingReference,
-            }
-          : {}),
-        hostAudience: scope.hostAudience || options.hostAudience,
-        enabledCapabilityKeys: [...enabledCapabilityKeys],
-        disabledCapabilityKeys: grant.allowedCapabilityKeys.filter(
-          (key) => !enabledCapabilityKeys.includes(key),
-        ),
-        createdAt: now,
-        revocationReference: `revocations/connection/${connectionId}`,
-      };
-      grant.status = 'redeemed';
-      grant.redeemedAt = now;
-      grant.connectionId = connectionId;
-      connections.set(connectionId, connection);
-      metric('connection', 'created');
-      audit('protocol.install_grant.redeemed', {
-        organizationScope: grant.organizationScope,
-        workspaceScope: grant.workspaceScope,
-        outcome: 'redeemed',
-      });
-      audit('protocol.connection.created', {
-        organizationScope: grant.organizationScope,
-        workspaceScope: grant.workspaceScope,
-        outcome: 'created',
-        principalId: requestContext.authenticatedPrincipal?.subjectId,
-      });
-      return { ...publicConnection(connection), idempotentReplay: false };
+      const complete = (grant) =>
+        redeemInstallGrantRecord(grant, scope, requestContext);
+      const found = findGrant(key);
+      return productionMode ? Promise.resolve(found).then(complete) : complete(found);
     },
     issueApprovalChallenge(input) {
       const now = clock();
@@ -623,6 +530,7 @@ function createGhostBridgeAgent(options = {}) {
         organizationScope: input.organizationScope,
         workspaceScope: input.workspaceScope,
         actionKey: input.actionKey,
+        approvalActionDigest: input.approvalActionDigest,
         safeSummary: input.safeSummary || `Approve ${input.actionKey}`,
         requiredRoleCategories: input.requiredRoleCategories || ['approver'],
         approvalLimits: input.approvalLimits || {},
@@ -631,48 +539,44 @@ function createGhostBridgeAgent(options = {}) {
         policyDecisionReference: input.policyDecisionReference || 'policy:draft-default',
         status: 'pending',
       };
-      challenges.set(challenge.challengeId, challenge);
-      metric('approval', 'requested');
-      audit('protocol.approval.requested', {
-        organizationScope: challenge.organizationScope,
-        workspaceScope: challenge.workspaceScope,
-        actionKey: challenge.actionKey,
-      });
-      return structuredClone(challenge);
-    },
-    submitApprovalDecision(decision, requestContext = {}) {
-      const challenge = challenges.get(decision.challengeId);
-      if (!challenge) throw protocolError('APPROVAL_INVALID', 'The Approval Challenge was not found.');
-      validateApprovalDecision(decision, challenge, { clock });
-      challenge.status = decision.decision === 'approved' ? 'approved' : 'rejected';
-      const storedDecision = {
-        ...structuredClone(decision),
-        invocationId: challenge.invocationId,
-        organizationScope: challenge.organizationScope,
-        workspaceScope: challenge.workspaceScope,
-        actionKey: challenge.actionKey,
-        expiresAt: challenge.expiresAt,
-        used: false,
-      };
+      validateApprovalChallenge(challenge);
       const complete = () => {
-        metric('approval', decision.decision);
-        audit('protocol.approval.decided', {
+        metric('approval', 'requested');
+        audit('protocol.approval.requested', {
           organizationScope: challenge.organizationScope,
           workspaceScope: challenge.workspaceScope,
-          decision: decision.decision,
-          principalId: requestContext.authenticatedPrincipal?.subjectId,
+          actionKey: challenge.actionKey,
         });
-        return structuredClone(decision);
+        return structuredClone(challenge);
       };
       if (productionMode) {
-        return Promise.resolve(decisions.putDecision(storedDecision)).then(complete);
+        return storePut(challenges, challenge.challengeId, challenge).then(complete);
       }
-      decisions.set(decision.decisionId, storedDecision);
+      challenges.set(challenge.challengeId, challenge);
       return complete();
+    },
+    submitApprovalDecision(decision, requestContext = {}) {
+      if (productionMode) {
+        return (async () => {
+          const challenge = await storeGet(challenges, decision.challengeId);
+          return submitApprovalDecisionForChallenge(
+            challenge,
+            decision,
+            requestContext,
+            true,
+          );
+        })();
+      }
+      return submitApprovalDecisionForChallenge(
+        challenges.get(decision.challengeId),
+        decision,
+        requestContext,
+        false,
+      );
     },
     async invoke(connectionId, envelope, requestContext = {}) {
       validateProtocolVersion(envelope?.protocolVersion);
-      const connection = connections.get(connectionId);
+      const connection = await storeGet(connections, connectionId);
       if (!connection || connection.status !== 'active') {
         throw protocolError('CONNECTION_NOT_ACTIVE', 'The Agent Connection is not active.');
       }
@@ -772,6 +676,15 @@ function createGhostBridgeAgent(options = {}) {
           'The requested capability version is not supported.',
         );
       }
+      if (
+        registered.contract.inputContractReference !==
+        envelope.inputContractReference
+      ) {
+        throw protocolError(
+          'DATA_CONTRACT_VIOLATION',
+          'The Invocation input contract does not match the capability contract.',
+        );
+      }
       validateInvocation(envelope, {
         clock,
         workspaceRequired: Boolean(connection.workspaceScope),
@@ -788,8 +701,8 @@ function createGhostBridgeAgent(options = {}) {
         capabilityVersion: envelope.capabilityVersion,
         payload: envelope.payload,
       });
-      if (idempotencyKey && idempotency.has(idempotencyKey)) {
-        const recorded = idempotency.get(idempotencyKey);
+      if (idempotencyKey && await storeHas(idempotency, idempotencyKey)) {
+        const recorded = await storeGet(idempotency, idempotencyKey);
         if (recorded.digest !== invocationDigest) {
           throw protocolError(
             'IDEMPOTENCY_CONFLICT',
@@ -807,54 +720,118 @@ function createGhostBridgeAgent(options = {}) {
       }
 
       if (registered.contract.approvalRequirement === 'required') {
+        const candidateDecision = envelope.approvalReference
+          ? await storeGet(decisions, envelope.approvalReference)
+          : undefined;
+        let actualApprovalActionDigest;
+        if (candidateDecision) {
+          try {
+            actualApprovalActionDigest = approvalActionDigestForInvocation({
+              connection,
+              envelope,
+              registered,
+              approvalLimits: registered.approvalLimits || {},
+              policyDecisionReference:
+                candidateDecision.policyDecisionReference ||
+                registered.policyDecisionReference ||
+                'policy:draft-default',
+              validityBoundary: candidateDecision.expiresAt,
+            });
+          } catch {
+            actualApprovalActionDigest = undefined;
+          }
+        }
         const decision = await consumeApprovalDecision({
           decisionId: envelope.approvalReference,
           invocationId: envelope.invocationId,
           actionKey: envelope.capabilityKey,
+          approvalActionDigest: actualApprovalActionDigest,
           organizationScope: envelope.organizationScope,
           workspaceScope: envelope.workspaceScope,
           now: new Date(clock()).toISOString(),
         });
         if (!decision) {
-          const existing = [...challenges.values()].find(
-            (item) =>
-              item.invocationId === envelope.invocationId &&
-              item.actionKey === envelope.capabilityKey,
-          );
+          const approvalLimits = registered.approvalLimits || {};
+          const policyDecisionReference =
+            registered.policyDecisionReference || 'policy:draft-default';
+          const challengeCandidates = await storeValues(challenges);
+          const existing = challengeCandidates.find((item) => {
+            if (
+              item.invocationId !== envelope.invocationId ||
+              item.actionKey !== envelope.capabilityKey ||
+              item.status !== 'pending'
+            ) {
+              return false;
+            }
+            try {
+              return item.approvalActionDigest === approvalActionDigestForInvocation({
+                connection,
+                envelope,
+                registered,
+                approvalLimits,
+                policyDecisionReference,
+                validityBoundary: item.expiresAt,
+              });
+            } catch {
+              return false;
+            }
+          });
+          const expiresAt = new Date(clock() + 300_000).toISOString();
           const challenge =
             existing ||
-            agent.issueApprovalChallenge({
+            await agent.issueApprovalChallenge({
               invocationId: envelope.invocationId,
               organizationScope: envelope.organizationScope,
               workspaceScope: envelope.workspaceScope,
               actionKey: envelope.capabilityKey,
+              approvalActionDigest: approvalActionDigestForInvocation({
+                connection,
+                envelope,
+                registered,
+                approvalLimits,
+                policyDecisionReference,
+                validityBoundary: expiresAt,
+              }),
               safeSummary: `Approve ${registered.contract.displayName}`,
               requiredRoleCategories: ['finance_manager'],
-              approvalLimits: registered.approvalLimits || {},
+              approvalLimits,
+              policyDecisionReference,
+              expiresAt,
             });
           if (approvalHandler) {
             await approvalHandler(structuredClone(challenge));
           }
           const task = createTask(envelope, registered.contract, clock, 'waiting_for_approval');
-          taskStore.set(task.taskId, task);
-          taskContexts.set(task.taskId, {
-            connectionId,
-            organizationScope: envelope.organizationScope,
-            workspaceScope: envelope.workspaceScope,
-            capabilityKey: envelope.capabilityKey,
-          });
+          const taskEnvelope = {
+            ...envelope,
+            approvalReference: challenge.challengeId,
+          };
+          await storePut(taskStore, task.taskId, task);
+          await storePut(
+            taskContexts,
+            task.taskId,
+            createTaskReceiptContext({
+              connection,
+              envelope: taskEnvelope,
+              contract: registered.contract,
+              task,
+              passport,
+            }),
+          );
           return { task: structuredClone(task), approvalChallenge: structuredClone(challenge) };
         }
       }
 
       const task = createTask(envelope, registered.contract, clock);
-      taskStore.set(task.taskId, task);
-      taskContexts.set(task.taskId, {
-        connectionId,
-        organizationScope: envelope.organizationScope,
-        workspaceScope: envelope.workspaceScope,
-        capabilityKey: envelope.capabilityKey,
+      const receiptContext = createTaskReceiptContext({
+        connection,
+        envelope,
+        contract: registered.contract,
+        task,
+        passport,
       });
+      await storePut(taskStore, task.taskId, task);
+      await storePut(taskContexts, task.taskId, receiptContext);
       audit('protocol.invocation.accepted', {
         organizationScope: envelope.organizationScope,
         workspaceScope: envelope.workspaceScope,
@@ -865,16 +842,25 @@ function createGhostBridgeAgent(options = {}) {
         workspaceScope: envelope.workspaceScope,
         state: task.state,
       });
+      const latestAcceptedTask = await storeGet(taskStore, task.taskId);
+      if (latestAcceptedTask?.state === 'cancelled') {
+        throw protocolError('TASK_CANCELLED', 'Capability execution was cancelled.');
+      }
       const running = transitionTask(task, 'running', new Date(clock()).toISOString());
-      taskStore.set(task.taskId, running);
+      await storePut(taskStore, task.taskId, running);
+      let executionRecord;
       try {
         const abortController = new AbortController();
-        activeExecutions.set(running.taskId, {
+        executionRecord = {
           abortController,
           connection,
           envelope,
           contract: registered.contract,
-        });
+          receiptContext,
+          cancellationRequested: false,
+          cancellationPromise: undefined,
+        };
+        activeExecutions.set(running.taskId, executionRecord);
         const deadlineMs = Math.max(1, Date.parse(envelope.deadline) - clock());
         const configuredTimeout = Number(registered.contract.timeoutBounds?.maximumMs) || deadlineMs;
         const timeoutMs = Math.min(deadlineMs, configuredTimeout);
@@ -934,14 +920,23 @@ function createGhostBridgeAgent(options = {}) {
         });
         completed.receiptReference = receipt.receiptId;
         completed.nextActionCategory = 'none';
-        taskStore.set(completed.taskId, completed);
+        await persistTerminalExecution({
+          task: completed,
+          receipt,
+          expectedTaskStates: ['running'],
+        });
         const response = {
           task: structuredClone(completed),
           receipt: structuredClone(receipt),
           output: structuredClone(result.output),
           idempotentReplay: false,
         };
-        if (idempotencyKey) idempotency.set(idempotencyKey, { digest: invocationDigest, result: response });
+        if (idempotencyKey) {
+          await storePut(idempotency, idempotencyKey, {
+            digest: invocationDigest,
+            result: response,
+          });
+        }
         metric('invocation', 'completed');
         metric('receipt', 'issued');
         audit('protocol.task.changed', {
@@ -956,7 +951,12 @@ function createGhostBridgeAgent(options = {}) {
         });
         return response;
       } catch (error) {
-        if (taskStore.get(running.taskId)?.state === 'cancelled') {
+        if (executionRecord?.cancellationRequested) {
+          await executionRecord.cancellationPromise;
+          throw protocolError('TASK_CANCELLED', 'Capability execution was cancelled.');
+        }
+        const persistedTask = await storeGet(taskStore, running.taskId);
+        if (persistedTask?.state === 'cancelled') {
           throw protocolError('TASK_CANCELLED', 'Capability execution was cancelled.');
         }
         const terminalState =
@@ -983,10 +983,17 @@ function createGhostBridgeAgent(options = {}) {
             safeFailureCode: failed.safeFailureCode,
           });
           failed.receiptReference = failureReceipt.receiptId;
+          await persistTerminalExecution({
+            task: failed,
+            receipt: failureReceipt,
+            expectedTaskStates: ['running'],
+          });
         } catch (receiptError) {
           if (productionMode) throw receiptError;
         }
-        taskStore.set(failed.taskId, failed);
+        if (!productionMode && !failed.receiptReference) {
+          await storePut(taskStore, failed.taskId, failed);
+        }
         metric('invocation', 'failed');
         if (error instanceof GhostBridgeProtocolError) throw error;
         throw protocolError(
@@ -996,60 +1003,90 @@ function createGhostBridgeAgent(options = {}) {
       }
     },
     getTask(taskId) {
-      const task = taskStore.get(taskId);
-      if (!task) throw protocolError('TASK_NOT_FOUND', 'The Execution Task was not found.');
-      return structuredClone(task);
+      if (productionMode) {
+        return storeGet(taskStore, taskId).then((task) => requireTask(task));
+      }
+      return requireTask(taskStore.get(taskId));
     },
     async cancelTask(taskId) {
-      const task = agent.getTask(taskId);
+      const task = await agent.getTask(taskId);
+      if (task.state === 'cancelled' && task.receiptReference) {
+        return structuredClone(task);
+      }
       if (!task.cancellationSupported || !['accepted', 'queued', 'running', 'waiting_for_approval'].includes(task.state)) {
         throw protocolError('TASK_NOT_CANCELLABLE', 'The Execution Task cannot be cancelled.');
       }
+      if (terminalOperations.has(taskId)) {
+        return structuredClone(await terminalOperations.get(taskId));
+      }
       const execution = activeExecutions.get(taskId);
-      execution?.abortController.abort(
-        new Error('Capability execution was cancelled by the Host.'),
-      );
-      const cancelled = transitionTask(task, 'cancelled', new Date(clock()).toISOString());
-      cancelled.safeFailureCode = 'TASK_CANCELLED';
-      taskStore.set(taskId, cancelled);
-      if (execution) {
+      const cancellation = (async () => {
+        const receiptContext =
+          execution?.receiptContext || await storeGet(taskContexts, taskId);
+        if (!receiptContext) {
+          throw protocolError(
+            'PROOF_REQUIRED',
+            'Cancellation could not load its bounded Receipt context.',
+          );
+        }
+        const cancelled = transitionTask(task, 'cancelled', new Date(clock()).toISOString());
+        cancelled.safeFailureCode = 'TASK_CANCELLED';
         const receipt = await issueExecutionReceipt({
-          contract: execution.contract,
-          connection: execution.connection,
-          envelope: execution.envelope,
+          contract: receiptContext.contract,
+          connection: receiptContext.connection,
+          envelope: receiptContext.envelope,
           task: cancelled,
           outcome: 'cancelled',
           output: undefined,
           safeFailureCode: 'TASK_CANCELLED',
         });
         cancelled.receiptReference = receipt.receiptId;
-      } else if (productionMode) {
-        throw protocolError(
-          'PROOF_REQUIRED',
-          'Cancellation could not produce a bound Execution Receipt.',
+        await persistTerminalExecution({
+          task: cancelled,
+          receipt,
+          expectedTaskStates: [task.state],
+        });
+        return cancelled;
+      })();
+      terminalOperations.set(taskId, cancellation);
+      if (execution) {
+        execution.cancellationRequested = true;
+        execution.cancellationPromise = cancellation;
+        execution.abortController.abort(
+          new Error('Capability execution was cancelled by the Host.'),
         );
       }
-      taskStore.set(taskId, cancelled);
-      return structuredClone(cancelled);
+      try {
+        return structuredClone(await cancellation);
+      } finally {
+        terminalOperations.delete(taskId);
+      }
     },
     getReceipt(receiptId) {
-      const receipt = receipts.get(receiptId);
-      if (!receipt) throw protocolError('INVALID_MESSAGE', 'The Execution Receipt was not found.');
-      return structuredClone(receipt);
+      if (productionMode) {
+        return storeGet(receipts, receiptId).then((receipt) => requireReceipt(receipt));
+      }
+      return requireReceipt(receipts.get(receiptId));
     },
     checkRevocation(subjectType, subjectReference) {
+      if (typeof subjectReference !== 'string' || !subjectReference.trim()) {
+        throw protocolError(
+          'INVALID_MESSAGE',
+          'A revocation subject reference is required.',
+        );
+      }
       if (subjectType === 'connection') {
-        const connection = connections.get(subjectReference);
-        const status = connection?.status === 'revoked' ? 'revoked' : 'active';
-        return {
-          revocationId: `revocation_${subjectReference}`,
-          subjectType,
+        if (productionMode) {
+          return storeGet(connections, subjectReference).then((connection) =>
+            connectionRevocation(connection, subjectReference, passport, clock),
+          );
+        }
+        return connectionRevocation(
+          connections.get(subjectReference),
           subjectReference,
-          status,
-          reasonCode: status === 'revoked' ? 'OWNER_REVOKED' : 'NOT_REVOKED',
-          effectiveAt: connection?.revokedAt || connection?.createdAt || new Date(clock()).toISOString(),
-          issuedBy: passport.issuer,
-        };
+          passport,
+          clock,
+        );
       }
       return {
         revocationId: `revocation_${subjectReference}`,
@@ -1062,19 +1099,35 @@ function createGhostBridgeAgent(options = {}) {
       };
     },
     revokeConnection(connectionId, reasonCode = 'OWNER_REVOKED') {
-      const connection = connections.get(connectionId);
-      if (!connection) throw protocolError('CONNECTION_NOT_ACTIVE', 'The Agent Connection was not found.');
-      connection.status = 'revoked';
-      connection.revokedAt = new Date(clock()).toISOString();
-      connection.revocationReasonCode = reasonCode;
-      metric('revocation', 'revoked');
-      audit('protocol.revocation.changed', {
-        organizationScope: connection.organizationScope,
-        workspaceScope: connection.workspaceScope,
-        subjectType: 'connection',
-        status: 'revoked',
-      });
-      return agent.checkRevocation('connection', connectionId);
+      const revoke = (connection) => {
+        if (!connection) {
+          throw protocolError(
+            'CONNECTION_NOT_ACTIVE',
+            'The Agent Connection was not found.',
+          );
+        }
+        const revoked = {
+          ...connection,
+          status: 'revoked',
+          revokedAt: new Date(clock()).toISOString(),
+          revocationReasonCode: reasonCode,
+        };
+        const complete = () => {
+          metric('revocation', 'revoked');
+          audit('protocol.revocation.changed', {
+            organizationScope: revoked.organizationScope,
+            workspaceScope: revoked.workspaceScope,
+            subjectType: 'connection',
+            status: 'revoked',
+          });
+          return connectionRevocation(revoked, connectionId, passport, clock);
+        };
+        if (productionMode) return storePut(connections, connectionId, revoked).then(complete);
+        connections.set(connectionId, revoked);
+        return complete();
+      };
+      if (productionMode) return storeGet(connections, connectionId).then(revoke);
+      return revoke(connections.get(connectionId));
     },
     getMetrics() {
       return [...metrics.entries()].map(([key, value]) => {
@@ -1083,6 +1136,7 @@ function createGhostBridgeAgent(options = {}) {
       });
     },
     getConnectionCount() {
+      if (productionMode) return storeValues(connections).then((items) => items.length);
       return connections.size;
     },
     async listen(listenOptions = {}) {
@@ -1148,7 +1202,7 @@ function createGhostBridgeAgent(options = {}) {
     }
   }
 
-  function protocolHttpScope(operation, parameters = {}) {
+  async function protocolHttpScope(operation, parameters = {}) {
     if (operation === 'install_grant_redemption') {
       return {
         organizationScope: parameters.body?.organizationScope,
@@ -1156,7 +1210,7 @@ function createGhostBridgeAgent(options = {}) {
       };
     }
     if (operation === 'invocation') {
-      const connection = connections.get(parameters.body?.connectionId);
+      const connection = await storeGet(connections, parameters.body?.connectionId);
       return connection
         ? {
             organizationScope: connection.organizationScope,
@@ -1165,7 +1219,7 @@ function createGhostBridgeAgent(options = {}) {
         : {};
     }
     if (['task_lookup', 'task_cancellation'].includes(operation)) {
-      const taskContext = taskContexts.get(parameters.taskId);
+      const taskContext = await storeGet(taskContexts, parameters.taskId);
       return taskContext
         ? {
             organizationScope: taskContext.organizationScope,
@@ -1174,7 +1228,7 @@ function createGhostBridgeAgent(options = {}) {
         : {};
     }
     if (operation === 'receipt_lookup') {
-      const receipt = receipts.get(parameters.receiptId);
+      const receipt = await storeGet(receipts, parameters.receiptId);
       return receipt
         ? {
             organizationScope: receipt.organizationScope,
@@ -1183,7 +1237,7 @@ function createGhostBridgeAgent(options = {}) {
         : {};
     }
     if (operation === 'approval_decision') {
-      const challenge = challenges.get(parameters.challengeId);
+      const challenge = await storeGet(challenges, parameters.challengeId);
       return challenge
         ? {
             organizationScope: challenge.organizationScope,
@@ -1194,7 +1248,7 @@ function createGhostBridgeAgent(options = {}) {
     if (['revocation_lookup', 'connection_revocation'].includes(operation)) {
       const connection =
         parameters.subjectType === 'connection'
-          ? connections.get(parameters.subjectReference)
+          ? await storeGet(connections, parameters.subjectReference)
           : undefined;
       return connection
         ? {
@@ -1218,7 +1272,7 @@ function createGhostBridgeAgent(options = {}) {
     if (!scope.organizationScope) {
       throw protocolError('SCOPE_REQUIRED', 'Organization scope is required.');
     }
-    const activeConnection = [...connections.values()].find(
+    const activeConnection = (await storeValues(connections)).find(
       (connection) =>
         connection.status === 'active' &&
         connection.organizationScope === scope.organizationScope &&
@@ -1261,6 +1315,124 @@ function createGhostBridgeAgent(options = {}) {
       'AUTHORIZATION_DENIED',
       'The capability is not authorized in this scope.',
     );
+  }
+
+  function submitApprovalDecisionForChallenge(
+    challenge,
+    decision,
+    requestContext,
+    persistent,
+  ) {
+    if (!challenge) {
+      throw protocolError('APPROVAL_INVALID', 'The Approval Challenge was not found.');
+    }
+    validateApprovalDecision(decision, challenge, { clock });
+    const updatedChallenge = {
+      ...challenge,
+      status: decision.decision === 'approved' ? 'approved' : 'rejected',
+    };
+    const storedDecision = {
+      ...structuredClone(decision),
+      invocationId: challenge.invocationId,
+      organizationScope: challenge.organizationScope,
+      workspaceScope: challenge.workspaceScope,
+      actionKey: challenge.actionKey,
+      approvalLimits: structuredClone(challenge.approvalLimits),
+      policyDecisionReference: challenge.policyDecisionReference,
+      expiresAt: challenge.expiresAt,
+      used: false,
+    };
+    const complete = () => {
+      metric('approval', decision.decision);
+      audit('protocol.approval.decided', {
+        organizationScope: challenge.organizationScope,
+        workspaceScope: challenge.workspaceScope,
+        decision: decision.decision,
+        principalId: requestContext.authenticatedPrincipal?.subjectId,
+      });
+      return structuredClone(decision);
+    };
+    if (persistent) {
+      return Promise.resolve(decisions.putDecision(storedDecision))
+        .then(() => storePut(challenges, challenge.challengeId, updatedChallenge))
+        .then(complete);
+    }
+    decisions.set(decision.decisionId, storedDecision);
+    challenges.set(challenge.challengeId, updatedChallenge);
+    return complete();
+  }
+
+  async function persistTerminalExecution({
+    task,
+    receipt,
+    expectedTaskStates,
+  }) {
+    if (
+      !task?.receiptReference ||
+      task.receiptReference !== receipt?.receiptId ||
+      receipt.taskId !== task.taskId
+    ) {
+      throw protocolError(
+        'PROOF_INVALID',
+        'Terminal Task and Receipt persistence bindings are invalid.',
+      );
+    }
+    if (productionMode) {
+      let result;
+      try {
+        result = await terminalTransactions.commitTerminal({
+          task: structuredClone(task),
+          receipt: structuredClone(receipt),
+          expectedTaskStates: [...expectedTaskStates],
+        });
+      } catch {
+        throw protocolError(
+          'TERMINAL_PERSISTENCE_REQUIRED',
+          'Terminal Task and Receipt persistence was unavailable.',
+          { retryable: true },
+        );
+      }
+      if (result?.committed !== true) {
+        throw protocolError(
+          'TERMINAL_PERSISTENCE_REQUIRED',
+          'Terminal Task and Receipt persistence requires recovery.',
+          {
+            retryable: true,
+            details: {
+              recoveryRequired: result?.recoveryRequired === true,
+              reasonCode: String(result?.reasonCode || 'TERMINAL_WRITE_REJECTED').slice(0, 100),
+            },
+          },
+        );
+      }
+      const [storedTask, storedReceipt] = await Promise.all([
+        storeGet(taskStore, task.taskId),
+        storeGet(receipts, receipt.receiptId),
+      ]);
+      if (
+        storedTask?.receiptReference !== receipt.receiptId ||
+        storedTask?.state !== task.state ||
+        storedReceipt?.taskId !== task.taskId
+      ) {
+        throw protocolError(
+          'TERMINAL_PERSISTENCE_REQUIRED',
+          'Terminal Task and Receipt persistence could not be verified.',
+          { retryable: true },
+        );
+      }
+      return;
+    }
+    await storePut(receipts, receipt.receiptId, receipt);
+    try {
+      await storePut(taskStore, task.taskId, task);
+    } catch {
+      await storeDelete(receipts, receipt.receiptId);
+      throw protocolError(
+        'TERMINAL_PERSISTENCE_REQUIRED',
+        'Terminal Task persistence failed and the Receipt was rolled back.',
+        { retryable: true },
+      );
+    }
   }
 
   async function consumeApprovalDecision(criteria) {
@@ -1351,14 +1523,184 @@ function createGhostBridgeAgent(options = {}) {
         );
       }
     }
-    await Promise.resolve(receipts.set(receipt.receiptId, receipt));
     return receipt;
   }
 
+  function redeemInstallGrantRecord(grant, scope, requestContext) {
+    assertGrantScope(grant, scope, clock, { allowRedeemed: true });
+    if (grant.status === 'redeemed') {
+      const replay = (connection) => {
+        if (!connection) {
+          throw protocolError(
+            'CONNECTION_NOT_ACTIVE',
+            'The redeemed Install Grant Connection was not found.',
+          );
+        }
+        return { ...publicConnection(connection), idempotentReplay: true };
+      };
+      if (productionMode) {
+        return storeGet(connections, grant.connectionId).then(replay);
+      }
+      return replay(connections.get(grant.connectionId));
+    }
+    const selectedAuthenticationMode =
+      scope.authenticationMode || authenticationModes[0];
+    if (!authenticationModes.includes(selectedAuthenticationMode)) {
+      throw protocolError(
+        'NO_COMPATIBLE_AUTHENTICATION_MODE',
+        'The selected authentication mode is not supported.',
+      );
+    }
+    const enabledCapabilityKeys =
+      scope.approvedCapabilityKeys ||
+      (mode === 'localFixtureMode' &&
+      options.approveAllFixtureCapabilities === true
+        ? grant.allowedCapabilityKeys
+        : undefined);
+    if (
+      !Array.isArray(enabledCapabilityKeys) ||
+      enabledCapabilityKeys.length === 0 ||
+      enabledCapabilityKeys.some(
+        (key) => !grant.allowedCapabilityKeys.includes(key),
+      )
+    ) {
+      throw protocolError(
+        'AUTHORIZATION_DENIED',
+        'The requested capability enablement is not authorized by the Install Grant.',
+      );
+    }
+    if (
+      selectedAuthenticationMode !== 'none' &&
+      (!scope.authenticationBinding ||
+        (!scope.authenticationBinding.credentialReference &&
+          !scope.authenticationBinding.transportBindingReference) ||
+        scope.authenticationBinding.authenticationMode !==
+          selectedAuthenticationMode ||
+        scope.authenticationBinding.organizationScope !==
+          grant.organizationScope ||
+        (scope.authenticationBinding.workspaceScope || undefined) !==
+          (grant.workspaceScope || undefined))
+    ) {
+      throw protocolError(
+        'AUTHENTICATION_REQUIRED',
+        'The selected authentication mode requires a scope-bound opaque binding.',
+      );
+    }
+    const connectionId = `connection_${crypto.randomUUID()}`;
+    const now = new Date(clock()).toISOString();
+    const connection = {
+      connectionId,
+      agentId: passport.agentId,
+      passportVersion: passport.passportVersion,
+      organizationScope: grant.organizationScope,
+      workspaceScope: grant.workspaceScope,
+      status: 'active',
+      authenticationMode: selectedAuthenticationMode,
+      authenticationState:
+        selectedAuthenticationMode === 'none'
+          ? 'not_required'
+          : 'verified_and_bound',
+      ...(scope.authenticationBinding
+        ? {
+            authenticationBindingReference:
+              scope.authenticationBinding.credentialReference ||
+              scope.authenticationBinding.transportBindingReference,
+          }
+        : {}),
+      hostAudience: scope.hostAudience || options.hostAudience,
+      enabledCapabilityKeys: [...enabledCapabilityKeys],
+      disabledCapabilityKeys: grant.allowedCapabilityKeys.filter(
+        (key) => !enabledCapabilityKeys.includes(key),
+      ),
+      createdAt: now,
+      revocationReference: `revocations/connection/${connectionId}`,
+    };
+    const updatedGrant = {
+      ...grant,
+      status: 'redeemed',
+      redeemedAt: now,
+      connectionId,
+    };
+    const complete = () => {
+      metric('connection', 'created');
+      audit('protocol.install_grant.redeemed', {
+        organizationScope: grant.organizationScope,
+        workspaceScope: grant.workspaceScope,
+        outcome: 'redeemed',
+      });
+      audit('protocol.connection.created', {
+        organizationScope: grant.organizationScope,
+        workspaceScope: grant.workspaceScope,
+        outcome: 'created',
+        principalId: requestContext.authenticatedPrincipal?.subjectId,
+      });
+      return { ...publicConnection(connection), idempotentReplay: false };
+    };
+    if (productionMode) {
+      return Promise.all([
+        storePut(connections, connectionId, connection),
+        storePut(installGrants, grant.keyHash, updatedGrant),
+      ]).then(complete);
+    }
+    connections.set(connectionId, connection);
+    installGrants.set(grant.keyHash, updatedGrant);
+    return complete();
+  }
+
+  function installResolution(grant, scope) {
+    assertGrantScope(grant, scope, clock);
+    metric('install_grant', 'resolved');
+    audit('protocol.install_grant.resolved', {
+      organizationScope: grant.organizationScope,
+      workspaceScope: grant.workspaceScope,
+      outcome: 'resolved',
+    });
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      grantReference: grant.grantId,
+      passport: agent.getPassport(),
+      capabilities: agent
+        .listCapabilities()
+        .filter((capability) =>
+          grant.allowedCapabilityKeys.includes(capability.capabilityKey),
+        ),
+      connectionOffer: connectionOffer(
+        grant,
+        passport,
+        authenticationModes,
+        options.authenticationSetupReference,
+        options.hostAudience,
+      ),
+      issuerVerification: {
+        cryptographicStatus: 'not_evaluated',
+        hostTrustStatus: 'not_evaluated',
+        issuer: passport.issuer,
+        trustProfile: passport.trustProfileVersion || 'not_declared',
+      },
+      requestedScope: {
+        organizationScope: grant.organizationScope,
+        ...(grant.workspaceScope ? { workspaceScope: grant.workspaceScope } : {}),
+      },
+      restrictions: [...grant.restrictions],
+      expiresAt: grant.expiresAt,
+      redemptionState: grant.status === 'active' ? 'available' : grant.status,
+    };
+  }
+
   function findGrant(key) {
-    const grant = installGrants.get(digest({ key }));
-    if (!grant) throw protocolError('INSTALL_GRANT_INVALID', 'The Install Grant is invalid.');
-    return grant;
+    const requireGrant = (grant) => {
+      if (!grant) {
+        throw protocolError(
+          'INSTALL_GRANT_INVALID',
+          'The Install Grant is invalid.',
+        );
+      }
+      return grant;
+    };
+    if (productionMode) {
+      return storeGet(installGrants, digest({ key })).then(requireGrant);
+    }
+    return requireGrant(installGrants.get(digest({ key })));
   }
 
   return agent;
@@ -1548,6 +1890,42 @@ function publicConnection(connection) {
   });
 }
 
+function requireTask(task) {
+  if (!task) {
+    throw protocolError('TASK_NOT_FOUND', 'The Execution Task was not found.');
+  }
+  return structuredClone(task);
+}
+
+function requireReceipt(receipt) {
+  if (!receipt) {
+    throw protocolError('INVALID_MESSAGE', 'The Execution Receipt was not found.');
+  }
+  return structuredClone(receipt);
+}
+
+function connectionRevocation(connection, subjectReference, passport, clock) {
+  if (!connection) {
+    throw protocolError(
+      'CONNECTION_NOT_ACTIVE',
+      'The Agent Connection was not found.',
+    );
+  }
+  const status = connection.status === 'revoked' ? 'revoked' : 'active';
+  return {
+    revocationId: `revocation_${subjectReference}`,
+    subjectType: 'connection',
+    subjectReference,
+    status,
+    reasonCode: status === 'revoked' ? 'OWNER_REVOKED' : 'NOT_REVOKED',
+    effectiveAt:
+      connection.revokedAt ||
+      connection.createdAt ||
+      new Date(clock()).toISOString(),
+    issuedBy: passport.issuer,
+  };
+}
+
 function createTask(envelope, contract, clock, state = 'accepted') {
   const now = new Date(clock()).toISOString();
   const task = {
@@ -1564,6 +1942,127 @@ function createTask(envelope, contract, clock, state = 'accepted') {
   };
   validateTask(task);
   return task;
+}
+
+function approvalActionDigestForInvocation({
+  connection,
+  envelope,
+  registered,
+  approvalLimits,
+  policyDecisionReference,
+  validityBoundary,
+}) {
+  return approvalActionDigest({
+    invocationId: envelope.invocationId,
+    connectionId: connection.connectionId,
+    capabilityKey: envelope.capabilityKey,
+    capabilityVersion: envelope.capabilityVersion,
+    organizationScope: envelope.organizationScope,
+    workspaceScope: envelope.workspaceScope,
+    inputContractReference: envelope.inputContractReference,
+    payload: envelope.payload,
+    sideEffectCategory: registered.contract.sideEffectCategory,
+    approvalLimits,
+    policyDecisionReference,
+    validityBoundary,
+  });
+}
+
+function createTaskReceiptContext({
+  connection,
+  envelope,
+  contract,
+  task,
+  passport,
+}) {
+  const requestFingerprint = envelope.idempotencyKey
+    ? digest({
+        connectionId: connection.connectionId,
+        capabilityKey: envelope.capabilityKey,
+        capabilityVersion: envelope.capabilityVersion,
+        idempotencyKey: envelope.idempotencyKey,
+        payload: envelope.payload,
+      })
+    : undefined;
+  const context = removeUndefinedFields({
+    connectionId: connection.connectionId,
+    organizationScope: connection.organizationScope,
+    workspaceScope: connection.workspaceScope,
+    capabilityKey: contract.capabilityKey,
+    invocation: {
+      invocationId: envelope.invocationId,
+      connectionId: connection.connectionId,
+      targetAgentId: envelope.targetAgentId,
+      targetPassportVersion: envelope.targetPassportVersion,
+      capabilityKey: envelope.capabilityKey,
+      capabilityVersion: envelope.capabilityVersion,
+      organizationScope: envelope.organizationScope,
+      workspaceScope: envelope.workspaceScope,
+      inputContractReference: contract.inputContractReference,
+      deadline: envelope.deadline,
+      approvalReference: envelope.approvalReference,
+      requestFingerprint,
+    },
+    envelope: {
+      protocolVersion: envelope.protocolVersion,
+      invocationId: envelope.invocationId,
+      targetAgentId: envelope.targetAgentId,
+      targetPassportVersion: envelope.targetPassportVersion,
+      capabilityKey: envelope.capabilityKey,
+      capabilityVersion: envelope.capabilityVersion,
+      organizationScope: envelope.organizationScope,
+      workspaceScope: envelope.workspaceScope,
+      deadline: envelope.deadline,
+      approvalReference: envelope.approvalReference,
+      requestFingerprint,
+    },
+    connection: {
+      connectionId: connection.connectionId,
+      agentId: connection.agentId,
+      passportVersion: connection.passportVersion,
+      organizationScope: connection.organizationScope,
+      workspaceScope: connection.workspaceScope,
+      hostAudience: connection.hostAudience,
+      status: connection.status,
+    },
+    contract: {
+      capabilityKey: contract.capabilityKey,
+      capabilityVersion: contract.capabilityVersion,
+      inputContractReference: contract.inputContractReference,
+      outputContractReference: contract.outputContractReference,
+      receiptRequirement: contract.receiptRequirement,
+    },
+    passportReference: {
+      passportId: passport.passportId,
+      passportVersion: passport.passportVersion,
+      agentId: passport.agentId,
+      issuer: passport.issuer,
+    },
+    approvalReference: envelope.approvalReference,
+    requestFingerprint,
+    startTime: task.createdAt,
+    receiptProfile: contract.receiptRequirement || 'standard',
+    safeTerminalEvidence: {
+      attemptCount: 1,
+    },
+  });
+  assertPlainData(context, {
+    ...DEFAULT_LIMITS,
+    maximumMessageBytes: Math.min(DEFAULT_LIMITS.maximumMessageBytes, 32_768),
+  });
+  return context;
+}
+
+function removeUndefinedFields(value) {
+  if (Array.isArray(value)) {
+    return value.filter((item) => item !== undefined).map(removeUndefinedFields);
+  }
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, child]) => child !== undefined)
+      .map(([key, child]) => [key, removeUndefinedFields(child)]),
+  );
 }
 
 async function defaultReceiptIssuer({
@@ -1595,15 +2094,17 @@ async function defaultReceiptIssuer({
     attemptCount: 1,
     ...(envelope.approvalReference ? { approvalReference: envelope.approvalReference } : {}),
     ...(envelope.delegationReference ? { delegationReference: envelope.delegationReference } : {}),
-    ...(envelope.idempotencyKey
+    ...((envelope.requestFingerprint || envelope.idempotencyKey)
       ? {
-          requestFingerprint: digest({
-            connectionId: connection.connectionId,
-            capabilityKey: envelope.capabilityKey,
-            capabilityVersion: envelope.capabilityVersion,
-            idempotencyKey: envelope.idempotencyKey,
-            payload: envelope.payload,
-          }),
+          requestFingerprint:
+            envelope.requestFingerprint ||
+            digest({
+              connectionId: connection.connectionId,
+              capabilityKey: envelope.capabilityKey,
+              capabilityVersion: envelope.capabilityVersion,
+              idempotencyKey: envelope.idempotencyKey,
+              payload: envelope.payload,
+            }),
         }
       : {}),
     ...(result.safeFailureCode ? { safeFailureCode: result.safeFailureCode } : {}),
@@ -1671,17 +2172,85 @@ function assertReceiptBindings(receipt, context) {
 }
 
 function assertDurableStore(store, name, extraMethods = []) {
-  const requiredMethods = ['get', 'set', ...extraMethods];
+  const requiredMethods = [
+    'get',
+    'put',
+    'delete',
+    'has',
+    'compareAndSet',
+    ...extraMethods,
+  ];
+  const capabilities = store?.capabilities;
   if (
     !store ||
     store instanceof Map ||
-    store.durable !== true ||
+    !capabilities ||
+    capabilities.persistence !== 'durable' ||
+    capabilities.atomicCompareAndSet !== true ||
+    capabilities.transactionalTerminalWrite !== false ||
+    typeof capabilities.adapterName !== 'string' ||
+    !capabilities.adapterName.trim() ||
+    typeof capabilities.adapterVersion !== 'string' ||
+    !capabilities.adapterVersion.trim() ||
+    isObviousInMemoryStore(store) ||
     requiredMethods.some((method) => typeof store[method] !== 'function')
   ) {
     throw new TypeError(
-      `Production ${name} store must be durable and implement ${requiredMethods.join(', ')}.`,
+      `Production ${name} store must be an asynchronous durable adapter and implement ${requiredMethods.join(', ')}.`,
     );
   }
+}
+
+function assertTerminalTransactionStore(store) {
+  const capabilities = store?.capabilities;
+  if (
+    !store ||
+    !capabilities ||
+    capabilities.persistence !== 'durable' ||
+    capabilities.atomicCompareAndSet !== true ||
+    capabilities.transactionalTerminalWrite !== true ||
+    typeof capabilities.adapterName !== 'string' ||
+    !capabilities.adapterName.trim() ||
+    typeof capabilities.adapterVersion !== 'string' ||
+    !capabilities.adapterVersion.trim() ||
+    isObviousInMemoryStore(store) ||
+    typeof store.commitTerminal !== 'function' ||
+    typeof store.recoverTerminalWrites !== 'function'
+  ) {
+    throw new TypeError(
+      'Production terminalTransactions store must provide durable transactional terminal writes.',
+    );
+  }
+}
+
+function isObviousInMemoryStore(store) {
+  if (store instanceof Map) return true;
+  const adapterName = String(store?.capabilities?.adapterName || '').toLowerCase();
+  if (/(?:memory|map|fixture|mock|fake|test)/.test(adapterName)) return true;
+  return Object.values(store || {}).some((value) => value instanceof Map);
+}
+
+function storeGet(store, key) {
+  return Promise.resolve(store.get(key));
+}
+
+function storePut(store, key, value) {
+  if (typeof store.put === 'function') return Promise.resolve(store.put(key, value));
+  return Promise.resolve(store.set(key, value));
+}
+
+function storeDelete(store, key) {
+  if (typeof store.delete !== 'function') return Promise.resolve(false);
+  return Promise.resolve(store.delete(key));
+}
+
+function storeHas(store, key) {
+  return Promise.resolve(store.has(key));
+}
+
+async function storeValues(store) {
+  const values = await Promise.resolve(store.values());
+  return Array.isArray(values) ? values : [...values];
 }
 
 function normalizeHttpPrincipal(value, options = {}) {
@@ -1777,7 +2346,10 @@ async function authenticateHttpOperation(
     );
   }
   const principal = await transport.authenticate(request, operation, routeParameters);
-  assertPrincipalScope(principal, transport.scopeFor(operation, routeParameters));
+  assertPrincipalScope(
+    principal,
+    await Promise.resolve(transport.scopeFor(operation, routeParameters)),
+  );
   return principal;
 }
 
@@ -1824,6 +2396,9 @@ function isMatchingApprovalDecision(decision, criteria) {
     decision.decisionId !== criteria.decisionId ||
     decision.invocationId !== criteria.invocationId ||
     decision.actionKey !== criteria.actionKey ||
+    typeof criteria.approvalActionDigest !== 'string' ||
+    !/^[A-Za-z0-9_-]{43}$/.test(criteria.approvalActionDigest) ||
+    decision.approvalActionDigest !== criteria.approvalActionDigest ||
     decision.organizationScope !== criteria.organizationScope ||
     (decision.workspaceScope || undefined) !== (criteria.workspaceScope || undefined)
   ) {
@@ -1943,7 +2518,7 @@ async function handleHttp(agent, request, response, transport) {
         const body = await readBody(request);
         result = agent.trustedInstallResolutionConfigured
           ? await agent.resolveInstallGrantTrusted(body.grant, body)
-          : agent.resolveInstallGrant(body.grant, body);
+          : await agent.resolveInstallGrant(body.grant, body);
       } else if (
         request.method === 'POST' &&
         url.pathname === '/ghostbridge/install-grants/redeem'
@@ -1956,14 +2531,21 @@ async function handleHttp(agent, request, response, transport) {
           { body },
           body,
         );
-        result = agent.redeemInstallGrant(body.grant, body, { authenticatedPrincipal });
+        result = await agent.redeemInstallGrant(
+          body.grant,
+          body,
+          { authenticatedPrincipal },
+        );
       } else if (request.method === 'POST' && grantResolve && agent.legacyGrantPathEnabled) {
         result = agent.trustedInstallResolutionConfigured
           ? await agent.resolveInstallGrantTrusted(
               decodeURIComponent(grantResolve[1]),
               await readBody(request),
             )
-          : agent.resolveInstallGrant(decodeURIComponent(grantResolve[1]), await readBody(request));
+          : await agent.resolveInstallGrant(
+              decodeURIComponent(grantResolve[1]),
+              await readBody(request),
+            );
       } else if (request.method === 'POST' && grantRedeem && agent.legacyGrantPathEnabled) {
         const body = await readBody(request);
         const authenticatedPrincipal = await authenticateHttpOperation(
@@ -1973,7 +2555,7 @@ async function handleHttp(agent, request, response, transport) {
           { body },
           body,
         );
-        result = agent.redeemInstallGrant(
+        result = await agent.redeemInstallGrant(
           decodeURIComponent(grantRedeem[1]),
           body,
           { authenticatedPrincipal },
@@ -1995,7 +2577,7 @@ async function handleHttp(agent, request, response, transport) {
       } else if (request.method === 'GET' && taskPath) {
         const taskId = decodeURIComponent(taskPath[1]);
         await authenticateHttpOperation(transport, request, 'task_lookup', { taskId });
-        result = agent.getTask(taskId);
+        result = await agent.getTask(taskId);
       } else if (request.method === 'POST' && taskPath && url.searchParams.get('action') === 'cancel') {
         const taskId = decodeURIComponent(taskPath[1]);
         const authenticatedPrincipal = await authenticateHttpOperation(
@@ -2008,7 +2590,7 @@ async function handleHttp(agent, request, response, transport) {
       } else if (request.method === 'GET' && receiptPath) {
         const receiptId = decodeURIComponent(receiptPath[1]);
         await authenticateHttpOperation(transport, request, 'receipt_lookup', { receiptId });
-        result = agent.getReceipt(receiptId);
+        result = await agent.getReceipt(receiptId);
       } else if (request.method === 'POST' && approvalPath) {
         const decision = await readBody(request);
         const challengeId = decodeURIComponent(approvalPath[1]);
@@ -2052,7 +2634,7 @@ async function handleHttp(agent, request, response, transport) {
           { subjectType, subjectReference },
           body,
         );
-        result = agent.revokeConnection(
+        result = await agent.revokeConnection(
           subjectReference,
           body.reasonCode || 'REVOKED_BY_HOST',
         );
@@ -2105,6 +2687,7 @@ function readBody(request) {
 
 function statusForError(code) {
   if (code === 'INTERNAL_ERROR') return 500;
+  if (code === 'TERMINAL_PERSISTENCE_REQUIRED') return 503;
   if (code === 'AUTHENTICATION_REQUIRED') return 401;
   if (code === 'AUTHORIZATION_DENIED') return 403;
   if (['REVOKED', 'CONNECTION_NOT_ACTIVE'].includes(code)) return 403;
@@ -2115,5 +2698,6 @@ function statusForError(code) {
 
 module.exports = {
   AUDIT_EVENTS,
+  createFileProtocolStores,
   createGhostBridgeAgent,
 };

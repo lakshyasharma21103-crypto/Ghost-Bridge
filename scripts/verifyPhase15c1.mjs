@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { verifyPhase15c1Cleanup } from './lib/phase15c1Cleanup.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
@@ -19,6 +20,15 @@ function run(command, args, cwd = root) {
       npm_config_cache: path.join(root, 'node_modules', '.cache', 'npm-phase15c1'),
     },
   });
+  if (result.error) {
+    throw new Error(
+      `Unable to start child process ${command}: ${result.error.code || result.error.message}`,
+      { cause: result.error },
+    );
+  }
+  if (result.status === null) {
+    throw new Error(`${command} ${args.join(' ')} ended without an exit status.`);
+  }
   if (result.status !== 0) {
     process.stderr.write(String(result.stdout || '').slice(-8_000));
     process.stderr.write(String(result.stderr || '').slice(-8_000));
@@ -90,38 +100,8 @@ function packageIntegrity() {
 }
 
 function cleanup() {
-  const inventory = read('docs/engineering/phase-15c1-cleanup-inventory.md');
-  assert.match(
-    inventory,
-    /\| ID \| Path\/symbol\/route\/dependency \| Active callers \| Runtime loading mechanism \| Classification \| Action \| Replacement \| Evidence \|/,
-  );
-  assert.match(inventory, /Files deleted: none/);
-  assert.ok(fs.existsSync(path.join(root, 'backend')));
-  const rootDirectories = fs
-    .readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name);
-  assert.equal(rootDirectories.includes('Backend'), false);
-  assert.equal(rootDirectories.filter((name) => name.toLowerCase() === 'backend').length, 1);
-  const scan = spawnSync('rg', [
-    '-l',
-    'Backend[/\\\\]',
-    '-g',
-    '!node_modules/**',
-    '-g',
-    '!.git/**',
-    '-g',
-    '!docs/engineering/phase-15c1-audit-baseline.md',
-    '-g',
-    '!docs/engineering/phase-15c1-cleanup-inventory.md',
-    '-g',
-    '!docs/engineering/phase-15c1-hardening-report.md',
-  ], { cwd: root, encoding: 'utf8', windowsHide: true });
-  assert.ok([0, 1].includes(scan.status));
-  assert.equal(String(scan.stdout || '').trim(), '');
-  assert.doesNotMatch(read('frontend/src/components/Sidebar.jsx'), /Delegation Grants|Delegation Invocations/);
-  assert.match(read('backend/src/routes/index.js'), /EXPERIMENTAL_AGENT_COORDINATION_ENABLED/);
-  assert.match(read('backend/src/routes/connectionRoutes.js'), /LEGACY_MCP_ENABLED/);
+  verifyPhase15c1Cleanup(root);
+  nodeTest('scripts/test/verifyPhase15c1Cleanup.test.mjs');
 }
 
 const operations = {

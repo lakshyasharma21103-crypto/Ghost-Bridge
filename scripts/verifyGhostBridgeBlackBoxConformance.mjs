@@ -33,6 +33,9 @@ const {
   verifyDocument,
   verifyReceipt,
 } = require('@ghostbridge/trust');
+const {
+  createGhostBridgeClient,
+} = require('@ghostbridge/native-client');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const profile =
@@ -87,14 +90,20 @@ async function check(testId, requirementReference, operation) {
       completedAt: new Date().toISOString(),
     });
   } catch (error) {
+    const errorCode = String(
+      error?.code || error?.errorCode || 'CHECK_FAILED',
+    ).slice(0, 100);
+    const safeMessage = String(
+      error?.safeMessage || error?.message || 'Check failed.',
+    ).slice(0, 300);
     transcript.push({
       profile,
       testId,
       requirementReference,
       status: 'fail',
       safeEvidence: {
-        errorCode: String(error?.code || error?.errorCode || 'CHECK_FAILED').slice(0, 100),
-        safeMessage: String(error?.safeMessage || error?.message || 'Check failed.').slice(0, 300),
+        errorCode,
+        safeMessage,
       },
       hostProcessId: process.pid,
       agentProcessId: child.pid,
@@ -102,7 +111,24 @@ async function check(testId, requirementReference, operation) {
       startedAt,
       completedAt: new Date().toISOString(),
     });
-    throw error;
+    process.stderr.write(
+      `${JSON.stringify({
+        conformanceFailure: true,
+        profile,
+        testId,
+        requirementReference,
+        errorCode,
+        safeMessage,
+      })}\n`,
+    );
+    if (error instanceof Error) {
+      error.message = `[${testId}] ${requirementReference}: ${error.message}`;
+      throw error;
+    }
+    throw new Error(
+      `[${testId}] ${requirementReference}: ${safeMessage}`,
+      { cause: error },
+    );
   }
 }
 
@@ -116,6 +142,22 @@ async function expectRejected(operation, codes) {
   assert.ok(observed, 'The negative case was accepted.');
   if (codes) assert.ok(codes.includes(observed), `Unexpected rejection code: ${observed}`);
   return observed;
+}
+
+function corruptCompactJwsSignature(protectedJws) {
+  const parts = String(protectedJws).split('.');
+  assert.equal(parts.length, 3, 'The signed fixture must contain a compact JWS.');
+  const signature = Buffer.from(parts[2], 'base64url');
+  assert.ok(signature.length > 0, 'The signed fixture must contain signature bytes.');
+  const corruptedSignature = Buffer.from(signature);
+  corruptedSignature[0] ^= 0x01;
+  assert.notDeepEqual(
+    corruptedSignature,
+    signature,
+    'The negative fixture must alter the decoded signature bytes.',
+  );
+  parts[2] = corruptedSignature.toString('base64url');
+  return parts.join('.');
 }
 
 async function jsonRequest(pathname, options = {}) {
@@ -147,6 +189,22 @@ async function jsonRequest(pathname, options = {}) {
     throw error;
   }
   return { response, body };
+}
+
+function clientForNegativeDiscovery(pathname) {
+  return createGhostBridgeClient({
+    baseUrl: origin,
+    localFixtureMode: true,
+    allowedLocalOrigins: [origin],
+    serverMode: false,
+    fetch: async (url, options) => {
+      const requested = new URL(url);
+      if (requested.pathname === '/.well-known/ghostbridge') {
+        return fetch(`${origin}${pathname}`, options);
+      }
+      return fetch(url, options);
+    },
+  });
 }
 
 async function readBounded(response, maximumBytes) {
@@ -305,25 +363,29 @@ async function runCoreMatrix() {
     return { rejectedWith: code };
   });
   await check('GB-C-MISSING-ENDPOINT-001', '15.8 missing required endpoint', async () => {
-    const missing = structuredClone(discovery);
-    delete missing.endpoints.passport;
-    validateDiscovery(missing);
-    const code = await expectRejected(() => {
-      assert.equal(typeof missing.endpoints.passport, 'string');
-    });
+    const client = clientForNegativeDiscovery('/negative/missing-endpoint-discovery');
+    await client.discover();
+    const code = await expectRejected(
+      () => client.getPassport(),
+      ['INVALID_MESSAGE'],
+    );
+    client.close();
     return { rejectedWith: code };
   });
   await check('GB-C-CROSS-ORIGIN-001', '15.8 cross-origin endpoint', async () => {
-    const changed = structuredClone(discovery);
-    changed.endpoints.passport = 'https://other.example/passport';
-    validateDiscovery(changed);
-    const code = await expectRejected(() => {
-      assert.equal(new URL(changed.endpoints.passport).origin, new URL(origin).origin);
-    });
+    const client = clientForNegativeDiscovery('/negative/cross-origin-discovery');
+    await client.discover();
+    const code = await expectRejected(
+      () => client.getPassport(),
+      ['INVALID_MESSAGE'],
+    );
+    client.close();
     return { rejectedWith: code };
   });
   await check('GB-C-WRONG-MEDIA-001', '15.8 wrong media type', async () => {
-    const code = await expectRejected(() => jsonRequest('/negative/wrong-content-type'));
+    const client = clientForNegativeDiscovery('/negative/wrong-content-type');
+    const code = await expectRejected(() => client.discover());
+    client.close();
     return { rejectedWith: code };
   });
   await check('GB-C-OVERSIZED-001', '15.8 oversized response', async () => {
@@ -396,7 +458,7 @@ async function runGovernedMatrix() {
     trustContext = { challenge: waiting.approvalChallenge };
     return { taskState: waiting.task.state, approvalRequired: true };
   });
-  await check('GB-G-EXACT-ACTION-001', '15.7 exact-action binding', async () => {
+  await check('GB-G-APPROVAL-BINDING-NEGATIVE-001', '15.7 Approval Challenge binding', async () => {
     const bad = {
       challengeId: 'challenge_other',
       decisionId: 'decision_wrong_action',
@@ -418,6 +480,7 @@ async function runGovernedMatrix() {
       challengeId: trustContext.challenge.challengeId,
       decisionId: 'decision_governed',
       decision: 'approved',
+      approvalActionDigest: trustContext.challenge.approvalActionDigest,
       approvedLimits: {},
       decidedBy: 'raw-host-approver',
       decidedAt: new Date().toISOString(),
@@ -431,6 +494,29 @@ async function runGovernedMatrix() {
     approvedEnvelope = { ...approvedEnvelope, approvalReference: decision.decisionId };
     trustContext.decision = decision;
     return { decision: 'approved' };
+  });
+  await check('GB-G-EXACT-ACTION-001', '15.7 exact-action binding', async () => {
+    const substituted = {
+      ...approvedEnvelope,
+      payload: { echo: 'substituted-after-approval' },
+    };
+    const code = await expectRejected(
+      () =>
+        jsonRequest('/ghostbridge/invocations', {
+          method: 'POST',
+          auth: true,
+          body: {
+            connectionId: connection.connectionId,
+            envelope: substituted,
+          },
+        }),
+      ['APPROVAL_INVALID'],
+    );
+    return {
+      rejectedWith: code,
+      retainedApprovalReference: true,
+      payloadSubstitutionRejected: true,
+    };
   });
   await check('GB-G-INVOCATION-001', '15.7 governed invocation and signed Receipt', async () => {
     lastInvocation = (await jsonRequest('/ghostbridge/invocations', {
@@ -631,12 +717,15 @@ async function runTrustMatrix() {
   });
   await check('GB-T-INVALID-SIGNATURE-001', '15.8 invalid signature', async () => {
     const changed = structuredClone(passport);
-    changed.proof.protectedJws = `${changed.proof.protectedJws.slice(0, -1)}A`;
+    changed.proof.protectedJws = corruptCompactJwsSignature(
+      changed.proof.protectedJws,
+    );
     const code = await expectRejected(
       () => Promise.resolve(verifyDocument(changed, trustContext.jwks, {
         purpose: 'passport_signing',
         expectedIssuer: passport.issuer,
       })),
+      ['SIGNATURE_INVALID'],
     );
     return { rejectedWith: code };
   });

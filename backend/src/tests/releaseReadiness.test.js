@@ -53,8 +53,8 @@ test('release metadata is deterministic and excludes environment files', () => {
     generatedAt: '2026-01-01T00:00:00.000Z',
   };
   assert.equal(core.digest(core.createReleaseManifest(input)), core.digest(core.createReleaseManifest(input)));
-  assert.equal(core.artifactExcluded('Backend/.env'), true);
-  assert.equal(core.artifactExcluded('Backend/.env.production'), true);
+  assert.equal(core.artifactExcluded('backend/.env'), true);
+  assert.equal(core.artifactExcluded('backend/.env.production'), true);
   assert.equal(core.validateLockfile(repositoryRoot).valid, true);
   assert.equal(core.generateSbom(repositoryRoot).digest, core.generateSbom(repositoryRoot).digest);
 });

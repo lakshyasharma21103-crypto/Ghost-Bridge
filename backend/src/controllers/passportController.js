@@ -43,9 +43,10 @@ async function resolvePassportInstallKey(request, response, next) {
     const principal = installationPrincipal(request);
     const resolver = request.app?.locals?.resolveInstallKey || resolveInstallKey;
     const data = await resolver({
-      ...request.body,
+      key: request.body?.key,
       receivingUserId: principal.userId,
       receivingWorkspaceId: principal.workspaceId,
+      receivingOrganizationId: principal.organizationId,
     }, {
       requestId: request.requestId,
       traceId: request.traceId,

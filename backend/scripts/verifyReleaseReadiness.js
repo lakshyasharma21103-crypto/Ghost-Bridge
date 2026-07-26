@@ -158,7 +158,7 @@ async function verify() {
   ];
   assert.ok(artifacts.every((item) => /^sha256:[a-f0-9]{64}$/.test(item.sha256Digest)));
   pass('artifact integrity');
-  assert.equal(core.artifactExcluded('Backend/.env'), true);
+  assert.equal(core.artifactExcluded('backend/.env'), true);
   assert.equal(core.artifactExcluded('frontend/.env.production'), true);
   pass('env artifacts excluded');
 

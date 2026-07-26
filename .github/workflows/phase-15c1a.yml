@@ -2,6 +2,8 @@ name: Phase 15C.1A Linux verification
 
 on:
   pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
@@ -40,10 +42,10 @@ jobs:
       MONGODB_DB_NAME: ghost_bridge_ci_${{ github.run_id }}_${{ matrix.node-version }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -68,6 +70,9 @@ jobs:
 
       - name: Verify Phase 15C.1A
         run: npm run verify:ghostbridge-phase-15c1a
+
+      - name: Verify Phase 15C.1A-R1
+        run: npm run verify:ghostbridge-phase-15c1a-r1
 
       - name: Verify database-backed deterministic fixtures
         run: |

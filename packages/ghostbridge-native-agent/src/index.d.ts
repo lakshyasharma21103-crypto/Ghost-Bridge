@@ -25,13 +25,27 @@ export interface AuthenticatedHostPrincipal {
   credentialReference?: string;
 }
 
+export interface ProtocolStoreCapabilities {
+  readonly persistence: 'durable';
+  readonly atomicCompareAndSet: boolean;
+  readonly transactionalTerminalWrite: boolean;
+  readonly adapterName: string;
+  readonly adapterVersion: string;
+}
+
 export interface DurableProtocolStore<T = unknown> {
-  readonly durable: true;
-  get(key: string): T | undefined;
-  set(key: string, value: T): unknown;
-  has?(key: string): boolean;
-  values?(): IterableIterator<T>;
-  readonly size?: number;
+  readonly capabilities: ProtocolStoreCapabilities;
+  get(key: string): Promise<T | undefined> | T | undefined;
+  put(key: string, value: T): Promise<void> | void;
+  delete(key: string): Promise<boolean> | boolean;
+  has(key: string): Promise<boolean> | boolean;
+  values(): Promise<T[]> | T[];
+  scan?(): Promise<T[]> | T[];
+  compareAndSet(
+    key: string,
+    expectedValue: T | undefined,
+    nextValue: T,
+  ): Promise<boolean> | boolean;
 }
 
 export interface DurableApprovalDecisionStore
@@ -41,6 +55,44 @@ export interface DurableApprovalDecisionStore
     criteria: Record<string, unknown>,
   ): Promise<Record<string, unknown> | undefined> | Record<string, unknown> | undefined;
 }
+
+export interface TerminalTransactionStore {
+  readonly capabilities: ProtocolStoreCapabilities & {
+    readonly transactionalTerminalWrite: true;
+  };
+  commitTerminal(input: {
+    task: ExecutionTask;
+    receipt: ExecutionReceipt;
+    expectedTaskStates: string[];
+  }): Promise<{
+    committed: boolean;
+    idempotent?: boolean;
+    recoveryRequired?: boolean;
+    reasonCode?: string;
+    task?: ExecutionTask;
+    receipt?: ExecutionReceipt;
+  }>;
+  recoverTerminalWrites(): Promise<Array<Record<string, unknown>>>;
+}
+
+export interface ProtocolStores {
+  installGrants: DurableProtocolStore;
+  connections: DurableProtocolStore;
+  tasks: DurableProtocolStore;
+  taskContexts: DurableProtocolStore;
+  receipts: DurableProtocolStore;
+  approvals: DurableProtocolStore;
+  approvalDecisions: DurableApprovalDecisionStore;
+  idempotency: DurableProtocolStore;
+  replay: DurableProtocolStore;
+  revocation: DurableProtocolStore;
+  terminalTransactions: TerminalTransactionStore;
+  close?(): Promise<void>;
+}
+
+export function createFileProtocolStores(options: {
+  directory: string;
+}): Readonly<ProtocolStores>;
 
 export interface CapabilityHandlerContext {
   organizationScope: string;
@@ -121,8 +173,13 @@ export interface GhostBridgeAgent {
     ttlMs?: number;
     restrictions?: string[];
     allowedCapabilityKeys?: string[];
-  }): { key: string; expiresAt: string; grantReference: string };
-  resolveInstallGrant(key: string, scope: Record<string, string>): Record<string, unknown>;
+  }):
+    | { key: string; expiresAt: string; grantReference: string }
+    | Promise<{ key: string; expiresAt: string; grantReference: string }>;
+  resolveInstallGrant(
+    key: string,
+    scope: Record<string, string>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   resolveInstallGrantTrusted(key: string, scope: Record<string, string>): Promise<Record<string, unknown>>;
   redeemInstallGrant(
     key: string,
@@ -132,8 +189,10 @@ export interface GhostBridgeAgent {
       authenticationMode?: AuthenticationMode;
       approvedCapabilityKeys?: string[];
     },
-  ): Record<string, unknown>;
-  issueApprovalChallenge(input: Record<string, unknown>): Record<string, unknown>;
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  issueApprovalChallenge(
+    input: Record<string, unknown>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   submitApprovalDecision(decision: Record<string, unknown>): Record<string, unknown> | Promise<Record<string, unknown>>;
   invoke(
     connectionId: string,
@@ -145,11 +204,18 @@ export interface GhostBridgeAgent {
     approvalChallenge?: Record<string, unknown>;
     idempotentReplay?: boolean;
   }>;
-  getTask(taskId: string): ExecutionTask;
+  getTask(taskId: string): ExecutionTask | Promise<ExecutionTask>;
   cancelTask(taskId: string): Promise<ExecutionTask>;
-  getReceipt(receiptId: string): ExecutionReceipt;
-  checkRevocation(subjectType: string, subjectReference: string): Record<string, unknown>;
-  revokeConnection(connectionId: string, reasonCode?: string): Record<string, unknown>;
+  getReceipt(receiptId: string): ExecutionReceipt | Promise<ExecutionReceipt>;
+  checkRevocation(
+    subjectType: string,
+    subjectReference: string,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  revokeConnection(
+    connectionId: string,
+    reasonCode?: string,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  getConnectionCount(): number | Promise<number>;
   getMetrics(): Array<{ category: string; outcome: string; value: number }>;
   listen(options?: { port?: number; host?: string }): Promise<{
     baseUrl: string;
@@ -167,7 +233,7 @@ export function createGhostBridgeAgent(options: {
   publicBaseUrl?: string;
   approveAllFixtureCapabilities?: boolean;
   enableLegacyGrantPath?: boolean;
-  stores?: Record<string, DurableProtocolStore | DurableApprovalDecisionStore>;
+  stores?: Partial<ProtocolStores>;
   discovery?: Record<string, unknown>;
   authenticationModes?: AuthenticationMode[];
   authenticationSetupReference?: string;

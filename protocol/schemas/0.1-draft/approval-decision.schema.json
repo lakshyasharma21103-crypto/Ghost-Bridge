@@ -4,11 +4,12 @@
   "title": "Approval Decision",
   "type": "object",
   "additionalProperties": false,
-  "required": ["challengeId", "decisionId", "decision", "approvedLimits", "decidedBy", "decidedAt", "safeReasonCode"],
+  "required": ["challengeId", "decisionId", "decision", "approvalActionDigest", "approvedLimits", "decidedBy", "decidedAt", "safeReasonCode"],
   "properties": {
     "challengeId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
     "decisionId": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/opaqueId" },
     "decision": { "enum": ["approved", "rejected", "more_information_required", "expired", "cancelled"] },
+    "approvalActionDigest": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
     "approvedLimits": { "type": "object", "maxProperties": 50 },
     "decidedBy": { "type": "string", "minLength": 1, "maxLength": 200 },
     "decidedAt": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },

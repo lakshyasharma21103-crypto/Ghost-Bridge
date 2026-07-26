@@ -2,6 +2,15 @@
 
 Recorded: 2026-07-26 (Asia/Calcutta)
 
+> **R1 correction notice:** This report records the original Phase 15C.1A pass. Independent
+> review subsequently found residual code blockers in frontend installation authentication,
+> organization confirmation, exact-action approval binding, terminal Task/Receipt
+> persistence, production durability contracts, unknown-Connection revocation, and
+> conformance evidence. The statement that no code-level blocker remained was therefore
+> superseded. Those bounded findings are corrected in the Phase 15C.1A-R1 worktree; see
+> `phase-15c1a-r1-correction-report.md` and
+> `phase-15c1a-r1-residual-inventory.md`. Remote Linux/MongoDB evidence remains blocked.
+
 ## 1. Executive outcome
 
 **Final status: BLOCKED.** Corrective code gates and deterministic Windows verification
@@ -25,8 +34,9 @@ Clean tree; Node `v22.18.0`; npm `10.9.3`; no workflow; Mongo
 Partner API-key verification, removes the key hash, resolves active workspace authority
 server-side, and exposes a bounded principal. Body identity only narrows/confirms authority.
 Fixture identity requires development mode, `ALLOW_DEVELOPMENT_IDENTITY_FIXTURES=true`,
-and `X-GhostBridge-Development-Identity-Fixture: 1`. The frontend no longer sends user/org
-authority.
+and `X-GhostBridge-Development-Identity-Fixture: 1`. This original pass removed browser
+user/organization authority; R1 retains removal of user authority while sending organization
+only as a server-confirmed narrowing value.
 
 ## 5. Native Agent transport authentication result
 
@@ -162,12 +172,15 @@ None.
 
 Added `ALLOW_DEVELOPMENT_IDENTITY_FIXTURES=false`. CI supplies only test-local Mongo URI/DB.
 
-## 25. Remaining blockers
+## 25. Remaining blockers and R1 correction
 
 1. No observed Ubuntu GitHub Actions run.
 2. No observed ephemeral-Mongo execution of the four database verifiers.
 
-No known code-level acceptance blocker remains.
+The original conclusion that no code-level acceptance blocker remained was superseded by
+the R1 audit. The R1 worktree corrects those code findings and passes deterministic local
+gates. This phase remains blocked on observed remote Linux and isolated MongoDB evidence;
+the R1 correction report is the authoritative current result.
 
 ## 26. Final status
 

@@ -222,6 +222,7 @@ async function runTwoAgentWorkflow(options = {}) {
       challengeId: waiting.approvalChallenge.challengeId,
       decisionId: 'decision_finance_manager_001',
       decision: 'approved',
+      approvalActionDigest: waiting.approvalChallenge.approvalActionDigest,
       approvedLimits: { maximumAmount: 100_000, currency: 'USD' },
       decidedBy: 'finance_manager_fixture',
       decidedAt: new Date().toISOString(),

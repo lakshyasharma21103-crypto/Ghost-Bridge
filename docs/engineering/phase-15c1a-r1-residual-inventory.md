@@ -1,0 +1,22 @@
+# Phase 15C.1A-R1 residual inventory
+
+Recorded: 2026-07-26 (Asia/Calcutta)
+
+| ID | Finding | Affected paths | Security/correctness impact | Corrected behavior | Behavioral evidence | Status | Remaining risk |
+|---|---|---|---|---|---|---|---|
+| R1-01 | Installation call omitted Partner authentication | Frontend API client and Resolve page | Protected installation could not follow the normal frontend path | Exact route attaches `X-Partner-Api-Key`; missing key fails before transport; credential never enters URL/body | Frontend R1 tests 3/3 | Complete | Credential provisioning remains an embedding concern |
+| R1-02 | Displayed organization was not submitted | Frontend Resolve page; Platform controller | Organization confirmation could not be enforced for the normal request | Organization is submitted and server-confirmed; user identity is not submitted; server principal remains authoritative | Frontend plus Platform authentication tests | Complete | Workspace membership data remains server-managed |
+| R1-03 | Approval was not bound to the exact action | Protocol core, schemas, Native Agent, examples | Payload or authority context could change under one approval reference | Canonical action digest binds payload and every required action/authority field and is recalculated at atomic consumption | Core, Native Agent, and governed substitution tests | Complete | Adapters must preserve atomic compare-and-set semantics |
+| R1-04 | Terminal Task and Receipt could diverge | Native Agent task/receipt flow and stores | Cancellation could commit terminal authority without signed evidence | Bounded context plus signed terminal pair transaction/recovery; production fails closed | Cancellation, failure injection, recovery, and concurrency tests | Complete | External adapters must implement and verify declared transaction behavior |
+| R1-05 | Durability could be claimed by a wrapped Map | Native Agent store contract | Volatile state could masquerade as production persistence | Explicit async capability contract, obvious memory-wrapper rejection, behavioral readback, persistent adapter | Store-rejection and restart tests | Complete | A malicious third-party adapter can still lie; operational certification is external |
+| R1-06 | Unknown Connection appeared active | Native Agent revocation | Nonexistent authority could be treated as valid | Unknown fails `CONNECTION_NOT_ACTIVE`; missing fails validation; active/revoked remain distinct | Unit and raw HTTP tests | Complete | Private lookup still depends on embedding authentication |
+| R1-07 | Discovery negatives used manual assertions | Black-box raw Agent and Host | Conformance could pass without exercising the implementation | Real Native Client operation rejects missing/cross-origin discovery with `INVALID_MESSAGE` | Core black-box 17/17 | Complete | Current JavaScript implementation only; not cross-language evidence |
+| R1-08 | Prior report overstated completion | Phase 15C.1A and R1 reports | Audit trail hid reviewed blockers | Prior claims are explicitly superseded and linked to the corrective evidence | Documentation review and final diff check | Complete | Remote evidence must not be inferred from local checks |
+| R1-09 | Workflow was not PR-ready or SHA-pinned | Phase 15C.1A workflow and R1 verifier | Required remote evidence could not be trusted or triggered as specified | PR-to-main, Node 20/22, MongoDB 7, full action SHAs, timeout, R1 aggregate | CI contract verifier | Ready / remote blocked | No authorized push or observed workflow run |
+| R1-10 | Remote Linux evidence is unavailable | GitHub Actions | Platform-specific behavior remains unobserved | Workflow is locally contract-checked | Requires actual PR run | Blocked | Ubuntu/Node matrix may expose environmental defects |
+| R1-11 | Isolated MongoDB evidence is unavailable locally | Database verifiers / CI service | Durable database behavior remains unobserved in this worktree | MongoDB 7 service and database gates remain in CI; filesystem persistence covers deterministic local contract | Local probes unavailable; filesystem restart passes | Blocked | Database-backed gates require CI |
+
+All bounded R1 implementation findings are corrected and deterministic local gates pass.
+The phase remains **BLOCKED** only on an observed pull-request workflow and isolated
+MongoDB 7 verification. No external database, deployment, migration, publication, commit,
+push, or merge was performed.
