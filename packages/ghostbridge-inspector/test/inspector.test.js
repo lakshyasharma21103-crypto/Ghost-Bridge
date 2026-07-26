@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
+  GhostBridgeInspector,
   InspectorSecurityError,
   assertInspectorTarget,
   sanitizeInspectorValue,
@@ -51,4 +52,48 @@ test('Inspector presents host-agent workflows before experimental coordination',
   assert.ok(profiles > -1 && installPreview > profiles);
   assert.ok(experimental > installPreview);
   assert.doesNotMatch(source.slice(source.indexOf('<main><nav'), experimental), /'Delegation'/);
+});
+
+test('Inspector reads canonical Stage A and Native Agent profile objects', async () => {
+  const inspector = new GhostBridgeInspector({ baseUrl: 'http://127.0.0.1:8787' });
+  inspector.client = {
+    discover: async () => ({
+      profiles: {
+        core: { supported: true, status: 'draft', conformance: [] },
+        governedExecution: { supported: true, status: 'draft', conformance: [] },
+      },
+    }),
+  };
+  const stageA = await inspector.inspectProfiles();
+  assert.equal(stageA.core.supported, true);
+  assert.equal(stageA.governedExecution.supported, true);
+  assert.equal(stageA.agentCoordination, null);
+
+  inspector.client.discover = async () => ({
+    profiles: {
+      core: { supported: true, status: 'draft', conformance: ['C1'] },
+    },
+  });
+  const nativeAgent = await inspector.inspectProfiles();
+  assert.deepEqual(nativeAgent.core.conformance, ['C1']);
+  assert.equal(nativeAgent.governedExecution, null);
+  assert.equal(nativeAgent.agentCoordination, null);
+});
+
+test('Inspector rejects malformed profile objects without array lookup failures', async () => {
+  const inspector = new GhostBridgeInspector({ baseUrl: 'http://127.0.0.1:8787' });
+  for (const profiles of [
+    [],
+    { core: { supported: 'yes' } },
+    { unknownProfile: { supported: true } },
+  ]) {
+    inspector.client = { discover: async () => ({ profiles }) };
+    await assert.rejects(
+      () => inspector.inspectProfiles(),
+      (error) => {
+        assert.doesNotMatch(String(error?.message), /\.find is not a function/);
+        return true;
+      },
+    );
+  }
 });

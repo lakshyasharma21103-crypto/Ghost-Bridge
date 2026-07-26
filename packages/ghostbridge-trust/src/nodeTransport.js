@@ -57,9 +57,27 @@ function isPublicAddress(address) {
   const family = net.isIP(normalized);
   if (!family) return false;
   if (family === 4) return !blocked.check(normalized, 'ipv4');
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(normalized);
-  if (mapped) return isPublicAddress(mapped[1]);
+  const mapped = ipv4MappedAddress(normalized);
+  if (mapped) return isPublicAddress(mapped);
   return !blocked.check(normalized, 'ipv6');
+}
+
+function ipv4MappedAddress(address) {
+  const match = /^(?:::ffff:|(?:0:){5}ffff:)(.+)$/.exec(address);
+  if (!match) return undefined;
+  if (net.isIP(match[1]) === 4) return match[1];
+  const words = match[1].split(':');
+  if (words.length !== 2 || words.some((word) => !/^[0-9a-f]{1,4}$/.test(word))) {
+    return undefined;
+  }
+  const high = Number.parseInt(words[0], 16);
+  const low = Number.parseInt(words[1], 16);
+  return [
+    high >>> 8,
+    high & 0xff,
+    low >>> 8,
+    low & 0xff,
+  ].join('.');
 }
 
 function normalizeAllowedOrigins(values) {
@@ -78,7 +96,12 @@ function validateTransportUrl(value, options = {}) {
   } catch {
     throw transportError('UNSAFE_DISCOVERY_TARGET', 'The trust endpoint URL is invalid.');
   }
-  if (url.username || url.password || url.search || url.hash) {
+  if (
+    url.username ||
+    url.password ||
+    (url.search && options.allowQuery !== true) ||
+    url.hash
+  ) {
     throw transportError(
       'UNSAFE_DISCOVERY_TARGET',
       'Trust endpoints must not contain credentials, a query, or a fragment.',
@@ -150,8 +173,12 @@ function createNodeSecurityTransport(defaults = {}) {
       redirects: 'rejected',
       addressPinning: true,
       tlsServerNameValidation: true,
+      streamingResponseLimit: true,
     }),
     async get(urlValue, requestOptions = {}) {
+      return this.request(urlValue, { ...requestOptions, method: 'GET' });
+    },
+    async request(urlValue, requestOptions = {}) {
       const options = { ...defaults, ...requestOptions };
       const validated = validateTransportUrl(urlValue, options);
       const pinned = await resolveAndPin(validated.url, {
@@ -170,6 +197,22 @@ function requestPinned(url, pinned, options) {
     const expectedContentTypes = (options.expectedContentTypes || ['application/json']).map(
       (value) => String(value).toLowerCase(),
     );
+    const method = String(options.method || 'GET').toUpperCase();
+    if (!['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      reject(transportError('UNSAFE_DISCOVERY_TARGET', 'The HTTP method is not allowed.'));
+      return;
+    }
+    let requestBody;
+    if (options.body !== undefined) {
+      requestBody = Buffer.from(
+        typeof options.body === 'string' ? options.body : JSON.stringify(options.body),
+        'utf8',
+      );
+      if (requestBody.length > maximumBytes) {
+        reject(transportError('RESPONSE_TOO_LARGE', 'The protocol request body is too large.'));
+        return;
+      }
+    }
     const client = url.protocol === 'https:' ? https : http;
     let settled = false;
     const finish = (operation, value) => {
@@ -182,10 +225,17 @@ function requestPinned(url, pinned, options) {
     const request = client.request(
       url,
       {
-        method: 'GET',
+        method,
         headers: {
           accept: expectedContentTypes.join(', '),
-          'user-agent': 'ghostbridge-trust/0.1-draft',
+          'user-agent': options.userAgent || 'ghostbridge-trust/0.1-draft',
+          ...(requestBody
+            ? {
+                'content-type': options.requestContentType || 'application/json',
+                'content-length': String(requestBody.length),
+              }
+            : {}),
+          ...safeRequestHeaders(options.headers),
         },
         agent: false,
         servername: url.hostname,
@@ -308,8 +358,28 @@ function requestPinned(url, pinned, options) {
       return;
     }
     options.signal?.addEventListener('abort', onCallerAbort, { once: true });
-    request.end();
+    request.end(requestBody);
   });
+}
+
+function safeRequestHeaders(headers = {}) {
+  const result = {};
+  for (const [name, value] of Object.entries(headers || {})) {
+    const normalized = String(name).toLowerCase();
+    if (![
+      'authorization',
+      'ghostbridge-version',
+      'idempotency-key',
+      'x-request-id',
+      'x-trace-id',
+      'traceparent',
+      'tracestate',
+    ].includes(normalized)) {
+      continue;
+    }
+    if (typeof value === 'string' && value.length <= 4_096) result[normalized] = value;
+  }
+  return result;
 }
 
 function boundedInteger(value, minimum, maximum, fallback) {
@@ -321,6 +391,7 @@ module.exports = {
   SecureTransportError,
   createNodeSecurityTransport,
   isPublicAddress,
+  ipv4MappedAddress,
   resolveAndPin,
   validateTransportUrl,
 };

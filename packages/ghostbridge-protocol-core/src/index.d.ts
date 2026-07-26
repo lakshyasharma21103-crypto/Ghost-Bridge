@@ -211,6 +211,7 @@ export interface InvocationEnvelope {
 
 export interface ExecutionTask {
   taskId: string;
+  connectionId?: string;
   invocationId: string;
   state: string;
   safeProgressCategory: string;
@@ -318,6 +319,8 @@ export interface ExecutionReceipt {
   approvalReference?: string;
   delegationReference?: string;
   policyDecisionReference?: string;
+  requestFingerprint?: string;
+  safeFailureCode?: string;
   outputDigest: string;
   evidenceDigest: string;
   billableStatusCategory?: string;

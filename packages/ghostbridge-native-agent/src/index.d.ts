@@ -14,6 +14,34 @@ export interface SafeLogger {
   error(message: string, fields?: Record<string, unknown>): void;
 }
 
+export interface AuthenticatedHostPrincipal {
+  subjectType?: string;
+  subjectId: string;
+  authenticationMethod: string;
+  organizationScope?: string;
+  permittedOrganizationScopes?: string[];
+  workspaceScope?: string;
+  permittedWorkspaceScopes?: string[];
+  credentialReference?: string;
+}
+
+export interface DurableProtocolStore<T = unknown> {
+  readonly durable: true;
+  get(key: string): T | undefined;
+  set(key: string, value: T): unknown;
+  has?(key: string): boolean;
+  values?(): IterableIterator<T>;
+  readonly size?: number;
+}
+
+export interface DurableApprovalDecisionStore
+  extends DurableProtocolStore<Record<string, unknown>> {
+  putDecision(decision: Record<string, unknown>): unknown;
+  consumeApprovedDecision(
+    criteria: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined> | Record<string, unknown> | undefined;
+}
+
 export interface CapabilityHandlerContext {
   organizationScope: string;
   workspaceScope?: string;
@@ -106,7 +134,7 @@ export interface GhostBridgeAgent {
     },
   ): Record<string, unknown>;
   issueApprovalChallenge(input: Record<string, unknown>): Record<string, unknown>;
-  submitApprovalDecision(decision: Record<string, unknown>): Record<string, unknown>;
+  submitApprovalDecision(decision: Record<string, unknown>): Record<string, unknown> | Promise<Record<string, unknown>>;
   invoke(
     connectionId: string,
     envelope: InvocationEnvelope,
@@ -118,7 +146,7 @@ export interface GhostBridgeAgent {
     idempotentReplay?: boolean;
   }>;
   getTask(taskId: string): ExecutionTask;
-  cancelTask(taskId: string): ExecutionTask;
+  cancelTask(taskId: string): Promise<ExecutionTask>;
   getReceipt(receiptId: string): ExecutionReceipt;
   checkRevocation(subjectType: string, subjectReference: string): Record<string, unknown>;
   revokeConnection(connectionId: string, reasonCode?: string): Record<string, unknown>;
@@ -139,14 +167,29 @@ export function createGhostBridgeAgent(options: {
   publicBaseUrl?: string;
   approveAllFixtureCapabilities?: boolean;
   enableLegacyGrantPath?: boolean;
-  stores?: Record<string, Map<string, unknown>>;
+  stores?: Record<string, DurableProtocolStore | DurableApprovalDecisionStore>;
   discovery?: Record<string, unknown>;
   authenticationModes?: AuthenticationMode[];
   authenticationSetupReference?: string;
   clock?: () => number;
   authorization?: (...args: unknown[]) => unknown;
+  authorizationTimeoutMs?: number;
+  authenticateHttpRequest?: (input: {
+    request: unknown;
+    operation: string;
+    routeParameters: Record<string, unknown>;
+    headers: Readonly<Record<string, unknown>>;
+  }) => AuthenticatedHostPrincipal | Promise<AuthenticatedHostPrincipal>;
+  fixtureHttpPrincipal?: AuthenticatedHostPrincipal;
   approvalHandler?: (...args: unknown[]) => unknown;
   receiptIssuer?: (...args: unknown[]) => unknown;
+  receiptIssuerGuaranteesSigned?: boolean;
+  receiptVerificationJwks?: Record<string, unknown>;
+  receiptVerificationObserver?: (result: {
+    valid: false;
+    errorCode: string;
+    safeMessage: string;
+  }) => void;
   revocationResolver?: (...args: unknown[]) => unknown;
   logger?: Partial<SafeLogger>;
   metrics?: (metric: { category: string; outcome: string; value: number }) => void;

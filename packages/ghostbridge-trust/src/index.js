@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const net = require('node:net');
 const { assertPlainData, redactPublicData } = require('@ghostbridge/protocol-core');
-const { createNodeSecurityTransport } = require('./nodeTransport');
+const { createNodeSecurityTransport, isPublicAddress } = require('./nodeTransport');
 
 const TRUST_PROFILE_VERSION = 'ghostbridge-trust/0.1-draft';
 const CANONICALIZATION_PROFILE = 'ghostbridge-jcs/0.1-draft';
@@ -257,31 +257,7 @@ function isLocalHostname(hostname) {
 function isPrivateIp(hostname) {
   const host = String(hostname || '').replace(/^\[|\]$/g, '');
   const kind = net.isIP(host);
-  if (kind === 4) {
-    const parts = host.split('.').map(Number);
-    return (
-      parts[0] === 10 ||
-      parts[0] === 127 ||
-      (parts[0] === 169 && parts[1] === 254) ||
-      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-      (parts[0] === 192 && parts[1] === 168) ||
-      parts[0] === 0
-    );
-  }
-  if (kind === 6) {
-    const normalized = host.toLowerCase();
-    return (
-      normalized === '::1' ||
-      normalized === '::' ||
-      normalized.startsWith('fc') ||
-      normalized.startsWith('fd') ||
-      normalized.startsWith('fe8') ||
-      normalized.startsWith('fe9') ||
-      normalized.startsWith('fea') ||
-      normalized.startsWith('feb')
-    );
-  }
-  return false;
+  return kind !== 0 && !isPublicAddress(host);
 }
 
 async function discoverIssuer(issuerId, options = {}) {
@@ -1662,7 +1638,7 @@ function verifyReceipt(receipt, passport, jwks, options = {}) {
     historical: true,
     purpose: 'execution_receipt_signing',
     expectedIssuer: passport.issuer,
-    requireFutureExpiry: false,
+    requireFutureExpiry: options.productionMode === true,
   });
   if (Object.hasOwn(options, 'actualOutput')) {
     assertDigestBinding(receipt.outputDigest, options.actualOutput, 'Receipt output');

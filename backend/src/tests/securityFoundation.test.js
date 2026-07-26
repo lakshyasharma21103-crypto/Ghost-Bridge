@@ -15,6 +15,7 @@ const { redactSecrets } = require('../utils/redact');
 const {
   safeFetch,
   parseSafeUrl,
+  isBlockedIp,
   stripSensitiveHeadersForCrossOriginRedirect,
 } = require('../utils/safeFetch');
 const { auditLogPayload } = require('../services/auditService');
@@ -119,6 +120,28 @@ test('safeFetch blocks unsafe URLs before making outbound requests', async () =>
   await assert.rejects(() => safeFetch('https://localhost/passport.json'), {
     code: ErrorCodes.UNSAFE_URL,
   });
+});
+
+test('safeFetch blocks complete special-use and IPv4-mapped IPv6 vectors', () => {
+  for (const address of [
+    '192.0.2.1',
+    '192.88.99.1',
+    '198.51.100.1',
+    '203.0.113.1',
+    '::ffff:169.254.169.254',
+    '::ffff:172.16.0.1',
+    '::ffff:100.64.0.1',
+    '::ffff:127.0.0.1',
+    '::ffff:192.168.1.1',
+    '::ffff:a9fe:a9fe',
+    '100::1',
+    '2001:2::1',
+    '2001:db8::1',
+  ]) {
+    assert.equal(isBlockedIp(address), true, address);
+  }
+  assert.equal(isBlockedIp('8.8.8.8'), false);
+  assert.equal(isBlockedIp('2606:4700:4700::1111'), false);
 });
 
 test('safeFetch production mode requires HTTPS', () => {

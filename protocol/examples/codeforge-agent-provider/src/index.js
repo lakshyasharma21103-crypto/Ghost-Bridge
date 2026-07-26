@@ -59,6 +59,12 @@ function createCodeForgeProvider(options = {}) {
   const projects = new Map();
   const agent = createGhostBridgeAgent({
     mode: options.mode || 'localFixtureMode',
+    fixtureHttpPrincipal: options.fixtureHttpPrincipal || {
+      subjectId: 'fixture:codeforge-host',
+      authenticationMethod: 'explicit_local_fixture',
+      permittedOrganizationScopes: ['*'],
+      permittedWorkspaceScopes: ['*'],
+    },
     approveAllFixtureCapabilities: options.approveAllFixtureCapabilities !== false,
     ...(options.publicBaseUrl ? { publicBaseUrl: options.publicBaseUrl } : {}),
     passport: options.passport || {
