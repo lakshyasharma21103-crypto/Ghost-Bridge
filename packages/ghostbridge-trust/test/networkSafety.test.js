@@ -48,6 +48,12 @@ test('network classification rejects private, metadata, carrier-grade, documenta
     'ff00::1',
     '2001:db8::1',
     '::ffff:10.0.0.1',
+    '::ffff:169.254.169.254',
+    '::ffff:172.16.0.1',
+    '::ffff:100.64.0.1',
+    '::ffff:127.0.0.1',
+    '::ffff:192.168.1.1',
+    '::ffff:a9fe:a9fe',
   ]) {
     assert.equal(isPublicAddress(address), false, address);
   }

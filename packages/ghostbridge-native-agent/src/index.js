@@ -26,7 +26,9 @@ const {
 const {
   ReplayCache,
   TRUST_PROFILE_VERSION,
+  digest: trustDigest,
   signDocument,
+  verifyReceipt: verifyTrustedReceipt,
   verifyRequest,
 } = require('@ghostbridge/trust');
 
@@ -68,12 +70,26 @@ function createGhostBridgeAgent(options = {}) {
   if (productionMode && typeof options.receiptIssuer !== 'function') {
     throw new TypeError('Production mode requires an explicit Receipt issuer.');
   }
+  if (productionMode && typeof options.authenticateHttpRequest !== 'function') {
+    throw new TypeError('Production HTTP mode requires an authenticateHttpRequest handler.');
+  }
+  if (
+    productionMode &&
+    (!options.receiptVerificationJwks ||
+      (!options.agentSigner && options.receiptIssuerGuaranteesSigned !== true))
+  ) {
+    throw new TypeError(
+      'Production mode requires verifiable signed Receipt configuration.',
+    );
+  }
   const requiredProductionStores = [
     'installGrants',
     'connections',
     'tasks',
+    'taskContexts',
     'receipts',
     'approvals',
+    'approvalDecisions',
     'idempotency',
     'replay',
     'revocation',
@@ -83,6 +99,17 @@ function createGhostBridgeAgent(options = {}) {
     requiredProductionStores.some((name) => !options.stores?.[name])
   ) {
     throw new TypeError('Production mode requires durable protocol stores.');
+  }
+  if (productionMode) {
+    const storeMethods = {
+      connections: ['values'],
+      approvals: ['values'],
+      approvalDecisions: ['putDecision', 'consumeApprovedDecision'],
+      idempotency: ['has'],
+    };
+    for (const name of requiredProductionStores) {
+      assertDurableStore(options.stores[name], name, storeMethods[name]);
+    }
   }
   if (productionMode && !options.publicBaseUrl) {
     throw new TypeError('Production mode requires publicBaseUrl.');
@@ -112,6 +139,10 @@ function createGhostBridgeAgent(options = {}) {
   const clock = options.clock || Date.now;
   const requestIntegrity = options.requestIntegrity;
   const replayCache = requestIntegrity?.replayCache || new ReplayCache({ clock });
+  const authenticateHttpRequest = options.authenticateHttpRequest;
+  const fixtureHttpPrincipal = options.fixtureHttpPrincipal
+    ? normalizeHttpPrincipal(options.fixtureHttpPrincipal, { allowWildcard: true })
+    : undefined;
   if (options.agentSigner) {
     const unsignedReceiptIssuer = receiptIssuer;
     receiptIssuer = async (context) => {
@@ -150,6 +181,7 @@ function createGhostBridgeAgent(options = {}) {
   const installGrants = options.stores?.installGrants || new Map();
   const connections = options.stores?.connections || new Map();
   const receipts = options.stores?.receipts || new Map();
+  const taskContexts = options.stores?.taskContexts || new Map();
   const challenges = options.stores?.approvals || new Map();
   const decisions = options.stores?.approvalDecisions || new Map();
   const idempotency = options.stores?.idempotency || new Map();
@@ -169,7 +201,11 @@ function createGhostBridgeAgent(options = {}) {
     if (!AUDIT_EVENTS.includes(event)) return;
     const safeFields = Object.fromEntries(
       Object.entries(fields)
-        .filter(([key]) => !/(?:payload|input|output|credential|secret|token|policyRules)/i.test(key))
+        .filter(
+          ([key, value]) =>
+            value !== undefined &&
+            !/(?:payload|input|output|credential|secret|token|policyRules)/i.test(key),
+        )
         .slice(0, 20),
     );
     assertPlainData(safeFields);
@@ -306,7 +342,12 @@ function createGhostBridgeAgent(options = {}) {
     },
     async searchCapabilities(options = {}) {
       const scope = capabilityScope(options);
-      await authorizeCapabilityAccess(scope, undefined, 'catalog');
+      await authorizeCapabilityAccess(
+        scope,
+        undefined,
+        'catalog',
+        options.authenticatedPrincipal,
+      );
       const queryTokens = tokenize(options.query);
       const allowedRisk = new Set(options.riskCategories || []);
       const allowedEffects = new Set(options.sideEffectCategories || []);
@@ -355,7 +396,12 @@ function createGhostBridgeAgent(options = {}) {
     },
     async getCapabilityDetails(options = {}) {
       const scope = capabilityScope(options);
-      await authorizeCapabilityAccess(scope, options.capabilityKey, 'inspect');
+      await authorizeCapabilityAccess(
+        scope,
+        options.capabilityKey,
+        'inspect',
+        options.authenticatedPrincipal,
+      );
       if (options.agentId && options.agentId !== passport.agentId) {
         throw protocolError('CAPABILITY_NOT_FOUND', 'The requested capability is not available.');
       }
@@ -480,7 +526,7 @@ function createGhostBridgeAgent(options = {}) {
       };
       return options.installResolutionSigner(trustedPayload);
     },
-    redeemInstallGrant(key, scope = {}) {
+    redeemInstallGrant(key, scope = {}, requestContext = {}) {
       const grant = findGrant(key);
       assertGrantScope(grant, scope, clock, { allowRedeemed: true });
       if (grant.status === 'redeemed') {
@@ -565,6 +611,7 @@ function createGhostBridgeAgent(options = {}) {
         organizationScope: grant.organizationScope,
         workspaceScope: grant.workspaceScope,
         outcome: 'created',
+        principalId: requestContext.authenticatedPrincipal?.subjectId,
       });
       return { ...publicConnection(connection), idempotentReplay: false };
     },
@@ -593,28 +640,37 @@ function createGhostBridgeAgent(options = {}) {
       });
       return structuredClone(challenge);
     },
-    submitApprovalDecision(decision) {
+    submitApprovalDecision(decision, requestContext = {}) {
       const challenge = challenges.get(decision.challengeId);
       if (!challenge) throw protocolError('APPROVAL_INVALID', 'The Approval Challenge was not found.');
       validateApprovalDecision(decision, challenge, { clock });
       challenge.status = decision.decision === 'approved' ? 'approved' : 'rejected';
-      decisions.set(decision.decisionId, {
+      const storedDecision = {
         ...structuredClone(decision),
         invocationId: challenge.invocationId,
         organizationScope: challenge.organizationScope,
         workspaceScope: challenge.workspaceScope,
         actionKey: challenge.actionKey,
+        expiresAt: challenge.expiresAt,
         used: false,
-      });
-      metric('approval', decision.decision);
-      audit('protocol.approval.decided', {
-        organizationScope: challenge.organizationScope,
-        workspaceScope: challenge.workspaceScope,
-        decision: decision.decision,
-      });
-      return structuredClone(decision);
+      };
+      const complete = () => {
+        metric('approval', decision.decision);
+        audit('protocol.approval.decided', {
+          organizationScope: challenge.organizationScope,
+          workspaceScope: challenge.workspaceScope,
+          decision: decision.decision,
+          principalId: requestContext.authenticatedPrincipal?.subjectId,
+        });
+        return structuredClone(decision);
+      };
+      if (productionMode) {
+        return Promise.resolve(decisions.putDecision(storedDecision)).then(complete);
+      }
+      decisions.set(decision.decisionId, storedDecision);
+      return complete();
     },
-    async invoke(connectionId, envelope) {
+    async invoke(connectionId, envelope, requestContext = {}) {
       validateProtocolVersion(envelope?.protocolVersion);
       const connection = connections.get(connectionId);
       if (!connection || connection.status !== 'active') {
@@ -670,21 +726,13 @@ function createGhostBridgeAgent(options = {}) {
       const revocation = await revocationResolver({
         subjectType: 'connection',
         subjectReference: connectionId,
+        organizationScope: connection.organizationScope,
+        workspaceScope: connection.workspaceScope,
       });
       if (revocation?.status === 'revoked') {
         throw protocolError('REVOKED', 'The Agent Connection has been revoked.');
       }
-      if (
-        productionMode &&
-        (!revocation ||
-          revocation.status === 'unknown' ||
-          ['stale', 'unavailable', 'invalid'].includes(revocation.freshness))
-      ) {
-        throw protocolError(
-          'REVOKED',
-          'Fresh Connection revocation state is required in production mode.',
-        );
-      }
+      if (productionMode) assertFreshConnectionRevocation(revocation, connection, passport);
       if (
         connection.organizationScope !== envelope.organizationScope ||
         (connection.workspaceScope && connection.workspaceScope !== envelope.workspaceScope)
@@ -700,6 +748,7 @@ function createGhostBridgeAgent(options = {}) {
         },
         envelope.capabilityKey,
         'invoke',
+        requestContext.authenticatedPrincipal,
       );
       if (
         envelope.targetAgentId !== passport.agentId ||
@@ -758,18 +807,15 @@ function createGhostBridgeAgent(options = {}) {
       }
 
       if (registered.contract.approvalRequirement === 'required') {
-        const decision = [...decisions.values()].find(
-          (item) => item.decisionId === envelope.approvalReference,
-        );
-        if (
-          !decision ||
-          decision.decision !== 'approved' ||
-          decision.used ||
-          decision.invocationId !== envelope.invocationId ||
-          decision.actionKey !== envelope.capabilityKey ||
-          decision.organizationScope !== envelope.organizationScope ||
-          decision.workspaceScope !== envelope.workspaceScope
-        ) {
+        const decision = await consumeApprovalDecision({
+          decisionId: envelope.approvalReference,
+          invocationId: envelope.invocationId,
+          actionKey: envelope.capabilityKey,
+          organizationScope: envelope.organizationScope,
+          workspaceScope: envelope.workspaceScope,
+          now: new Date(clock()).toISOString(),
+        });
+        if (!decision) {
           const existing = [...challenges.values()].find(
             (item) =>
               item.invocationId === envelope.invocationId &&
@@ -791,13 +837,24 @@ function createGhostBridgeAgent(options = {}) {
           }
           const task = createTask(envelope, registered.contract, clock, 'waiting_for_approval');
           taskStore.set(task.taskId, task);
+          taskContexts.set(task.taskId, {
+            connectionId,
+            organizationScope: envelope.organizationScope,
+            workspaceScope: envelope.workspaceScope,
+            capabilityKey: envelope.capabilityKey,
+          });
           return { task: structuredClone(task), approvalChallenge: structuredClone(challenge) };
         }
-        decision.used = true;
       }
 
       const task = createTask(envelope, registered.contract, clock);
       taskStore.set(task.taskId, task);
+      taskContexts.set(task.taskId, {
+        connectionId,
+        organizationScope: envelope.organizationScope,
+        workspaceScope: envelope.workspaceScope,
+        capabilityKey: envelope.capabilityKey,
+      });
       audit('protocol.invocation.accepted', {
         organizationScope: envelope.organizationScope,
         workspaceScope: envelope.workspaceScope,
@@ -812,7 +869,12 @@ function createGhostBridgeAgent(options = {}) {
       taskStore.set(task.taskId, running);
       try {
         const abortController = new AbortController();
-        activeExecutions.set(running.taskId, abortController);
+        activeExecutions.set(running.taskId, {
+          abortController,
+          connection,
+          envelope,
+          contract: registered.contract,
+        });
         const deadlineMs = Math.max(1, Date.parse(envelope.deadline) - clock());
         const configuredTimeout = Number(registered.contract.timeoutBounds?.maximumMs) || deadlineMs;
         const timeoutMs = Math.min(deadlineMs, configuredTimeout);
@@ -862,17 +924,14 @@ function createGhostBridgeAgent(options = {}) {
           validateContractValue(result.output, registered.contract.outputSchema, 'output');
         }
         const completed = transitionTask(running, 'completed', new Date(clock()).toISOString());
-        const receipt = await receiptIssuer({
-          passport,
+        const receipt = await issueExecutionReceipt({
           contract: registered.contract,
           connection,
           envelope,
           task: completed,
-          result,
-          clock,
+          outcome: result.outcome || 'completed',
+          output: result.output,
         });
-        validateReceipt(receipt);
-        receipts.set(receipt.receiptId, receipt);
         completed.receiptReference = receipt.receiptId;
         completed.nextActionCategory = 'none';
         taskStore.set(completed.taskId, completed);
@@ -900,13 +959,40 @@ function createGhostBridgeAgent(options = {}) {
         if (taskStore.get(running.taskId)?.state === 'cancelled') {
           throw protocolError('TASK_CANCELLED', 'Capability execution was cancelled.');
         }
-        const failed = transitionTask(running, 'failed', new Date(clock()).toISOString());
+        const terminalState =
+          error instanceof GhostBridgeProtocolError &&
+          error.errorCode === 'DEADLINE_EXCEEDED'
+            ? 'timed_out'
+            : 'failed';
+        const failed = transitionTask(
+          running,
+          terminalState,
+          new Date(clock()).toISOString(),
+        );
         failed.safeFailureCode =
           error instanceof GhostBridgeProtocolError ? error.errorCode : 'INTERNAL_ERROR';
         failed.nextActionCategory = 'inspect';
+        try {
+          const failureReceipt = await issueExecutionReceipt({
+            contract: registered.contract,
+            connection,
+            envelope,
+            task: failed,
+            outcome: terminalState,
+            output: undefined,
+            safeFailureCode: failed.safeFailureCode,
+          });
+          failed.receiptReference = failureReceipt.receiptId;
+        } catch (receiptError) {
+          if (productionMode) throw receiptError;
+        }
         taskStore.set(failed.taskId, failed);
         metric('invocation', 'failed');
-        throw error;
+        if (error instanceof GhostBridgeProtocolError) throw error;
+        throw protocolError(
+          'INTERNAL_ERROR',
+          'The capability execution failed without exposing implementation details.',
+        );
       }
     },
     getTask(taskId) {
@@ -914,15 +1000,35 @@ function createGhostBridgeAgent(options = {}) {
       if (!task) throw protocolError('TASK_NOT_FOUND', 'The Execution Task was not found.');
       return structuredClone(task);
     },
-    cancelTask(taskId) {
+    async cancelTask(taskId) {
       const task = agent.getTask(taskId);
       if (!task.cancellationSupported || !['accepted', 'queued', 'running', 'waiting_for_approval'].includes(task.state)) {
         throw protocolError('TASK_NOT_CANCELLABLE', 'The Execution Task cannot be cancelled.');
       }
-      activeExecutions
-        .get(taskId)
-        ?.abort(new Error('Capability execution was cancelled by the Host.'));
+      const execution = activeExecutions.get(taskId);
+      execution?.abortController.abort(
+        new Error('Capability execution was cancelled by the Host.'),
+      );
       const cancelled = transitionTask(task, 'cancelled', new Date(clock()).toISOString());
+      cancelled.safeFailureCode = 'TASK_CANCELLED';
+      taskStore.set(taskId, cancelled);
+      if (execution) {
+        const receipt = await issueExecutionReceipt({
+          contract: execution.contract,
+          connection: execution.connection,
+          envelope: execution.envelope,
+          task: cancelled,
+          outcome: 'cancelled',
+          output: undefined,
+          safeFailureCode: 'TASK_CANCELLED',
+        });
+        cancelled.receiptReference = receipt.receiptId;
+      } else if (productionMode) {
+        throw protocolError(
+          'PROOF_REQUIRED',
+          'Cancellation could not produce a bound Execution Receipt.',
+        );
+      }
       taskStore.set(taskId, cancelled);
       return structuredClone(cancelled);
     },
@@ -981,7 +1087,12 @@ function createGhostBridgeAgent(options = {}) {
     },
     async listen(listenOptions = {}) {
       if (server) throw new Error('Ghost Bridge agent is already listening.');
-      server = http.createServer((request, response) => handleHttp(agent, request, response));
+      server = http.createServer((request, response) =>
+        handleHttp(agent, request, response, {
+          authenticate: authenticateProtocolHttpRequest,
+          scopeFor: protocolHttpScope,
+        }),
+      );
       await new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(listenOptions.port ?? 0, listenOptions.host || '127.0.0.1', resolve);
@@ -1005,7 +1116,105 @@ function createGhostBridgeAgent(options = {}) {
     },
   };
 
-  async function authorizeCapabilityAccess(scope, capabilityKey, action) {
+  async function authenticateProtocolHttpRequest(request, operation, routeParameters = {}) {
+    if (mode === 'localFixtureMode' && fixtureHttpPrincipal) return fixtureHttpPrincipal;
+    if (typeof authenticateHttpRequest !== 'function') {
+      throw protocolError(
+        'AUTHENTICATION_REQUIRED',
+        'An authenticated Host principal is required for this protocol operation.',
+      );
+    }
+    let result;
+    try {
+      result = await authenticateHttpRequest({
+        request,
+        operation,
+        routeParameters: structuredClone(routeParameters),
+        headers: Object.freeze({ ...request.headers }),
+      });
+    } catch {
+      throw protocolError(
+        'AUTHENTICATION_REQUIRED',
+        'Host request authentication failed.',
+      );
+    }
+    try {
+      return normalizeHttpPrincipal(result, { allowWildcard: mode === 'localFixtureMode' });
+    } catch {
+      throw protocolError(
+        'AUTHENTICATION_REQUIRED',
+        'Host request authentication failed.',
+      );
+    }
+  }
+
+  function protocolHttpScope(operation, parameters = {}) {
+    if (operation === 'install_grant_redemption') {
+      return {
+        organizationScope: parameters.body?.organizationScope,
+        workspaceScope: parameters.body?.workspaceScope,
+      };
+    }
+    if (operation === 'invocation') {
+      const connection = connections.get(parameters.body?.connectionId);
+      return connection
+        ? {
+            organizationScope: connection.organizationScope,
+            workspaceScope: connection.workspaceScope,
+          }
+        : {};
+    }
+    if (['task_lookup', 'task_cancellation'].includes(operation)) {
+      const taskContext = taskContexts.get(parameters.taskId);
+      return taskContext
+        ? {
+            organizationScope: taskContext.organizationScope,
+            workspaceScope: taskContext.workspaceScope,
+          }
+        : {};
+    }
+    if (operation === 'receipt_lookup') {
+      const receipt = receipts.get(parameters.receiptId);
+      return receipt
+        ? {
+            organizationScope: receipt.organizationScope,
+            workspaceScope: receipt.workspaceScope,
+          }
+        : {};
+    }
+    if (operation === 'approval_decision') {
+      const challenge = challenges.get(parameters.challengeId);
+      return challenge
+        ? {
+            organizationScope: challenge.organizationScope,
+            workspaceScope: challenge.workspaceScope,
+          }
+        : {};
+    }
+    if (['revocation_lookup', 'connection_revocation'].includes(operation)) {
+      const connection =
+        parameters.subjectType === 'connection'
+          ? connections.get(parameters.subjectReference)
+          : undefined;
+      return connection
+        ? {
+            organizationScope: connection.organizationScope,
+            workspaceScope: connection.workspaceScope,
+          }
+        : {};
+    }
+    return {
+      organizationScope: parameters.organizationScope,
+      workspaceScope: parameters.workspaceScope,
+    };
+  }
+
+  async function authorizeCapabilityAccess(
+    scope,
+    capabilityKey,
+    action,
+    authenticatedPrincipal,
+  ) {
     if (!scope.organizationScope) {
       throw protocolError('SCOPE_REQUIRED', 'Organization scope is required.');
     }
@@ -1018,20 +1227,132 @@ function createGhostBridgeAgent(options = {}) {
     if (!activeConnection && action !== 'invoke') {
       throw protocolError('CONNECTION_NOT_ACTIVE', 'An active scoped Agent Connection is required.');
     }
-    const decision = await authorizationHandler({
-      action,
-      capabilityKey,
-      organizationScope: scope.organizationScope,
-      workspaceScope: scope.workspaceScope,
-      connectionId: scope.connectionId || activeConnection?.connectionId,
-      initiatingSubject: scope.initiatingSubject,
-    });
-    if (decision === false || decision?.allowed === false) {
+    let decision;
+    try {
+      decision = await withAuthorizationDeadline(
+        authorizationHandler({
+          action,
+          capabilityKey,
+          organizationScope: scope.organizationScope,
+          workspaceScope: scope.workspaceScope,
+          connectionId: scope.connectionId || activeConnection?.connectionId,
+          initiatingSubject: scope.initiatingSubject,
+          authenticatedPrincipal,
+        }),
+        options.authorizationTimeoutMs,
+      );
+    } catch {
       throw protocolError(
-        decision?.code || 'SCOPE_MISMATCH',
-        decision?.safeMessage || 'The capability is not authorized in this scope.',
+        'AUTHORIZATION_DENIED',
+        'The capability authorization decision was unavailable.',
       );
     }
+    if (decision === true) return;
+    if (
+      mode === 'localFixtureMode' &&
+      decision &&
+      typeof decision === 'object' &&
+      decision.allowed === true
+    ) {
+      return;
+    }
+    if (productionMode && isVerifiedAuthorizationDecision(decision)) return;
+    throw protocolError(
+      'AUTHORIZATION_DENIED',
+      'The capability is not authorized in this scope.',
+    );
+  }
+
+  async function consumeApprovalDecision(criteria) {
+    if (!criteria.decisionId) return undefined;
+    if (productionMode) {
+      const consumed = await decisions.consumeApprovedDecision(criteria);
+      return isMatchingApprovalDecision(consumed, criteria) ? consumed : undefined;
+    }
+    const decision = decisions.get(criteria.decisionId);
+    if (!isMatchingApprovalDecision(decision, criteria) || decision.used) return undefined;
+    decision.used = true;
+    decision.consumedAt = criteria.now;
+    return structuredClone(decision);
+  }
+
+  async function issueExecutionReceipt({
+    connection,
+    envelope,
+    contract,
+    task,
+    outcome,
+    output,
+    safeFailureCode,
+  }) {
+    const evidence = terminalReceiptEvidence({
+      connection,
+      envelope,
+      task,
+      outcome,
+      safeFailureCode,
+    });
+    const receipt = await receiptIssuer({
+      passport,
+      contract,
+      connection,
+      envelope,
+      task,
+      result: { outcome, output, safeFailureCode },
+      evidence,
+      clock,
+    });
+    validateReceipt(receipt);
+    assertReceiptBindings(receipt, {
+      passport,
+      contract,
+      connection,
+      envelope,
+      task,
+      outcome,
+      safeFailureCode,
+    });
+    if (productionMode) {
+      if (!receipt.proof) {
+        throw protocolError(
+          'PROOF_REQUIRED',
+          'A cryptographically signed Execution Receipt is required.',
+        );
+      }
+      try {
+        verifyTrustedReceipt(
+          receipt,
+          passport,
+          options.receiptVerificationJwks,
+          {
+            expectedAudience:
+              connection.hostAudience || options.receiptAudience || options.hostAudience,
+            actualOutput: output ?? null,
+            actualEvidence: evidence,
+            invocation: {
+              ...envelope,
+              connectionId: connection.connectionId,
+            },
+            clock,
+            productionMode: true,
+          },
+        );
+      } catch (error) {
+        if (typeof options.receiptVerificationObserver === 'function') {
+          options.receiptVerificationObserver({
+            valid: false,
+            errorCode: String(error?.code || 'PROOF_INVALID').slice(0, 128),
+            safeMessage: String(error?.safeMessage || error?.message || '').slice(0, 256),
+          });
+        }
+        throw protocolError(
+          'PROOF_INVALID',
+          'The Execution Receipt proof or binding is invalid.',
+        );
+      }
+    }
+    await Promise.resolve(receipts.set(receipt.receiptId, receipt));
+    return receipt;
   }
 
   function findGrant(key) {
@@ -1245,11 +1566,21 @@ function createTask(envelope, contract, clock, state = 'accepted') {
   return task;
 }
 
-async function defaultReceiptIssuer({ passport, contract, connection, envelope, task, result, clock }) {
+async function defaultReceiptIssuer({
+  passport,
+  contract,
+  connection,
+  envelope,
+  task,
+  result,
+  evidence,
+  clock,
+}) {
   const receipt = {
     receiptId: `receipt_${crypto.randomUUID()}`,
     invocationId: envelope.invocationId,
     taskId: task.taskId,
+    connectionId: connection.connectionId,
     agentId: passport.agentId,
     passportId: passport.passportId,
     passportVersion: passport.passportVersion,
@@ -1259,17 +1590,25 @@ async function defaultReceiptIssuer({ passport, contract, connection, envelope, 
     ...(connection.workspaceScope ? { workspaceScope: connection.workspaceScope } : {}),
     outcome: result.outcome || 'completed',
     outputContractReference: contract.outputContractReference,
-    startedAt: task.startedAt,
+    startedAt: task.startedAt || task.createdAt,
     completedAt: task.completedAt || new Date(clock()).toISOString(),
     attemptCount: 1,
     ...(envelope.approvalReference ? { approvalReference: envelope.approvalReference } : {}),
     ...(envelope.delegationReference ? { delegationReference: envelope.delegationReference } : {}),
-    outputDigest: digest(result.output),
-    evidenceDigest: digest({
-      invocationId: envelope.invocationId,
-      capabilityKey: envelope.capabilityKey,
-      outcome: result.outcome || 'completed',
-    }),
+    ...(envelope.idempotencyKey
+      ? {
+          requestFingerprint: digest({
+            connectionId: connection.connectionId,
+            capabilityKey: envelope.capabilityKey,
+            capabilityVersion: envelope.capabilityVersion,
+            idempotencyKey: envelope.idempotencyKey,
+            payload: envelope.payload,
+          }),
+        }
+      : {}),
+    ...(result.safeFailureCode ? { safeFailureCode: result.safeFailureCode } : {}),
+    outputDigest: trustDigest(result.output ?? null),
+    evidenceDigest: trustDigest(evidence),
     billableStatusCategory: 'non_billable',
     nonBillableReason: 'deterministic_local_fixture',
     revocationStateAtExecution: 'active',
@@ -1277,7 +1616,259 @@ async function defaultReceiptIssuer({ passport, contract, connection, envelope, 
   return receipt;
 }
 
-async function handleHttp(agent, request, response) {
+function terminalReceiptEvidence({
+  connection,
+  envelope,
+  task,
+  outcome,
+  safeFailureCode,
+}) {
+  return {
+    invocationId: envelope.invocationId,
+    taskId: task.taskId,
+    connectionId: connection.connectionId,
+    capabilityKey: envelope.capabilityKey,
+    capabilityVersion: envelope.capabilityVersion,
+    organizationScope: envelope.organizationScope,
+    ...(envelope.workspaceScope ? { workspaceScope: envelope.workspaceScope } : {}),
+    outcome,
+    ...(safeFailureCode ? { safeFailureCode } : {}),
+  };
+}
+
+function assertReceiptBindings(receipt, context) {
+  const expected = {
+    invocationId: context.envelope.invocationId,
+    taskId: context.task.taskId,
+    connectionId: context.connection.connectionId,
+    agentId: context.passport.agentId,
+    passportId: context.passport.passportId,
+    passportVersion: context.passport.passportVersion,
+    capabilityKey: context.contract.capabilityKey,
+    capabilityVersion: context.contract.capabilityVersion,
+    organizationScope: context.connection.organizationScope,
+    workspaceScope: context.connection.workspaceScope,
+    outcome: context.outcome,
+    approvalReference: context.envelope.approvalReference,
+    safeFailureCode: context.safeFailureCode,
+  };
+  for (const [field, value] of Object.entries(expected)) {
+    if ((receipt[field] || undefined) !== (value || undefined)) {
+      throw protocolError(
+        'PROOF_INVALID',
+        'The Execution Receipt is not bound to the terminal execution context.',
+      );
+    }
+  }
+  if (
+    !receipt.startedAt ||
+    !receipt.completedAt ||
+    receipt.attemptCount < 1 ||
+    receipt.revocationStateAtExecution !== 'active'
+  ) {
+    throw protocolError('PROOF_INVALID', 'The Execution Receipt is incomplete.');
+  }
+}
+
+function assertDurableStore(store, name, extraMethods = []) {
+  const requiredMethods = ['get', 'set', ...extraMethods];
+  if (
+    !store ||
+    store instanceof Map ||
+    store.durable !== true ||
+    requiredMethods.some((method) => typeof store[method] !== 'function')
+  ) {
+    throw new TypeError(
+      `Production ${name} store must be durable and implement ${requiredMethods.join(', ')}.`,
+    );
+  }
+}
+
+function normalizeHttpPrincipal(value, options = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('Authenticated Host principal is invalid.');
+  }
+  assertPlainData(value);
+  const subjectId = String(value.subjectId || value.principalId || '').trim();
+  const authenticationMethod = String(value.authenticationMethod || '').trim();
+  const organizationScope = String(value.organizationScope || '').trim();
+  const permittedOrganizationScopes = [
+    ...new Set(
+      (value.permittedOrganizationScopes || [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean),
+    ),
+  ];
+  const workspaceScope = String(value.workspaceScope || '').trim();
+  const permittedWorkspaceScopes = [
+    ...new Set(
+      (value.permittedWorkspaceScopes || [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (
+    !subjectId ||
+    !authenticationMethod ||
+    (!organizationScope && permittedOrganizationScopes.length === 0) ||
+    (options.allowWildcard !== true &&
+      (permittedOrganizationScopes.includes('*') ||
+        permittedWorkspaceScopes.includes('*')))
+  ) {
+    throw new TypeError('Authenticated Host principal is incomplete.');
+  }
+  return Object.freeze({
+    subjectType: String(value.subjectType || 'host').slice(0, 64),
+    subjectId: subjectId.slice(0, 256),
+    authenticationMethod: authenticationMethod.slice(0, 128),
+    ...(organizationScope ? { organizationScope } : {}),
+    permittedOrganizationScopes: Object.freeze(permittedOrganizationScopes),
+    ...(workspaceScope ? { workspaceScope } : {}),
+    permittedWorkspaceScopes: Object.freeze(permittedWorkspaceScopes),
+    ...(value.credentialReference
+      ? { credentialReference: String(value.credentialReference).slice(0, 256) }
+      : {}),
+  });
+}
+
+function assertPrincipalScope(principal, scope = {}) {
+  const organizationScope = String(scope.organizationScope || '').trim();
+  const workspaceScope = String(scope.workspaceScope || '').trim();
+  if (
+    organizationScope &&
+    principal.organizationScope !== organizationScope &&
+    !principal.permittedOrganizationScopes.includes('*') &&
+    !principal.permittedOrganizationScopes.includes(organizationScope)
+  ) {
+    throw protocolError(
+      'SCOPE_MISMATCH',
+      'The authenticated Host principal is outside the requested organization scope.',
+    );
+  }
+  if (
+    workspaceScope &&
+    principal.workspaceScope !== workspaceScope &&
+    !principal.permittedWorkspaceScopes.includes('*') &&
+    !principal.permittedWorkspaceScopes.includes(workspaceScope)
+  ) {
+    throw protocolError(
+      'SCOPE_MISMATCH',
+      'The authenticated Host principal is outside the requested workspace scope.',
+    );
+  }
+}
+
+async function authenticateHttpOperation(
+  transport,
+  request,
+  operation,
+  routeParameters = {},
+  body,
+) {
+  if (
+    body &&
+    ['authenticatedPrincipal', 'hostPrincipal', 'transportPrincipal'].some((field) =>
+      Object.hasOwn(body, field),
+    )
+  ) {
+    throw protocolError(
+      'AUTHENTICATION_REQUIRED',
+      'Request bodies cannot supply an authenticated Host principal.',
+    );
+  }
+  const principal = await transport.authenticate(request, operation, routeParameters);
+  assertPrincipalScope(principal, transport.scopeFor(operation, routeParameters));
+  return principal;
+}
+
+function isVerifiedAuthorizationDecision(decision) {
+  return Boolean(
+    decision &&
+      typeof decision === 'object' &&
+      !Array.isArray(decision) &&
+      decision.allowed === true &&
+      typeof decision.principalId === 'string' &&
+      decision.principalId.trim() &&
+      typeof decision.policyDecisionId === 'string' &&
+      decision.policyDecisionId.trim() &&
+      Number.isFinite(Date.parse(decision.evaluatedAt)) &&
+      typeof decision.policyVersion === 'string' &&
+      decision.policyVersion.trim(),
+  );
+}
+
+function withAuthorizationDeadline(operation, timeoutMs = 5_000) {
+  const boundedTimeout = Math.max(10, Math.min(Number(timeoutMs) || 5_000, 30_000));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('Authorization decision deadline exceeded.')),
+      boundedTimeout,
+    );
+    Promise.resolve(operation).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function isMatchingApprovalDecision(decision, criteria) {
+  if (
+    !decision ||
+    decision.decision !== 'approved' ||
+    decision.decisionId !== criteria.decisionId ||
+    decision.invocationId !== criteria.invocationId ||
+    decision.actionKey !== criteria.actionKey ||
+    decision.organizationScope !== criteria.organizationScope ||
+    (decision.workspaceScope || undefined) !== (criteria.workspaceScope || undefined)
+  ) {
+    return false;
+  }
+  const expiresAt = Date.parse(decision.expiresAt || decision.validUntil || '');
+  return Number.isFinite(expiresAt) && expiresAt > Date.parse(criteria.now);
+}
+
+function assertFreshConnectionRevocation(revocation, connection, passport) {
+  if (
+    !revocation ||
+    revocation.status !== 'active' ||
+    !['fresh', 'nearing_expiry'].includes(revocation.freshness)
+  ) {
+    throw protocolError(
+      'REVOKED',
+      'Fresh active Connection revocation state is required in production mode.',
+    );
+  }
+  const bindings = [
+    ['subjectType', 'connection'],
+    ['subjectReference', connection.connectionId],
+    ['connectionId', connection.connectionId],
+    ['organizationScope', connection.organizationScope],
+    ['workspaceScope', connection.workspaceScope],
+    ['issuer', passport.issuer],
+  ];
+  for (const [field, expected] of bindings) {
+    if (
+      revocation[field] !== undefined &&
+      (revocation[field] || undefined) !== (expected || undefined)
+    ) {
+      throw protocolError('REVOKED', 'The Connection revocation state is not correctly bound.');
+    }
+  }
+  if (
+    revocation.sequence !== undefined &&
+    (!Number.isSafeInteger(revocation.sequence) || revocation.sequence < 1)
+  ) {
+    throw protocolError('REVOKED', 'The Connection revocation sequence is invalid.');
+  }
+}
+
+async function handleHttp(agent, request, response, transport) {
   response.setHeader('content-type', 'application/json; charset=utf-8');
   response.setHeader('cache-control', 'no-store');
   try {
@@ -1292,6 +1883,15 @@ async function handleHttp(agent, request, response) {
       request.method === 'GET' &&
       url.pathname === '/ghostbridge/capabilities/search'
     ) {
+      const authenticatedPrincipal = await authenticateHttpOperation(
+        transport,
+        request,
+        'capability_search',
+        {
+          organizationScope: url.searchParams.get('organizationScope') || '',
+          workspaceScope: url.searchParams.get('workspaceScope') || undefined,
+        },
+      );
       result = await agent.searchCapabilities({
         query: url.searchParams.get('query') || '',
         organizationScope: url.searchParams.get('organizationScope') || '',
@@ -1304,17 +1904,28 @@ async function handleHttp(agent, request, response) {
         agentIds: url.searchParams.getAll('agentId'),
         limit: url.searchParams.get('limit'),
         cursor: url.searchParams.get('cursor') || undefined,
+        authenticatedPrincipal,
       });
     } else if (
       request.method === 'GET' &&
       url.pathname.startsWith('/ghostbridge/capabilities/')
     ) {
+      const authenticatedPrincipal = await authenticateHttpOperation(
+        transport,
+        request,
+        'capability_details',
+        {
+          organizationScope: url.searchParams.get('organizationScope') || '',
+          workspaceScope: url.searchParams.get('workspaceScope') || undefined,
+        },
+      );
       result = await agent.getCapabilityDetails({
         agentId: url.searchParams.get('agentId') || undefined,
         capabilityKey: decodeURIComponent(url.pathname.slice('/ghostbridge/capabilities/'.length)),
         capabilityVersion: url.searchParams.get('capabilityVersion') || undefined,
         organizationScope: url.searchParams.get('organizationScope') || '',
         workspaceScope: url.searchParams.get('workspaceScope') || undefined,
+        authenticatedPrincipal,
       });
     } else if (request.method === 'GET' && url.pathname === '/ghostbridge/capabilities') {
       result = { items: agent.listCapabilities() };
@@ -1338,7 +1949,14 @@ async function handleHttp(agent, request, response) {
         url.pathname === '/ghostbridge/install-grants/redeem'
       ) {
         const body = await readBody(request);
-        result = agent.redeemInstallGrant(body.grant, body);
+        const authenticatedPrincipal = await authenticateHttpOperation(
+          transport,
+          request,
+          'install_grant_redemption',
+          { body },
+          body,
+        );
+        result = agent.redeemInstallGrant(body.grant, body, { authenticatedPrincipal });
       } else if (request.method === 'POST' && grantResolve && agent.legacyGrantPathEnabled) {
         result = agent.trustedInstallResolutionConfigured
           ? await agent.resolveInstallGrantTrusted(
@@ -1347,26 +1965,76 @@ async function handleHttp(agent, request, response) {
             )
           : agent.resolveInstallGrant(decodeURIComponent(grantResolve[1]), await readBody(request));
       } else if (request.method === 'POST' && grantRedeem && agent.legacyGrantPathEnabled) {
-        result = agent.redeemInstallGrant(decodeURIComponent(grantRedeem[1]), await readBody(request));
+        const body = await readBody(request);
+        const authenticatedPrincipal = await authenticateHttpOperation(
+          transport,
+          request,
+          'install_grant_redemption',
+          { body },
+          body,
+        );
+        result = agent.redeemInstallGrant(
+          decodeURIComponent(grantRedeem[1]),
+          body,
+          { authenticatedPrincipal },
+        );
       } else if (request.method === 'POST' && url.pathname === '/ghostbridge/invocations') {
         const body = await readBody(request);
-        result = await agent.invoke(body.connectionId, body.envelope);
+        const authenticatedPrincipal = await authenticateHttpOperation(
+          transport,
+          request,
+          'invocation',
+          { body },
+          body,
+        );
+        result = await agent.invoke(
+          body.connectionId,
+          body.envelope,
+          { authenticatedPrincipal },
+        );
       } else if (request.method === 'GET' && taskPath) {
-        result = agent.getTask(decodeURIComponent(taskPath[1]));
+        const taskId = decodeURIComponent(taskPath[1]);
+        await authenticateHttpOperation(transport, request, 'task_lookup', { taskId });
+        result = agent.getTask(taskId);
       } else if (request.method === 'POST' && taskPath && url.searchParams.get('action') === 'cancel') {
-        result = agent.cancelTask(decodeURIComponent(taskPath[1]));
+        const taskId = decodeURIComponent(taskPath[1]);
+        const authenticatedPrincipal = await authenticateHttpOperation(
+          transport,
+          request,
+          'task_cancellation',
+          { taskId },
+        );
+        result = await agent.cancelTask(taskId, { authenticatedPrincipal });
       } else if (request.method === 'GET' && receiptPath) {
-        result = agent.getReceipt(decodeURIComponent(receiptPath[1]));
+        const receiptId = decodeURIComponent(receiptPath[1]);
+        await authenticateHttpOperation(transport, request, 'receipt_lookup', { receiptId });
+        result = agent.getReceipt(receiptId);
       } else if (request.method === 'POST' && approvalPath) {
         const decision = await readBody(request);
-        if (decision.challengeId !== decodeURIComponent(approvalPath[1])) {
+        const challengeId = decodeURIComponent(approvalPath[1]);
+        const authenticatedPrincipal = await authenticateHttpOperation(
+          transport,
+          request,
+          'approval_decision',
+          { challengeId },
+          decision,
+        );
+        if (decision.challengeId !== challengeId) {
           throw protocolError('APPROVAL_INVALID', 'The Approval Decision challenge does not match.');
         }
-        result = agent.submitApprovalDecision(decision);
+        result = await agent.submitApprovalDecision(decision, { authenticatedPrincipal });
       } else if (request.method === 'GET' && revocationPath) {
+        const subjectType = decodeURIComponent(revocationPath[1]);
+        const subjectReference = decodeURIComponent(revocationPath[2]);
+        await authenticateHttpOperation(
+          transport,
+          request,
+          'revocation_lookup',
+          { subjectType, subjectReference },
+        );
         result = await agent.checkRevocation(
-          decodeURIComponent(revocationPath[1]),
-          decodeURIComponent(revocationPath[2]),
+          subjectType,
+          subjectReference,
         );
         validateRevocation(result);
       } else if (
@@ -1375,8 +2043,17 @@ async function handleHttp(agent, request, response) {
         decodeURIComponent(revocationPath[1]) === 'connection'
       ) {
         const body = await readBody(request);
+        const subjectType = decodeURIComponent(revocationPath[1]);
+        const subjectReference = decodeURIComponent(revocationPath[2]);
+        await authenticateHttpOperation(
+          transport,
+          request,
+          'connection_revocation',
+          { subjectType, subjectReference },
+          body,
+        );
         result = agent.revokeConnection(
-          decodeURIComponent(revocationPath[2]),
+          subjectReference,
           body.reasonCode || 'REVOKED_BY_HOST',
         );
       } else {
@@ -1428,6 +2105,8 @@ function readBody(request) {
 
 function statusForError(code) {
   if (code === 'INTERNAL_ERROR') return 500;
+  if (code === 'AUTHENTICATION_REQUIRED') return 401;
+  if (code === 'AUTHORIZATION_DENIED') return 403;
   if (['REVOKED', 'CONNECTION_NOT_ACTIVE'].includes(code)) return 403;
   if (['SCOPE_MISMATCH', 'IDEMPOTENCY_CONFLICT', 'APPROVAL_REQUIRED'].includes(code)) return 409;
   if (code === 'TASK_NOT_FOUND') return 404;

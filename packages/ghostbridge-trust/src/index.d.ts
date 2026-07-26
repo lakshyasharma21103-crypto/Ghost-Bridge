@@ -91,6 +91,12 @@ export interface TrustSecurityTransport {
     headers: { get(name: string): string | null };
     text(): Promise<string>;
   }>;
+  request?(url: string | URL, options?: Record<string, unknown>): Promise<{
+    status: number;
+    ok: boolean;
+    headers: { get(name: string): string | null };
+    text(): Promise<string>;
+  }>;
 }
 
 export function normalizeIssuerId(value: string, options?: Record<string, unknown>): string;

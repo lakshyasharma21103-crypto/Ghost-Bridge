@@ -2,7 +2,6 @@ const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { validateAgentPassportV1 } = require('../services/passportValidator');
 const { resolveInstallKey } = require('../services/connectionService');
-const { env } = require('../config/env');
 
 function validatePassport(request, response, next) {
   const result = validateAgentPassportV1(request.body);
@@ -42,7 +41,8 @@ function validatePassport(request, response, next) {
 async function resolvePassportInstallKey(request, response, next) {
   try {
     const principal = installationPrincipal(request);
-    const data = await resolveInstallKey({
+    const resolver = request.app?.locals?.resolveInstallKey || resolveInstallKey;
+    const data = await resolver({
       ...request.body,
       receivingUserId: principal.userId,
       receivingWorkspaceId: principal.workspaceId,
@@ -58,28 +58,30 @@ async function resolvePassportInstallKey(request, response, next) {
 }
 
 function installationPrincipal(request) {
-  const requestedUserId = String(request.body?.receivingUserId || '');
-  const requestedWorkspaceId = String(request.body?.receivingWorkspaceId || '');
+  const requestedUserId = String(request.body?.receivingUserId || '').trim();
+  const requestedWorkspaceId = String(request.body?.receivingWorkspaceId || '').trim();
+  const requestedOrganizationId = String(
+    request.body?.receivingOrganizationId ||
+      request.body?.organizationId ||
+      request.body?.requestedOrganizationScope ||
+      '',
+  ).trim();
   const principal = request.authenticatedPrincipal;
   if (!principal) {
-    if (env.NODE_ENV !== 'development') {
-      throw new AppError(
-        401,
-        ErrorCodes.AUTHENTICATION_REQUIRED,
-        'Authenticated Host principal is required for installation.',
-      );
-    }
-    return {
-      userId: requestedUserId,
-      workspaceId: requestedWorkspaceId,
-      developmentFixture: true,
-    };
+    throw new AppError(
+      401,
+      ErrorCodes.AUTHENTICATION_REQUIRED,
+      'Authenticated Host principal is required for installation.',
+    );
   }
   const permittedWorkspaces = new Set(principal.permittedWorkspaceIds || []);
+  const workspaceOrganizationId =
+    principal.workspaceOrganizationIds?.[requestedWorkspaceId] || principal.organizationId;
   if (
     !principal.userId ||
     !requestedWorkspaceId ||
-    requestedUserId !== principal.userId ||
+    (requestedUserId && requestedUserId !== principal.userId) ||
+    (requestedOrganizationId && requestedOrganizationId !== workspaceOrganizationId) ||
     !permittedWorkspaces.has(requestedWorkspaceId)
   ) {
     throw new AppError(
@@ -88,7 +90,11 @@ function installationPrincipal(request) {
       'Requested installation scope is outside the authenticated principal.',
     );
   }
-  return { userId: principal.userId, workspaceId: requestedWorkspaceId };
+  return {
+    userId: principal.userId,
+    workspaceId: requestedWorkspaceId,
+    organizationId: workspaceOrganizationId,
+  };
 }
 
 module.exports = {

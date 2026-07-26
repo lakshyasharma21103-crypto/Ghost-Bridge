@@ -31,7 +31,8 @@ async function authenticatePartner(request, _response, next) {
       return;
     }
 
-    request.partner = partner;
+    const { apiKeyHash: _apiKeyHash, ...safePartner } = partner;
+    request.partner = safePartner;
     next();
   } catch (error) {
     next(error);

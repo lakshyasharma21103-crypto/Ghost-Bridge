@@ -11,6 +11,7 @@ const {
   boundedSerialize,
   projectDataContract,
   redactPublicData,
+  validateProfileDeclarations,
 } = require('@ghostbridge/protocol-core');
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -159,15 +160,20 @@ class GhostBridgeInspector {
 
   async inspectProfiles() {
     const discovery = await this.capture('profiles.read', () => this.client.discover());
+    if (
+      discovery.profiles !== undefined &&
+      (!discovery.profiles ||
+        typeof discovery.profiles !== 'object' ||
+        Array.isArray(discovery.profiles))
+    ) {
+      throw new InspectorSecurityError('Discovery profiles must use the canonical object form.');
+    }
+    const profiles = validateProfileDeclarations(discovery.profiles || {});
     return sanitizeInspectorValue({
-      profiles: discovery.profiles || [],
-      core: discovery.profiles?.find((profile) => profile.id === 'ghostbridge.core'),
-      governedExecution: discovery.profiles?.find(
-        (profile) => profile.id === 'ghostbridge.governed-execution',
-      ),
-      agentCoordination: discovery.profiles?.find(
-        (profile) => profile.id === 'ghostbridge.agent-coordination.experimental',
-      ),
+      profiles,
+      core: profiles.core || null,
+      governedExecution: profiles.governedExecution || null,
+      agentCoordination: profiles.agentCoordination || null,
     });
   }
 

@@ -27,6 +27,7 @@ const {
 const {
   AntiRollbackStore,
   RevocationCache,
+  createNodeSecurityTransport,
   digest,
   discoverIssuer: discoverTrustIssuer,
   evaluateTrustPolicy,
@@ -38,6 +39,16 @@ const {
   verifyDocument,
   verifyReceipt: verifySignedReceipt,
 } = require('@ghostbridge/trust');
+
+const SAFE_TRANSPORT_HEADER_NAMES = new Set([
+  'authorization',
+  'ghostbridge-version',
+  'idempotency-key',
+  'traceparent',
+  'tracestate',
+  'x-request-id',
+  'x-trace-id',
+]);
 
 class GhostBridgeError extends GhostBridgeProtocolError {
   constructor(code, message, options = {}) {
@@ -130,8 +141,13 @@ class GhostBridgeClient {
         ? { preferredAuthenticationMode: options.preferredAuthenticationMode }
         : {}),
     });
-    this.fetch = options.fetch || globalThis.fetch;
     this.timeoutMs = Math.max(50, Math.min(options.timeoutMs || 10_000, 120_000));
+    this.transport = createClientTransport(options, {
+      ...this.targetPolicy,
+      timeoutMs: this.timeoutMs,
+      maximumBytes: DEFAULT_LIMITS.maximumMessageBytes,
+    });
+    this.transportHeaders = options.transportHeaders;
     this.requestIdFactory = options.requestIdFactory || (() => `request_${crypto.randomUUID()}`);
     this.traceIdFactory = options.traceIdFactory || (() => `trace_${crypto.randomUUID()}`);
     this.trust = options.trust ? { ...options.trust } : undefined;
@@ -150,7 +166,21 @@ class GhostBridgeClient {
     if (!this.baseUrl && typeof this.installGrantResolver !== 'function') {
       throw new TypeError('A baseUrl or installGrantResolver is required.');
     }
-    if (typeof this.fetch !== 'function') throw new TypeError('A Fetch API implementation is required.');
+    if (
+      isNodeRuntime() &&
+      options.serverMode !== false &&
+      options.trust?.required === true &&
+      options.trust?.localTestMode !== true &&
+      (this.transport.securityProperties?.dnsRebindingResistant !== true ||
+        this.transport.securityProperties?.addressPinning !== true ||
+        this.transport.securityProperties?.tlsServerNameValidation !== true ||
+        this.transport.securityProperties?.redirects !== 'rejected' ||
+        this.transport.securityProperties?.streamingResponseLimit !== true)
+    ) {
+      throw new TypeError(
+        'Trust-required Node use requires a DNS-pinned security transport.',
+      );
+    }
   }
 
   async discover() {
@@ -967,9 +997,13 @@ class GhostBridgeClient {
     if (options.signal?.aborted) abortFromCaller();
     else options.signal?.addEventListener('abort', abortFromCaller, { once: true });
     try {
-      const response = await this.fetch(url, {
+      const transportHeaders =
+        typeof this.transportHeaders === 'function'
+          ? await this.transportHeaders({ url, method: options.method || 'GET' })
+          : this.transportHeaders || {};
+      assertSafeTransportHeaders(transportHeaders);
+      const response = await this.transport.request(url, {
         method: options.method || 'GET',
-        redirect: 'manual',
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
@@ -977,9 +1011,14 @@ class GhostBridgeClient {
           'x-request-id': requestId,
           'x-trace-id': traceId,
           ...(options.idempotencyKey ? { 'idempotency-key': options.idempotencyKey } : {}),
+          ...transportHeaders,
         },
         body: options.body === undefined ? undefined : boundedSerialize(options.body),
         signal: controller.signal,
+        timeoutMs: this.timeoutMs,
+        maximumBytes: DEFAULT_LIMITS.maximumMessageBytes,
+        expectedContentTypes: ['application/json'],
+        allowQuery: true,
       });
       if (response.status >= 300 && response.status < 400) {
         throw protocolError('INVALID_MESSAGE', 'Protocol redirects are rejected.');
@@ -1025,6 +1064,11 @@ class GhostBridgeClient {
     } catch (error) {
       if (error instanceof GhostBridgeError) throw error;
       if (error instanceof GhostBridgeProtocolError) throw fromProtocolError(error);
+      if (error?.code === 'RESPONSE_TOO_LARGE') {
+        throw fromProtocolError(
+          protocolError('MESSAGE_TOO_LARGE', 'The protocol response exceeds the configured size.'),
+        );
+      }
       if (error?.name === 'AbortError' || controller.signal.aborted) {
         if (options.signal?.aborted) {
           throw createSdkError('TASK_CANCELLED', 'The protocol request was cancelled.', {
@@ -1087,6 +1131,214 @@ function classifyRetry(error, options = {}) {
       : 'permanent',
     retryAfterMs: Number.isFinite(error?.retryAfterMs) ? error.retryAfterMs : undefined,
   });
+}
+
+function createClientTransport(options, policy) {
+  if (options.transport !== undefined) {
+    if (
+      !options.transport ||
+      typeof options.transport.request !== 'function' ||
+      !options.transport.securityProperties ||
+      typeof options.transport.securityProperties !== 'object'
+    ) {
+      throw new TypeError(
+        'transport must expose request(url, options) and declared securityProperties.',
+      );
+    }
+    return options.transport;
+  }
+  if (typeof options.fetch === 'function') {
+    return createFetchSecurityTransport(options.fetch, {
+      implementation: 'caller_fetch',
+    });
+  }
+  if (isNodeRuntime()) {
+    return createNodeSecurityTransport(policy);
+  }
+  if (typeof globalThis.fetch !== 'function') {
+    throw new TypeError('A Ghost Bridge transport implementation is required.');
+  }
+  return createFetchSecurityTransport(globalThis.fetch.bind(globalThis), {
+    implementation: 'browser_fetch',
+  });
+}
+
+function createFetchSecurityTransport(fetchImplementation, properties = {}) {
+  return Object.freeze({
+    securityProperties: Object.freeze({
+      dnsRebindingResistant: false,
+      addressPinning: false,
+      tlsServerNameValidation: 'user-agent-managed',
+      redirects: 'rejected',
+      streamingResponseLimit: true,
+      ...properties,
+    }),
+    async request(urlValue, requestOptions = {}) {
+      const maximumBytes = boundedTransportInteger(
+        requestOptions.maximumBytes,
+        1,
+        16_777_216,
+        DEFAULT_LIMITS.maximumMessageBytes,
+      );
+      const url = validateFetchTransportUrl(urlValue, requestOptions);
+      const response = await fetchImplementation(url.toString(), {
+        method: requestOptions.method || 'GET',
+        headers: requestOptions.headers,
+        body: requestOptions.body,
+        signal: requestOptions.signal,
+        redirect: 'manual',
+        credentials: 'omit',
+      });
+      if (!response || typeof response !== 'object' || !response.headers) {
+        throw transportFailure('TRANSPORT_FAILURE', 'The transport returned an invalid response.');
+      }
+      if (Number(response.status) >= 300 && Number(response.status) < 400) {
+        await cancelResponseBody(response);
+        throw transportFailure('REDIRECT_REJECTED', 'Protocol redirects are rejected.');
+      }
+      assertFetchResponseType(response, requestOptions.expectedContentTypes);
+      const declaredLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+        await cancelResponseBody(response);
+        throw transportFailure(
+          'RESPONSE_TOO_LARGE',
+          'The protocol response exceeds its configured size limit.',
+        );
+      }
+      const bytes = await readBoundedFetchBody(response, maximumBytes);
+      return Object.freeze({
+        status: Number(response.status),
+        ok: response.ok === true,
+        headers: response.headers,
+        async text() {
+          return new TextDecoder().decode(bytes);
+        },
+      });
+    },
+  });
+}
+
+function validateFetchTransportUrl(value, options = {}) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw transportFailure('UNSAFE_DISCOVERY_TARGET', 'The protocol target URL is invalid.');
+  }
+  if (
+    url.username ||
+    url.password ||
+    url.hash ||
+    (url.search && options.allowQuery !== true)
+  ) {
+    throw transportFailure('UNSAFE_DISCOVERY_TARGET', 'The protocol target URL is unsafe.');
+  }
+  if (!['https:', 'http:'].includes(url.protocol)) {
+    throw transportFailure('UNSAFE_DISCOVERY_TARGET', 'The protocol target scheme is invalid.');
+  }
+  return url;
+}
+
+function assertFetchResponseType(response, expectedTypes = ['application/json']) {
+  const expected = new Set(expectedTypes.map((item) => String(item).toLowerCase()));
+  const actual = String(response.headers.get('content-type') || '')
+    .split(';', 1)[0]
+    .trim()
+    .toLowerCase();
+  if (!expected.has(actual)) {
+    void cancelResponseBody(response);
+    throw transportFailure(
+      'UNEXPECTED_CONTENT_TYPE',
+      'The protocol response has an unexpected content type.',
+    );
+  }
+}
+
+async function readBoundedFetchBody(response, maximumBytes) {
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    throw transportFailure(
+      'TRANSPORT_FAILURE',
+      'The Fetch transport must expose a readable response stream.',
+    );
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) break;
+      const chunk = result.value instanceof Uint8Array
+        ? result.value
+        : new Uint8Array(result.value);
+      size += chunk.byteLength;
+      if (size > maximumBytes) {
+        await reader.cancel();
+        throw transportFailure(
+          'RESPONSE_TOO_LARGE',
+          'The protocol response exceeds its configured size limit.',
+        );
+      }
+      chunks.push(chunk);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const output = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return output;
+}
+
+async function cancelResponseBody(response) {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Cancellation is best-effort after the response has already been rejected.
+  }
+}
+
+function assertSafeTransportHeaders(headers) {
+  if (!headers || typeof headers !== 'object' || Array.isArray(headers)) {
+    throw new TypeError('transportHeaders must be a bounded plain object.');
+  }
+  for (const [name, value] of Object.entries(headers)) {
+    const normalized = String(name).toLowerCase();
+    if (
+      !SAFE_TRANSPORT_HEADER_NAMES.has(normalized) ||
+      typeof value !== 'string' ||
+      value.length === 0 ||
+      value.length > 4_096 ||
+      /[\r\n]/.test(value)
+    ) {
+      throw new TypeError(`Unsafe Native Client transport header: ${normalized}.`);
+    }
+  }
+}
+
+function boundedTransportInteger(value, minimum, maximum, fallback) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= minimum && number <= maximum
+    ? number
+    : fallback;
+}
+
+function transportFailure(code, message) {
+  const error = new Error(message);
+  error.name = 'SecureTransportError';
+  error.code = code;
+  return error;
+}
+
+function isNodeRuntime() {
+  return (
+    typeof process !== 'undefined' &&
+    process?.versions?.node &&
+    typeof require === 'function'
+  );
 }
 
 function localCapabilitySearch(capabilities, options) {
@@ -1254,7 +1506,17 @@ function normalizeBaseUrl(value, policy = {}) {
 
 function resolveEndpoint(baseUrl, value) {
   if (!value) throw protocolError('INVALID_MESSAGE', 'Discovery omitted a required endpoint.');
+  if (
+    typeof value !== 'string' ||
+    /[\u0000-\u001f\u007f\\]/.test(value) ||
+    /%(?:2f|3a|40|5c)/i.test(value)
+  ) {
+    throw protocolError('INVALID_MESSAGE', 'Discovery contains an unsafe endpoint URL.');
+  }
   const endpoint = new URL(value, `${baseUrl}/`);
+  if (!['https:', 'http:'].includes(endpoint.protocol)) {
+    throw protocolError('INVALID_MESSAGE', 'Discovery contains an invalid endpoint scheme.');
+  }
   if (endpoint.origin !== new URL(baseUrl).origin) {
     throw protocolError('INVALID_MESSAGE', 'Discovery endpoint origin does not match the agent.');
   }
@@ -1289,7 +1551,22 @@ function assertInvocationScope(connection, options) {
 }
 
 function endpointWith(baseUrl, template, token, value) {
-  if (!template?.includes(token)) {
+  let templateUrl;
+  try {
+    templateUrl = new URL(
+      typeof template === 'string'
+        ? template.replace(token, 'ghostbridge-template-token')
+        : '',
+      `${baseUrl}/`,
+    );
+  } catch {
+    throw protocolError('INVALID_MESSAGE', 'Discovery contains an invalid endpoint template.');
+  }
+  if (
+    typeof template !== 'string' ||
+    template.split(token).length !== 2 ||
+    !templateUrl.pathname.includes('ghostbridge-template-token')
+  ) {
     throw protocolError('INVALID_MESSAGE', 'Discovery contains an invalid endpoint template.');
   }
   return resolveEndpoint(baseUrl, template.replace(token, encodeURIComponent(value)));

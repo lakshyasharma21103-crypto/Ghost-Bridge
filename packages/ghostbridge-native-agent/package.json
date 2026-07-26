@@ -22,5 +22,8 @@
     "@ghostbridge/protocol-core": "0.1.0-draft",
     "@ghostbridge/trust": "0.1.0-draft"
   },
+  "devDependencies": {
+    "@ghostbridge/issuer": "0.1.0-draft"
+  },
   "license": "UNLICENSED"
 }

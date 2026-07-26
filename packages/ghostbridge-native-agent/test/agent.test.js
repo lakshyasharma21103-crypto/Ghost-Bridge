@@ -8,6 +8,12 @@ const { createGhostBridgeAgent } = require('../src');
 function fixtureAgent() {
   const agent = createGhostBridgeAgent({
     mode: 'localFixtureMode',
+    fixtureHttpPrincipal: {
+      subjectId: 'fixture:test-host',
+      authenticationMethod: 'explicit_local_fixture',
+      permittedOrganizationScopes: ['*'],
+      permittedWorkspaceScopes: ['*'],
+    },
     approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,
@@ -247,7 +253,7 @@ test('task cancellation aborts the executing capability handler', async () => {
     requestedReceiptProfile: 'standard',
   });
   while (!runningTaskId) await new Promise((resolve) => setImmediate(resolve));
-  agent.cancelTask(runningTaskId);
+  await agent.cancelTask(runningTaskId);
   await assert.rejects(pending, (error) => error.errorCode === 'TASK_CANCELLED');
   assert.equal(observedSignal.aborted, true);
   assert.equal(agent.getTask(runningTaskId).state, 'cancelled');

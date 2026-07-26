@@ -13,6 +13,12 @@ const {
 test('client discovers, negotiates, installs, and invokes a native agent', async (context) => {
   const agent = createGhostBridgeAgent({
     mode: 'localFixtureMode',
+    fixtureHttpPrincipal: {
+      subjectId: 'fixture:client-test-host',
+      authenticationMethod: 'explicit_local_fixture',
+      permittedOrganizationScopes: ['*'],
+      permittedWorkspaceScopes: ['*'],
+    },
     approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,
