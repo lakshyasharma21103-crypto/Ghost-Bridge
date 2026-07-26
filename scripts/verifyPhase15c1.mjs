@@ -3,10 +3,12 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { npmCommandForPlatform } from './lib/crossPlatformCommands.mjs';
 import { verifyPhase15c1Cleanup } from './lib/phase15c1Cleanup.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mode = process.argv[2];
+const npmCommand = npmCommandForPlatform();
 
 function run(command, args, cwd = root) {
   const result = spawnSync(command, args, {
@@ -86,6 +88,7 @@ function authenticatedScope() {
 }
 
 function packageIntegrity() {
+  nodeTest('scripts/test/verifyPhase15c1Portability.test.mjs');
   const manifests = fs
     .readdirSync(path.join(root, 'packages'), { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -95,7 +98,7 @@ function packageIntegrity() {
     assert.ok(manifest.name.startsWith('@ghostbridge/'));
     assert.ok(manifest.exports?.['.']?.types);
     assert.ok(manifest.exports?.['.']?.require);
-    run('npm.cmd', ['pack', '--dry-run', '--json'], path.dirname(manifestPath));
+    run(npmCommand, ['pack', '--dry-run', '--json'], path.dirname(manifestPath));
   }
 }
 

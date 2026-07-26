@@ -161,6 +161,8 @@ external-provider, migration, deployment, publication, or performance command wa
   one aggregate.
 - Two cleanup-verifier regressions prove the full cleanup check works with an empty tool
   `PATH` and that the Node scanner reports a planted uppercase-backend source reference.
+- A portability regression proves Phase 15C.1 package verification selects `npm.cmd` on
+  Windows and `npm` on Linux/macOS without bypassing any package dry-run.
 - One direct Trust regression signs a real document, flips a decoded signature byte, reaches
   `verifyDocument`, and requires `SIGNATURE_INVALID`.
 
@@ -191,6 +193,15 @@ external-provider, migration, deployment, publication, or performance command wa
 | `npm run verify:ghostbridge-phase-15c1a` (final integration-blocker pass) | PASS, 12.3 s |
 | `npm run verify:ghostbridge-phase-15c1a-r1` (final integration-blocker pass) | PASS, 8/8 groups, 9.1 s |
 | `npm run verify:phase-15c1a-r1-mongo-store-contract` | NOT RUN locally; requires the isolated replica-set member configured in CI |
+| `node --test scripts/test/verifyPhase15c1Portability.test.mjs` | PASS, Windows/Linux/macOS npm command selection, 0.7 s |
+| `npm run verify:ghostbridge-package-integrity` (portability correction) | PASS, all package dry-runs retained, 7.9 s |
+| `npm run verify:ghostbridge-phase-15c1` (portability correction) | PASS, 8/8 groups, 18.9 s |
+| `npm run verify:ghostbridge-phase-15c1a` (portability correction) | PASS, 12.7 s |
+| `npm run verify:ghostbridge-phase-15c1a-r1` (portability correction) | PASS, 8/8 groups, 9.1 s |
+| `npm run typecheck` (portability correction) | PASS, 28.3 s |
+| `npm run lint` (portability correction) | PASS, 25.7 s |
+| `npm test` (portability correction) | PASS, all workspaces, 0 failed/skipped, 19.2 s |
+| `npm run build` (portability correction) | PASS, 122 public pages, 30.2 s |
 | `node --test backend/src/tests/releaseReadiness.test.js` | PASS, 11/11 |
 | `npm run verify:phase-15b1-realignment` | PASS, 12/12 checks |
 | `node scripts/verifyGhostBridgeBlackBoxConformance.mjs --profile=core` | PASS, 17/17 |
@@ -225,7 +236,9 @@ Added:
 - `packages/ghostbridge-native-agent/fixtures/typescript/tsconfig.json`
 - `packages/ghostbridge-native-agent/src/fileProtocolStores.js`
 - `packages/ghostbridge-protocol-core/test/approvalAction15c1aR1.test.js`
+- `scripts/lib/crossPlatformCommands.mjs`
 - `scripts/lib/phase15c1Cleanup.mjs`
+- `scripts/test/verifyPhase15c1Portability.test.mjs`
 - `scripts/test/verifyPhase15c1Cleanup.test.mjs`
 - `scripts/verifyPhase15c1aR1.mjs`
 
@@ -337,23 +350,43 @@ contain implementation-produced safe errors. After the regression corrections, t
    verifier uses transactions to prove atomic grant redemption, atomic Approval Decision
    consumption, atomic terminal Task/Receipt persistence, rollback without partial state,
    and reconstruction reads. This command was not run locally because no isolated local
-   replica set was established, and no remote workflow was triggered.
+   replica set was established. The first remote workflow skipped this step after an earlier
+   Phase 15C.1 failure, so its transactional behavior remains unobserved.
 
 The first final `npm test` run found that Node 22 discovered and executed a compile-only
 TypeScript fixture placed under `test/`. The fixture was moved to `fixtures/typescript`,
 its dedicated TypeScript compilation still passes, and the complete `npm test` rerun passes
 with zero failures or skips.
 
+### First pull-request workflow failure
+
+The first GitHub Actions pull-request workflow ran both Node 20 and Node 22 jobs. MongoDB
+service initialization, isolated replica-set configuration, `npm ci`, typecheck, lint,
+tests, and build passed in both jobs. `Verify Phase 15C.1` then failed in both jobs before
+the later verification stages ran.
+
+The failing `packageIntegrity` verifier invoked the Windows-only executable `npm.cmd`
+unconditionally. Ubuntu could not start that executable. The verifier now selects
+`npm.cmd` only when `process.platform === "win32"` and selects `npm` on Linux/macOS. The
+package dry-run remains `npm pack --dry-run --json` for every public package. A mandatory
+regression verifies all three platform selections. An audit of the Phase 15C.1,
+Phase 15C.1A, R1, cleanup, and black-box verifier chain found no other unconditional
+`.cmd`, PowerShell, backslash-path, or Windows-only executable assumption.
+
 ## 20. Remote CI status
 
-**BLOCKED.** The workflow is prepared but no pull request was created or pushed, so no
-Ubuntu Node 20/22 plus MongoDB 7 workflow result has been observed.
+**FAILED / CORRECTION PENDING REMOTE RERUN.** The first pull-request workflow failed at
+`Verify Phase 15C.1` on both Node 20 and Node 22 because of the unconditional `npm.cmd`
+invocation. Every later verification step was skipped. In particular, Phase 15C.1A, R1,
+the Native Agent MongoDB store-contract verifier, the remaining database-backed checks, and
+package-integrity follow-up evidence were not observed in GitHub Actions.
 
 ## 21. Remaining blockers
 
 There is no known deterministic local code blocker. The remaining evidence blockers are:
 
-1. An observed successful pull-request workflow on Ubuntu for both Node matrix entries.
+1. An observed successful corrected pull-request workflow on Ubuntu for both Node matrix
+   entries.
 2. An observed successful isolated MongoDB 7 run of
    `verify:phase-15c1a-r1-mongo-store-contract` and the other database-backed verifiers.
    The verifier is implemented and CI-wired, but no run has been observed. The JSON
@@ -364,5 +397,6 @@ for isolated test evidence.
 
 ## 22. Final status
 
-**BLOCKED** - all R1 code and deterministic local gates pass, while mandatory remote
-Linux/MongoDB evidence remains unavailable.
+**BLOCKED** - the portability correction and all requested deterministic local gates pass,
+while the first remote Node 20/22 run failed before later verification, including the
+MongoDB store-contract stage. A successful corrected workflow remains required.
