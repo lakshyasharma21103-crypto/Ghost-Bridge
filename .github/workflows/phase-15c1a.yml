@@ -39,7 +39,7 @@ jobs:
           --health-retries 12
     env:
       NODE_ENV: development
-      MONGODB_URI: mongodb://127.0.0.1:27017
+      MONGODB_URI: mongodb://127.0.0.1:27018/?replicaSet=ghostbridge-rs&directConnection=true
       MONGODB_STORE_URI: mongodb://127.0.0.1:27018/?replicaSet=ghostbridge-rs&directConnection=true
       MONGODB_DB_NAME: ghost_bridge_ci_${{ github.run_id }}_${{ matrix.node-version }}
     steps:
