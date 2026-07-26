@@ -1347,7 +1347,7 @@ async function verify() {
     await connectDatabase();
     if (databaseStatus() !== 'connected') {
       throw new ExternalFlowVerificationError(
-        'MongoDB is unavailable. Configure Backend/.env before verification.',
+        'MongoDB is unavailable. Configure backend/.env before verification.',
       );
     }
 

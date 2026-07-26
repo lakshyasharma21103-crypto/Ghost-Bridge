@@ -12,8 +12,8 @@ const Invocation = require('../src/models/Invocation');
 const { hashKey } = require('../src/utils/crypto');
 
 const WORKSPACE_ID = 'workspace_developer_sandbox';
-const USER_ID = 'user_developer_sandbox';
 const TOPIC = 'remaining FIFA matches in the US';
+const MAX_TRANSIENT_POLICY_ATTEMPTS = 3;
 
 class SandboxVerificationError extends Error {}
 
@@ -47,29 +47,55 @@ function close(server) {
   return new Promise((resolve) => server.close(resolve));
 }
 
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function isRetryablePolicyRead(result, method) {
+  return (
+    ['GET', 'HEAD', 'OPTIONS'].includes(method) &&
+    result.body?.error?.code === 'AUTHORIZATION_DENIED' &&
+    result.body?.error?.reasonCode === 'POLICY_EVALUATION_ERROR'
+  );
+}
+
 async function request(baseUrl, path, options = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: options.method || 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...options.headers,
-    },
-    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-  });
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new SandboxVerificationError(`${options.label || path} returned unreadable JSON.`);
+  const method = options.method || 'GET';
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_POLICY_ATTEMPTS; attempt += 1) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        Accept: 'application/json',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    });
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      throw new SandboxVerificationError(`${options.label || path} returned unreadable JSON.`);
+    }
+    const result = { response, body };
+    if (!isRetryablePolicyRead(result, method) || attempt === MAX_TRANSIENT_POLICY_ATTEMPTS) {
+      return result;
+    }
+    console.warn(
+      `RETRY ${options.label || path}: transient policy evaluation failure (${attempt}/${MAX_TRANSIENT_POLICY_ATTEMPTS}).`,
+    );
+    await delay(250 * attempt);
   }
-  return { response, body };
+  throw new SandboxVerificationError(`${options.label || path} exhausted retry attempts.`);
 }
 
 function success(result, label) {
   if (!result.response.ok || result.body?.success !== true) {
     const code = result.body?.error?.code || `HTTP_${result.response.status}`;
-    throw new SandboxVerificationError(`${label} failed with ${code}.`);
+    const reason = result.body?.error?.reasonCode;
+    throw new SandboxVerificationError(
+      `${label} failed with ${code}${reason ? ` (${reason})` : ''}.`,
+    );
   }
   return result.body.data;
 }
@@ -103,9 +129,12 @@ async function verify() {
       'sandbox partner creation',
     );
     const storedPartner = await Partner.findById(sandbox.partner.id).lean();
+    const receivingUserId = `partner:${sandbox.partner.id}`;
     assert.equal(storedPartner.status, 'active');
     assert.equal(storedPartner.plan, 'developer');
     assert.equal(JSON.stringify(storedPartner).includes(sandbox.apiKey), false);
+    assert.equal(sandbox.workspace.externalWorkspaceId, WORKSPACE_ID);
+    assert.equal(sandbox.workspace.status, 'active');
     report('sandbox partner', 'created with a hashed Partner API key');
 
     const partnerAuthHeaders = { 'X-Partner-Api-Key': sandbox.apiKey };
@@ -169,10 +198,10 @@ async function verify() {
     const resolved = success(
       await request(baseUrl, '/passports/resolve', {
         method: 'POST',
+        headers: partnerAuthHeaders,
         body: {
           key: installKey.key,
           receivingWorkspaceId: WORKSPACE_ID,
-          receivingUserId: USER_ID,
         },
         label: 'sandbox key resolution',
       }),
@@ -188,7 +217,7 @@ async function verify() {
           capability: 'research_topic',
           input: { topic: TOPIC },
           receivingWorkspaceId: WORKSPACE_ID,
-          receivingUserId: USER_ID,
+          receivingUserId,
         },
         label: 'sandbox invocation',
       }),
@@ -201,10 +230,10 @@ async function verify() {
 
     const reused = await request(baseUrl, '/passports/resolve', {
       method: 'POST',
+      headers: partnerAuthHeaders,
       body: {
         key: installKey.key,
         receivingWorkspaceId: WORKSPACE_ID,
-        receivingUserId: USER_ID,
       },
       label: 'sandbox key reuse',
     });

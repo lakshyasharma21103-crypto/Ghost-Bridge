@@ -5,6 +5,7 @@ const AuditLog = require('../models/AuditLog');
 const Capability = require('../models/Capability');
 const Partner = require('../models/Partner');
 const PassportInstallKey = require('../models/PassportInstallKey');
+const Workspace = require('../models/Workspace');
 const { verifyKey, decryptPayload } = require('../utils/crypto');
 const { ErrorCodes } = require('../utils/errorCodes');
 const { validateAgentPassportV1 } = require('../services/passportValidator');
@@ -40,11 +41,16 @@ test('Developer Sandbox passport is a valid no_auth_dev REST passport with resea
 test('sandbox partner creation stores only an API key hash and returns the raw key once', async () => {
   const patches = [];
   let createdPartner;
+  let workspaceUpdate;
   const audits = [];
   patch(Partner, 'findOne', () => ({ lean: async () => null }), patches);
   patch(Partner, 'create', async (document) => {
     createdPartner = { _id: 'partner_sandbox_123', ...document };
     return createdPartner;
+  }, patches);
+  patch(Workspace, 'findOneAndUpdate', async (filter, update) => {
+    workspaceUpdate = { filter, update };
+    return { _id: 'workspace_sandbox_123', ...update.$set };
   }, patches);
   patch(AuditLog, 'create', async (payload) => {
     audits.push(payload);
@@ -59,6 +65,10 @@ test('sandbox partner creation stores only an API key hash and returns the raw k
 
     assert.equal(result.partner.status, 'active');
     assert.equal(result.partner.plan, 'developer');
+    assert.equal(result.workspace.externalWorkspaceId, 'workspace_developer_sandbox');
+    assert.equal(result.workspace.status, 'active');
+    assert.equal(workspaceUpdate.filter.partnerId, createdPartner._id);
+    assert.equal(workspaceUpdate.update.$set.organizationId, createdPartner._id);
     assert.equal(result.shownOnlyOnce, true);
     assert.equal(JSON.stringify(createdPartner).includes(result.apiKey), false);
     assert.equal(verifyKey(result.apiKey, createdPartner.apiKeyHash), true);

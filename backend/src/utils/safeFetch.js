@@ -15,6 +15,40 @@ const DEVELOPMENT_DEMO_RUNTIME_PATH = '/api/v1/demo/mock-agent/run';
 const EXTERNAL_AGENT_RUNTIME_PATH = '/v1/research/invoke';
 const EXTERNAL_AGENT_HEALTH_PATH = '/health';
 
+const blockedAddresses = new net.BlockList();
+for (const [network, prefix] of [
+  ['0.0.0.0', 8],
+  ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
+  ['127.0.0.0', 8],
+  ['169.254.0.0', 16],
+  ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
+  ['192.88.99.0', 24],
+  ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
+]) {
+  blockedAddresses.addSubnet(network, prefix, 'ipv4');
+}
+for (const [network, prefix] of [
+  ['::', 128],
+  ['::1', 128],
+  ['100::', 64],
+  ['2001:2::', 48],
+  ['2001:10::', 28],
+  ['2001:db8::', 32],
+  ['fc00::', 7],
+  ['fe80::', 10],
+  ['ff00::', 8],
+]) {
+  blockedAddresses.addSubnet(network, prefix, 'ipv6');
+}
+
 function detail(path, message, extra = {}) {
   return [{ path, message, ...extra }];
 }
@@ -39,37 +73,26 @@ function isBlockedIpv4(address) {
   ) {
     return true;
   }
-  const [a, b, c, d] = parts;
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    a >= 224 ||
-    address === '169.254.169.254' ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 192 && b === 0 && c === 0) ||
-    (a === 198 && (b === 18 || b === 19)) ||
-    (a === 255 && b === 255 && c === 255 && d === 255)
-  );
+  return blockedAddresses.check(address, 'ipv4');
 }
 
 function isBlockedIpv6(address) {
   const host = normalizeHostname(address);
-  return (
-    host === '::' ||
-    host === '::1' ||
-    host.startsWith('::ffff:127.') ||
-    host.startsWith('::ffff:10.') ||
-    host.startsWith('::ffff:192.168.') ||
-    host.startsWith('fc') ||
-    host.startsWith('fd') ||
-    host.startsWith('fe80') ||
-    host.startsWith('ff') ||
-    host.startsWith('0:')
-  );
+  const mapped = ipv4MappedAddress(host);
+  return mapped ? isBlockedIpv4(mapped) : blockedAddresses.check(host, 'ipv6');
+}
+
+function ipv4MappedAddress(address) {
+  const match = /^(?:::ffff:|(?:0:){5}ffff:)(.+)$/.exec(address);
+  if (!match) return undefined;
+  if (net.isIP(match[1]) === 4) return match[1];
+  const words = match[1].split(':');
+  if (words.length !== 2 || words.some((word) => !/^[0-9a-f]{1,4}$/i.test(word))) {
+    return undefined;
+  }
+  const high = Number.parseInt(words[0], 16);
+  const low = Number.parseInt(words[1], 16);
+  return `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`;
 }
 
 function isBlockedIp(address) {

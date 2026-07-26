@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const AgentPassport = require('../models/AgentPassport');
 const Partner = require('../models/Partner');
+const Workspace = require('../models/Workspace');
 const { env } = require('../config/env');
 const { AppError } = require('../utils/AppError');
 const { ErrorCodes } = require('../utils/errorCodes');
@@ -15,6 +16,11 @@ const DEFAULT_SANDBOX_PARTNER = {
 };
 
 const SANDBOX_PARTNER_AGENT_ID = 'developer_sandbox_research_test_agent';
+const SANDBOX_WORKSPACE = {
+  externalWorkspaceId: 'workspace_developer_sandbox',
+  name: 'Developer Sandbox Workspace',
+  slug: 'developer-sandbox',
+};
 const SANDBOX_KEY_TTL_MINUTES = 15;
 const SANDBOX_RUNTIME_GRANT_TTL_MINUTES = 30;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -67,6 +73,34 @@ function serializeSandboxPartner(partner) {
     plan: partner.plan,
     createdAt: partner.createdAt,
   };
+}
+
+function serializeSandboxWorkspace(workspace) {
+  return {
+    externalWorkspaceId: workspace.externalWorkspaceId,
+    name: workspace.name,
+    status: workspace.status,
+    environment: workspace.environment,
+  };
+}
+
+async function createOrRefreshSandboxWorkspace(partner) {
+  return Workspace.findOneAndUpdate(
+    {
+      partnerId: partner._id,
+      externalWorkspaceId: SANDBOX_WORKSPACE.externalWorkspaceId,
+    },
+    {
+      $set: {
+        ...SANDBOX_WORKSPACE,
+        organizationId: partner._id,
+        status: 'active',
+        environment: 'DEVELOPMENT',
+        productionApproved: false,
+      },
+    },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+  );
 }
 
 function buildDeveloperSandboxPassport() {
@@ -154,6 +188,7 @@ async function createSandboxPartner(input, requestId) {
     apiKeyHash: hashPartnerApiKey(apiKey),
     allowedOrigins: [],
   });
+  const workspace = await createOrRefreshSandboxWorkspace(partner);
   await createAuditLog(
     'system',
     'developer-sandbox',
@@ -166,6 +201,7 @@ async function createSandboxPartner(input, requestId) {
 
   return {
     partner: serializeSandboxPartner(partner),
+    workspace: serializeSandboxWorkspace(workspace),
     apiKey,
     shownOnlyOnce: true,
   };
@@ -266,11 +302,13 @@ async function seedDeveloperSandbox(requestId = 'seed_developer_sandbox') {
     partner.plan = 'developer';
     await partner.save();
   }
+  const workspace = await createOrRefreshSandboxWorkspace(partner);
   const passport = await createSandboxPassport(partner, idOf(partner), requestId);
 
   return {
     created,
     partner: serializeSandboxPartner(partner),
+    workspace: serializeSandboxWorkspace(workspace),
     passport,
     apiKey: createdPartner?.apiKey || null,
     runtimeEndpoint: developmentDemoRuntimeUrl(),
@@ -280,7 +318,9 @@ async function seedDeveloperSandbox(requestId = 'seed_developer_sandbox') {
 module.exports = {
   DEFAULT_SANDBOX_PARTNER,
   SANDBOX_PARTNER_AGENT_ID,
+  SANDBOX_WORKSPACE,
   buildDeveloperSandboxPassport,
+  createOrRefreshSandboxWorkspace,
   requireSandboxPartnerAccess,
   createSandboxPartner,
   createSandboxPassport,

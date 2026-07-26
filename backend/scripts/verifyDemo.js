@@ -19,7 +19,6 @@ const AuditLog = require('../src/models/AuditLog');
 const { hashKey } = require('../src/utils/crypto');
 
 const WORKSPACE_ID = 'workspace_flowai_demo';
-const USER_ID = 'user_flowai_demo';
 const TOPIC = 'remaining FIFA matches in the US';
 
 class DemoVerificationError extends Error {}
@@ -77,7 +76,10 @@ async function request(baseUrl, path, options = {}) {
 function success(result, label) {
   if (!result.response.ok || result.body?.success !== true) {
     const code = result.body?.error?.code || `HTTP_${result.response.status}`;
-    throw new DemoVerificationError(`${label} failed with ${code}.`);
+    const reason = result.body?.error?.reasonCode;
+    throw new DemoVerificationError(
+      `${label} failed with ${code}${reason ? ` (${reason})` : ''}.`,
+    );
   }
   return result.body.data;
 }
@@ -105,10 +107,13 @@ async function verify() {
   try {
     await listen(server, env.PORT);
     const baseUrl = `http://127.0.0.1:${env.PORT}/api/v1`;
-    const { partner, apiKey } = await createOrRefreshFlowAiDemoPartner();
+    const { partner, apiKey, workspace } = await createOrRefreshFlowAiDemoPartner();
     const partnerHeaders = { 'X-Partner-Api-Key': apiKey };
+    const receivingUserId = `partner:${partner._id}`;
     const storedPartner = await Partner.findById(partner._id).lean();
     assert.equal(JSON.stringify(storedPartner).includes(apiKey), false);
+    assert.equal(workspace.externalWorkspaceId, WORKSPACE_ID);
+    assert.equal(workspace.status, 'active');
     report('partner', 'FlowAI Demo partner is active and its API key is stored only as a hash');
 
     const passport = success(
@@ -152,10 +157,10 @@ async function verify() {
     const resolved = success(
       await request(baseUrl, '/passports/resolve', {
         method: 'POST',
+        headers: partnerHeaders,
         body: {
           key: issued.key,
           receivingWorkspaceId: WORKSPACE_ID,
-          receivingUserId: USER_ID,
         },
         label: 'install key resolution',
       }),
@@ -174,7 +179,7 @@ async function verify() {
           capability: 'research_topic',
           input: { topic: TOPIC },
           receivingWorkspaceId: WORKSPACE_ID,
-          receivingUserId: USER_ID,
+          receivingUserId,
         },
         label: 'runtime invocation',
       }),
@@ -184,7 +189,7 @@ async function verify() {
     assert.equal(invoked.output.summary, `Demo research result for ${TOPIC}`);
     report('invocation', 'REST adapter returned normalized mock research output');
 
-    const identity = { receivingWorkspaceId: WORKSPACE_ID, receivingUserId: USER_ID };
+    const identity = { receivingWorkspaceId: WORKSPACE_ID, receivingUserId };
     const invocationList = success(
       await request(baseUrl, `/invocations?${query(identity)}`, {
         headers: partnerHeaders,
@@ -303,10 +308,10 @@ async function verify() {
 
     const reused = await request(baseUrl, '/passports/resolve', {
       method: 'POST',
+      headers: partnerHeaders,
       body: {
         key: issued.key,
         receivingWorkspaceId: WORKSPACE_ID,
-        receivingUserId: USER_ID,
       },
       label: 'install key reuse',
     });

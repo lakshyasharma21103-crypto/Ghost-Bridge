@@ -62,6 +62,12 @@ function createLedgerWorksProvider() {
   const drafts = new Map();
   const agent = createGhostBridgeAgent({
     mode: 'localFixtureMode',
+    fixtureHttpPrincipal: {
+      subjectId: 'fixture:ledgerworks-host',
+      authenticationMethod: 'explicit_local_fixture',
+      permittedOrganizationScopes: ['*'],
+      permittedWorkspaceScopes: ['*'],
+    },
     approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,

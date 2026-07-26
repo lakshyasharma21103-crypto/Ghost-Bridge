@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   PROFILE_IDS,
+  approvalActionDigest,
   projectDataContract,
   validateReceipt,
 } = require('@ghostbridge/protocol-core');
@@ -169,6 +170,7 @@ async function main() {
       challengeId: first.approvalChallenge.challengeId,
       decisionId: 'decision_governed_draft',
       decision: 'approved',
+      approvalActionDigest: first.approvalChallenge.approvalActionDigest,
       approvedLimits: { maximumAmount: 100000, currency: 'USD' },
       decidedBy: 'finance_manager_001',
       decidedAt: new Date().toISOString(),
@@ -202,11 +204,26 @@ async function main() {
     assert.notEqual(reused.approvalChallenge.invocationId, invocationId);
     pass('approval cannot be reused');
 
+    const expiredAt = '2020-01-01T00:00:00.000Z';
     const expired = provider.agent.issueApprovalChallenge({
       invocationId: 'invocation_expired_approval',
       ...scope,
       actionKey: 'accounting.create_draft',
-      expiresAt: '2020-01-01T00:00:00.000Z',
+      approvalActionDigest: approvalActionDigest({
+        invocationId: 'invocation_expired_approval',
+        connectionId: connection.connectionId,
+        capabilityKey: 'accounting.create_draft',
+        capabilityVersion: '1',
+        organizationScope: scope.organizationScope,
+        workspaceScope: scope.workspaceScope,
+        inputContractReference: 'data:accounting.create_draft@1',
+        payload: {},
+        sideEffectCategory: 'reversible_write',
+        approvalLimits: {},
+        policyDecisionReference: 'policy:draft-default',
+        validityBoundary: expiredAt,
+      }),
+      expiresAt: expiredAt,
     });
     await assert.rejects(
       () =>
@@ -214,6 +231,7 @@ async function main() {
           challengeId: expired.challengeId,
           decisionId: 'decision_expired',
           decision: 'approved',
+          approvalActionDigest: expired.approvalActionDigest,
           approvedLimits: {},
           decidedBy: 'finance_manager_001',
           decidedAt: new Date().toISOString(),

@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { approvalActionDigest } = require('@ghostbridge/protocol-core');
 const { createInvoiceAgent, invoiceSummaryDataContract } = require('../protocol/examples/invoice-agent/src');
 const {
   GhostBridgeInspector,
@@ -73,17 +74,35 @@ async function main() {
     assert.equal(projected.projectedOutput.total, 21);
     pass('Data Contract preview');
 
+    const approvalExpiry = new Date(Date.now() + 300_000).toISOString();
+    const syntheticApprovalDigest = approvalActionDigest({
+      invocationId: 'invocation_approval_inspector',
+      connectionId: installed.connectionId,
+      capabilityKey: 'accounting.create_draft',
+      capabilityVersion: '1',
+      organizationScope: scope.organizationScope,
+      workspaceScope: scope.workspaceScope,
+      inputContractReference: 'data:inspector-approval@1',
+      payload: { maximumAmount: 100 },
+      sideEffectCategory: 'reversible_write',
+      approvalLimits: { maximumAmount: 100 },
+      policyDecisionReference: 'policy:draft-default',
+      validityBoundary: approvalExpiry,
+    });
     const challenge = agent.issueApprovalChallenge({
       invocationId: 'invocation_approval_inspector',
       organizationScope: scope.organizationScope,
       workspaceScope: scope.workspaceScope,
       actionKey: 'accounting.create_draft',
+      approvalActionDigest: syntheticApprovalDigest,
       approvalLimits: { maximumAmount: 100 },
+      expiresAt: approvalExpiry,
     });
     const decision = await inspector.submitApprovalDecision(challenge.challengeId, {
       challengeId: challenge.challengeId,
       decisionId: 'decision_inspector',
       decision: 'approved',
+      approvalActionDigest: challenge.approvalActionDigest,
       approvedLimits: { maximumAmount: 100 },
       decidedBy: 'approver_inspector',
       decidedAt: new Date().toISOString(),

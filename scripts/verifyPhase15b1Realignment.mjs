@@ -107,13 +107,13 @@ pass('normative profile and experimental coordination status');
 
 const migrationChanges = execFileSync(
   'git',
-  ['diff', '--name-only', '--', 'Backend/scripts/migrate*.js'],
+  ['diff', '--name-only', '--', 'backend/scripts/migrate*.js'],
   { cwd: root, encoding: 'utf8' },
 ).trim();
 assert.equal(migrationChanges, '');
 pass('historical migration files unchanged');
 
-const mcpAdapter = read('Backend/src/services/adapters/mcp.adapter.js');
+const mcpAdapter = read('backend/src/services/adapters/mcp.adapter.js');
 assert.match(mcpAdapter, /quarantin|disabled|MCP/i);
 assert.doesNotMatch(read('protocol/examples/flowdesk-host/src/index.js'), /codeforge|ledgerworks/i);
 assert.doesNotMatch(read('protocol/examples/governed-host-agent/opscanvas-host.js'), /ledgerworks|native-agent/i);

@@ -14,6 +14,145 @@ export interface SafeLogger {
   error(message: string, fields?: Record<string, unknown>): void;
 }
 
+export interface AuthenticatedHostPrincipal {
+  subjectType?: string;
+  subjectId: string;
+  authenticationMethod: string;
+  organizationScope?: string;
+  permittedOrganizationScopes?: string[];
+  workspaceScope?: string;
+  permittedWorkspaceScopes?: string[];
+  credentialReference?: string;
+}
+
+export interface AuthorizationRequest {
+  action: string;
+  capabilityKey: string;
+  organizationScope: string;
+  workspaceScope?: string;
+  connectionId?: string;
+  initiatingSubject?: string;
+  authenticatedPrincipal?: AuthenticatedHostPrincipal;
+}
+
+export interface SimplifiedAuthorizationDecision {
+  allowed: boolean;
+  code?: string;
+  safeMessage?: string;
+}
+
+export interface VerifiedAuthorizationDecision {
+  allowed: true;
+  principalId: string;
+  policyDecisionId: string;
+  evaluatedAt: string;
+  policyVersion: string;
+}
+
+export type AuthorizationDecision =
+  | boolean
+  | SimplifiedAuthorizationDecision
+  | VerifiedAuthorizationDecision;
+
+export type AuthorizationHandler = (
+  request: AuthorizationRequest,
+) => AuthorizationDecision | Promise<AuthorizationDecision>;
+
+export interface ProtocolStoreCapabilities {
+  readonly persistence: 'durable' | 'deterministic_local';
+  readonly productionEligible: boolean;
+  readonly atomicCompareAndSet: boolean;
+  readonly transactionalTerminalWrite: boolean;
+  readonly atomicInstallGrantRedemption: boolean;
+  readonly adapterName: string;
+  readonly adapterVersion: string;
+}
+
+export interface DurableProtocolStore<T = unknown> {
+  readonly capabilities: ProtocolStoreCapabilities;
+  get(key: string): Promise<T | undefined> | T | undefined;
+  put(key: string, value: T): Promise<void> | void;
+  delete(key: string): Promise<boolean> | boolean;
+  has(key: string): Promise<boolean> | boolean;
+  values(): Promise<T[]> | T[];
+  scan?(): Promise<T[]> | T[];
+  compareAndSet(
+    key: string,
+    expectedValue: T | undefined,
+    nextValue: T,
+  ): Promise<boolean> | boolean;
+}
+
+export type PromiseCompatibleTaskStore =
+  | DurableProtocolStore<ExecutionTask>
+  | Pick<Map<string, ExecutionTask>, 'get' | 'set'>;
+
+export interface DurableApprovalDecisionStore
+  extends DurableProtocolStore<Record<string, unknown>> {
+  putDecision(decision: Record<string, unknown>): unknown;
+  consumeApprovedDecision(
+    criteria: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | undefined> | Record<string, unknown> | undefined;
+}
+
+export interface TerminalTransactionStore {
+  readonly capabilities: ProtocolStoreCapabilities & {
+    readonly transactionalTerminalWrite: boolean;
+  };
+  commitTerminal(input: {
+    task: ExecutionTask;
+    receipt: ExecutionReceipt;
+    expectedTaskStates: string[];
+  }): Promise<{
+    committed: boolean;
+    idempotent?: boolean;
+    recoveryRequired?: boolean;
+    reasonCode?: string;
+    task?: ExecutionTask;
+    receipt?: ExecutionReceipt;
+  }>;
+  recoverTerminalWrites(): Promise<Array<Record<string, unknown>>>;
+}
+
+export interface InstallGrantTransactionStore {
+  readonly capabilities: ProtocolStoreCapabilities & {
+    readonly atomicInstallGrantRedemption: boolean;
+  };
+  redeemInstallGrant(input: {
+    keyHash: string;
+    now: string;
+    organizationScope: string;
+    workspaceScope?: string;
+    approvedCapabilityKeys: string[];
+    connection: Record<string, unknown> & {
+      connectionId: string;
+    };
+  }): Promise<{
+    grant: Record<string, unknown>;
+    connection: Record<string, unknown>;
+  }>;
+}
+
+export interface ProtocolStores {
+  installGrants: DurableProtocolStore;
+  connections: DurableProtocolStore;
+  tasks: DurableProtocolStore<ExecutionTask>;
+  taskContexts: DurableProtocolStore;
+  receipts: DurableProtocolStore;
+  approvals: DurableProtocolStore;
+  approvalDecisions: DurableApprovalDecisionStore;
+  idempotency: DurableProtocolStore;
+  replay: DurableProtocolStore;
+  revocation: DurableProtocolStore;
+  terminalTransactions: TerminalTransactionStore;
+  installGrantTransactions: InstallGrantTransactionStore;
+  close?(): Promise<void>;
+}
+
+export function createFileProtocolStores(options: {
+  directory: string;
+}): Readonly<ProtocolStores>;
+
 export interface CapabilityHandlerContext {
   organizationScope: string;
   workspaceScope?: string;
@@ -62,13 +201,8 @@ export interface CapabilityDefinition<TInput = Record<string, unknown>, TOutput 
 export interface GhostBridgeAgent {
   configurePassport(passport: AgentPassport): this;
   configureDiscovery(discovery: Record<string, unknown>): this;
-  configureAuthorization(
-    handler: (request: Record<string, unknown>) =>
-      | boolean
-      | { allowed: boolean; code?: string; safeMessage?: string }
-      | Promise<boolean | { allowed: boolean; code?: string; safeMessage?: string }>,
-  ): this;
-  configureTaskStore(store: Map<string, ExecutionTask>): this;
+  configureAuthorization(handler: AuthorizationHandler): this;
+  configureTaskStore(store: PromiseCompatibleTaskStore): this;
   configureApprovalHandler(handler: (...args: unknown[]) => unknown): this;
   configureReceiptIssuer(issuer: (...args: unknown[]) => unknown): this;
   configureRevocationResolver(resolver: (...args: unknown[]) => unknown): this;
@@ -93,8 +227,13 @@ export interface GhostBridgeAgent {
     ttlMs?: number;
     restrictions?: string[];
     allowedCapabilityKeys?: string[];
-  }): { key: string; expiresAt: string; grantReference: string };
-  resolveInstallGrant(key: string, scope: Record<string, string>): Record<string, unknown>;
+  }):
+    | { key: string; expiresAt: string; grantReference: string }
+    | Promise<{ key: string; expiresAt: string; grantReference: string }>;
+  resolveInstallGrant(
+    key: string,
+    scope: Record<string, string>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   resolveInstallGrantTrusted(key: string, scope: Record<string, string>): Promise<Record<string, unknown>>;
   redeemInstallGrant(
     key: string,
@@ -104,9 +243,11 @@ export interface GhostBridgeAgent {
       authenticationMode?: AuthenticationMode;
       approvedCapabilityKeys?: string[];
     },
-  ): Record<string, unknown>;
-  issueApprovalChallenge(input: Record<string, unknown>): Record<string, unknown>;
-  submitApprovalDecision(decision: Record<string, unknown>): Record<string, unknown>;
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  issueApprovalChallenge(
+    input: Record<string, unknown>,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  submitApprovalDecision(decision: Record<string, unknown>): Record<string, unknown> | Promise<Record<string, unknown>>;
   invoke(
     connectionId: string,
     envelope: InvocationEnvelope,
@@ -117,11 +258,18 @@ export interface GhostBridgeAgent {
     approvalChallenge?: Record<string, unknown>;
     idempotentReplay?: boolean;
   }>;
-  getTask(taskId: string): ExecutionTask;
-  cancelTask(taskId: string): ExecutionTask;
-  getReceipt(receiptId: string): ExecutionReceipt;
-  checkRevocation(subjectType: string, subjectReference: string): Record<string, unknown>;
-  revokeConnection(connectionId: string, reasonCode?: string): Record<string, unknown>;
+  getTask(taskId: string): ExecutionTask | Promise<ExecutionTask>;
+  cancelTask(taskId: string): Promise<ExecutionTask>;
+  getReceipt(receiptId: string): ExecutionReceipt | Promise<ExecutionReceipt>;
+  checkRevocation(
+    subjectType: string,
+    subjectReference: string,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  revokeConnection(
+    connectionId: string,
+    reasonCode?: string,
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
+  getConnectionCount(): number | Promise<number>;
   getMetrics(): Array<{ category: string; outcome: string; value: number }>;
   listen(options?: { port?: number; host?: string }): Promise<{
     baseUrl: string;
@@ -139,14 +287,30 @@ export function createGhostBridgeAgent(options: {
   publicBaseUrl?: string;
   approveAllFixtureCapabilities?: boolean;
   enableLegacyGrantPath?: boolean;
-  stores?: Record<string, Map<string, unknown>>;
+  stores?: Partial<ProtocolStores>;
+  taskStore?: PromiseCompatibleTaskStore;
   discovery?: Record<string, unknown>;
   authenticationModes?: AuthenticationMode[];
   authenticationSetupReference?: string;
   clock?: () => number;
-  authorization?: (...args: unknown[]) => unknown;
+  authorization?: AuthorizationHandler;
+  authorizationTimeoutMs?: number;
+  authenticateHttpRequest?: (input: {
+    request: unknown;
+    operation: string;
+    routeParameters: Record<string, unknown>;
+    headers: Readonly<Record<string, unknown>>;
+  }) => AuthenticatedHostPrincipal | Promise<AuthenticatedHostPrincipal>;
+  fixtureHttpPrincipal?: AuthenticatedHostPrincipal;
   approvalHandler?: (...args: unknown[]) => unknown;
   receiptIssuer?: (...args: unknown[]) => unknown;
+  receiptIssuerGuaranteesSigned?: boolean;
+  receiptVerificationJwks?: Record<string, unknown>;
+  receiptVerificationObserver?: (result: {
+    valid: false;
+    errorCode: string;
+    safeMessage: string;
+  }) => void;
   revocationResolver?: (...args: unknown[]) => unknown;
   logger?: Partial<SafeLogger>;
   metrics?: (metric: { category: string; outcome: string; value: number }) => void;

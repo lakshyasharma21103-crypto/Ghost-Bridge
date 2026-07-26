@@ -138,7 +138,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['inter_agent.contract.activated', 'inter_agent.invocation.succeeded', 'inter_agent.grant.revoked'],
       'inter-agent-delegation',
-      ['Backend/src/tests/interAgentDelegation.test.js'],
+      ['backend/src/tests/interAgentDelegation.test.js'],
       'Delegation is tenant/workspace scoped, non-transitive by default, and carries data authority rather than credentials.',
     ],
     [
@@ -148,7 +148,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['agent.selection.evaluated', 'agent.selection.completed'],
       'agent-selection',
-      ['Backend/src/tests/agentSelection.test.js'],
+      ['backend/src/tests/agentSelection.test.js'],
       'Compatibility is conservative for the documented JSON Schema subset; unsupported features produce uncertain results.',
     ],
     [
@@ -158,7 +158,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['authorization.decision'],
       'authorization',
-      ['Backend/src/tests/enterpriseIdentity.test.js'],
+      ['backend/src/tests/enterpriseIdentity.test.js'],
       'Authorization depends on correct tenant identity configuration.',
     ],
     [
@@ -168,7 +168,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['authorization.decision'],
       'authorization',
-      ['Backend/src/tests/enterpriseIdentity.test.js'],
+      ['backend/src/tests/enterpriseIdentity.test.js'],
       'Formal penetration testing remains required.',
     ],
     [
@@ -178,7 +178,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['authorization.decision', 'policy.activated'],
       'policy-engine',
-      ['Backend/src/tests/policyEngine.test.js'],
+      ['backend/src/tests/policyEngine.test.js'],
       'Policy mappings are implementation evidence, not certification.',
     ],
     [
@@ -188,7 +188,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['approval.decision.recorded'],
       'approval-governance',
-      ['Backend/src/tests/complianceGovernance.test.js'],
+      ['backend/src/tests/complianceGovernance.test.js'],
       'Applies when workflow requester exclusion is enabled.',
     ],
     [
@@ -198,7 +198,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['approval.decision.recorded'],
       'approval-governance',
-      ['Backend/src/tests/complianceGovernance.test.js'],
+      ['backend/src/tests/complianceGovernance.test.js'],
       'Stage configuration determines the required distinctness.',
     ],
     [
@@ -208,7 +208,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['secret.created', 'secret.version.activated'],
       'secret-governance',
-      ['Backend/src/tests/secretGovernance.test.js'],
+      ['backend/src/tests/secretGovernance.test.js'],
       'Requires operational key management review.',
     ],
     [
@@ -218,7 +218,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['secret.revoked', 'authorization.decision'],
       'credential-broker',
-      ['Backend/src/tests/secretGovernance.test.js'],
+      ['backend/src/tests/secretGovernance.test.js'],
       'Provider-side revocation timing is external.',
     ],
     [
@@ -228,7 +228,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['evidence.normalized'],
       'evidence',
-      ['Backend/src/tests/complianceGovernance.test.js'],
+      ['backend/src/tests/complianceGovernance.test.js'],
       'Legacy events with ambiguous tenant ownership are quarantined, not guessed.',
     ],
     [
@@ -238,7 +238,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['audit.integrity.verified'],
       'evidence',
-      ['Backend/src/tests/complianceGovernance.test.js'],
+      ['backend/src/tests/complianceGovernance.test.js'],
       'Hash chains are tamper-evident, not tamper-proof. External anchoring is not implemented.',
     ],
     [
@@ -248,7 +248,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['invocation.recovery.eligible'],
       'durable-worker',
-      ['Backend/src/tests/durableWork.test.js'],
+      ['backend/src/tests/durableWork.test.js'],
       'Multi-instance recovery requires deployment-specific validation.',
     ],
     [
@@ -258,7 +258,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['orchestration.node.succeeded', 'orchestration.run.succeeded'],
       'orchestration-control-plane',
-      ['Backend/src/tests/orchestration.test.js'],
+      ['backend/src/tests/orchestration.test.js'],
       'Phase 13D1 stores only schema-validated outputs selected for downstream mappings.',
     ],
     [
@@ -268,7 +268,7 @@ const CONTROL_CATALOG = Object.freeze(
       'IMPLEMENTED',
       ['orchestration.node.started', 'orchestration.node.retried'],
       'orchestration-worker',
-      ['Backend/src/tests/orchestration.test.js'],
+      ['backend/src/tests/orchestration.test.js'],
       'Compensation transactions are reserved for a later phase.',
     ],
   ].map(

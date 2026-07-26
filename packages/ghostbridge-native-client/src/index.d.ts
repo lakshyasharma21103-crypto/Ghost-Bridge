@@ -12,6 +12,39 @@ import type {
   RevocationStatus,
 } from '@ghostbridge/protocol-core';
 
+export interface NativeClientTransportSecurityProperties {
+  dnsRebindingResistant: boolean;
+  addressPinning: boolean;
+  redirects: 'rejected' | string;
+  tlsServerNameValidation: boolean | 'user-agent-managed';
+  streamingResponseLimit?: boolean;
+  implementation?: string;
+}
+
+export interface NativeClientTransportResponse {
+  status: number;
+  ok: boolean;
+  headers: { get(name: string): string | null };
+  text(): Promise<string>;
+}
+
+export interface NativeClientTransport {
+  readonly securityProperties: NativeClientTransportSecurityProperties;
+  request(
+    url: string,
+    options: {
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+      signal?: AbortSignal;
+      timeoutMs?: number;
+      maximumBytes?: number;
+      expectedContentTypes?: string[];
+      allowQuery?: boolean;
+    },
+  ): Promise<NativeClientTransportResponse>;
+}
+
 export interface GhostBridgeClientOptions {
   baseUrl?: string;
   localFixtureMode?: boolean;
@@ -43,6 +76,18 @@ export interface GhostBridgeClientOptions {
   extensions?: Array<Record<string, unknown>>;
   requiredProfiles?: string[];
   requiredGovernedFeatures?: { tasks?: boolean; receipts?: boolean };
+  transport?: NativeClientTransport;
+  transportHeaders?:
+    | Record<string, string>
+    | ((input: {
+        url: string;
+        method: string;
+      }) => Promise<Record<string, string>> | Record<string, string>);
+  serverMode?: boolean;
+  /**
+   * User-provided Fetch is explicitly not DNS-pinned. Trust-required
+   * production Node clients reject it unless serverMode is disabled.
+   */
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
   requestIdFactory?: () => string;
