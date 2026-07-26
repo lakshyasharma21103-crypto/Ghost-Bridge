@@ -328,6 +328,71 @@ test('authorization denies every non-authorizing and unavailable result shape', 
   }
 });
 
+test('development authorization evidence rejects simplified results and accepts a complete verified decision', async () => {
+  for (const [label, decision] of [
+    ['plain true', true],
+    ['allowed only', { allowed: true }],
+    ['incomplete evidence', {
+      allowed: true,
+      principalId: 'host_development',
+      policyDecisionId: 'policy_development',
+      evaluatedAt: new Date().toISOString(),
+    }],
+  ]) {
+    const fixture = fixtureSecurityAgent({
+      mode: 'developmentMode',
+      authorization: () => decision,
+    });
+    const scope = {
+      organizationScope: `org_development_${label.replaceAll(' ', '_')}`,
+    };
+    const grant = fixture.agent.issueInstallGrant({
+      ...scope,
+      allowedCapabilityKeys: [CAPABILITY_KEY],
+    });
+    const connection = fixture.agent.redeemInstallGrant(grant.key, {
+      ...scope,
+      approvedCapabilityKeys: [CAPABILITY_KEY],
+    });
+    await assert.rejects(
+      () => fixture.agent.invoke(connection.connectionId, invocation(connection)),
+      (error) => {
+        assert.equal(error.errorCode, 'AUTHORIZATION_DENIED', label);
+        return true;
+      },
+    );
+    assert.equal(fixture.handlerCalls(), 0, label);
+  }
+
+  const verified = fixtureSecurityAgent({
+    mode: 'developmentMode',
+    authorization: () => ({
+      allowed: true,
+      principalId: 'host_development',
+      policyDecisionId: 'policy_development_verified',
+      evaluatedAt: new Date().toISOString(),
+      policyVersion: '2026-07-26',
+    }),
+  });
+  const scope = { organizationScope: 'org_development_verified' };
+  const grant = verified.agent.issueInstallGrant({
+    ...scope,
+    allowedCapabilityKeys: [CAPABILITY_KEY],
+  });
+  const connection = verified.agent.redeemInstallGrant(grant.key, {
+    ...scope,
+    approvedCapabilityKeys: [CAPABILITY_KEY],
+  });
+  assert.equal(
+    (await verified.agent.invoke(
+      connection.connectionId,
+      invocation(connection),
+    )).task.state,
+    'completed',
+  );
+  assert.equal(verified.handlerCalls(), 1);
+});
+
 function createStores(directory) {
   return createFileProtocolStores({
     directory:
@@ -336,7 +401,7 @@ function createStores(directory) {
   });
 }
 
-function createProductionContractStores() {
+function createProductionContractStores(options = {}) {
   const collectionNames = [
     'installGrants',
     'connections',
@@ -492,12 +557,25 @@ function createProductionContractStores() {
       atomicInstallGrantRedemption: true,
     }),
     redeemInstallGrant: (input) =>
-      exclusive(() =>
-        applyAtomicInstallGrantRedemption(
+      exclusive(() => {
+        const result = applyAtomicInstallGrantRedemption(
           state.installGrants,
           state.connections,
           input,
-        )),
+        );
+        if (typeof options.mutateInstallGrantRedemption !== 'function') {
+          return result;
+        }
+        const altered =
+          options.mutateInstallGrantRedemption(clone(result), clone(input)) ||
+          result;
+        state.installGrants.set(input.keyHash, clone(altered.grant));
+        state.connections.set(
+          input.connection.connectionId,
+          clone(altered.connection),
+        );
+        return altered;
+      }),
   };
   stores.close = async () => {
     await queue;
@@ -1648,6 +1726,112 @@ test('R1 production redemption uses one atomic transaction and rejects the concu
     succeeded[0].value.connectionId,
     connections[0].connectionId,
   );
+});
+
+test('R1 production redemption rejects malicious adapter changes to every security-critical result binding', async () => {
+  const issuer = await createSyntheticIssuer({
+    issuerId: 'https://issuer.example',
+  });
+  const maliciousChanges = [
+    ['Connection agent ID', (result) => {
+      result.connection.agentId = 'agent_attacker';
+    }],
+    ['Connection Passport version', (result) => {
+      result.connection.passportVersion = 'attacker-version';
+    }],
+    ['Connection authentication mode', (result) => {
+      result.connection.authenticationMode = 'oauth';
+    }],
+    ['Connection authentication state', (result) => {
+      result.connection.authenticationState = 'attacker_verified';
+    }],
+    ['Connection authentication binding', (result) => {
+      result.connection.authenticationBindingReference = 'binding_attacker';
+    }],
+    ['Connection Host audience', (result) => {
+      result.connection.hostAudience = 'attacker-audience';
+    }],
+    ['Connection creation time', (result) => {
+      result.connection.createdAt = new Date(Date.now() + 60_000).toISOString();
+    }],
+    ['Connection revocation reference', (result) => {
+      result.connection.revocationReference = 'revocations/connection/attacker';
+    }],
+    ['Connection enabled capabilities', (result) => {
+      result.connection.enabledCapabilityKeys = ['attacker.capability'];
+    }],
+    ['Connection disabled capabilities', (result) => {
+      result.connection.disabledCapabilityKeys = [CAPABILITY_KEY];
+    }],
+    ['Connection organization', (result) => {
+      result.connection.organizationScope = 'org_attacker';
+    }],
+    ['Connection workspace', (result) => {
+      result.connection.workspaceScope = 'workspace_attacker';
+    }],
+    ['grant identifier', (result) => {
+      result.grant.grantId = 'grant_attacker';
+    }],
+    ['grant issuer', (result) => {
+      result.grant.issuer = 'https://attacker.example';
+    }],
+    ['grant Agent ID', (result) => {
+      result.grant.agentId = 'agent_attacker';
+    }],
+    ['grant organization', (result) => {
+      result.grant.organizationScope = 'org_attacker';
+    }],
+    ['grant workspace', (result) => {
+      result.grant.workspaceScope = 'workspace_attacker';
+    }],
+    ['grant expiry', (result) => {
+      result.grant.expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    }],
+    ['grant allowed capabilities', (result) => {
+      result.grant.allowedCapabilityKeys = [
+        CAPABILITY_KEY,
+        'attacker.capability',
+      ];
+    }],
+    ['grant redemption time', (result) => {
+      result.grant.redeemedAt = new Date(Date.now() + 60_000).toISOString();
+    }],
+    ['grant Connection reference', (result) => {
+      result.grant.connectionId = 'connection_attacker';
+    }],
+  ];
+
+  for (const [label, change] of maliciousChanges) {
+    const stores = createProductionContractStores({
+      mutateInstallGrantRedemption(result) {
+        change(result);
+        return result;
+      },
+    });
+    const fixture = await createProductionFixture({
+      issuer,
+      stores,
+      skipInstall: true,
+    });
+    const grant = await fixture.agent.issueInstallGrant({
+      organizationScope: 'org_security',
+      workspaceScope: 'workspace_security',
+      allowedCapabilityKeys: [CAPABILITY_KEY],
+    });
+    await assert.rejects(
+      () =>
+        fixture.agent.redeemInstallGrant(grant.key, {
+          organizationScope: 'org_security',
+          workspaceScope: 'workspace_security',
+          approvedCapabilityKeys: [CAPABILITY_KEY],
+          hostAudience: 'host-security-audience',
+        }),
+      (error) => {
+        assert.equal(error.errorCode, 'INSTALL_GRANT_INVALID', label);
+        return true;
+      },
+    );
+  }
 });
 
 test('R1 production rejects a metadata-decorated Map wrapper', async () => {

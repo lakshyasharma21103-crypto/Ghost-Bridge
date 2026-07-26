@@ -31,6 +31,7 @@ jobs:
         image: mongo:7
         ports:
           - 27017:27017
+          - 27018:27018
         options: >-
           --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
           --health-interval 10s
@@ -39,6 +40,7 @@ jobs:
     env:
       NODE_ENV: development
       MONGODB_URI: mongodb://127.0.0.1:27017
+      MONGODB_STORE_URI: mongodb://127.0.0.1:27018/?replicaSet=ghostbridge-rs&directConnection=true
       MONGODB_DB_NAME: ghost_bridge_ci_${{ github.run_id }}_${{ matrix.node-version }}
     steps:
       - name: Check out repository
@@ -49,6 +51,37 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+
+      - name: Configure isolated MongoDB transaction member
+        shell: bash
+        run: |
+          container_id="$(docker ps --filter ancestor=mongo:7 --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          docker exec "$container_id" mkdir -p /data/ghostbridge-rs
+          docker exec "$container_id" mongod \
+            --replSet ghostbridge-rs \
+            --port 27018 \
+            --bind_ip_all \
+            --dbpath /data/ghostbridge-rs \
+            --logpath /tmp/ghostbridge-rs.log \
+            --fork
+          for attempt in {1..30}; do
+            if docker exec "$container_id" mongosh --quiet --port 27018 \
+              --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec "$container_id" mongosh --quiet --port 27018 \
+            --eval 'rs.initiate({ _id: "ghostbridge-rs", members: [{ _id: 0, host: "127.0.0.1:27018" }] })'
+          for attempt in {1..30}; do
+            if docker exec "$container_id" mongosh --quiet --port 27018 \
+              --eval 'db.hello().isWritablePrimary' | grep -q true; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
 
       - name: Install locked dependencies
         run: npm ci
@@ -73,6 +106,9 @@ jobs:
 
       - name: Verify Phase 15C.1A-R1
         run: npm run verify:ghostbridge-phase-15c1a-r1
+
+      - name: Verify Native Agent MongoDB store contract
+        run: npm run verify:phase-15c1a-r1-mongo-store-contract
 
       - name: Verify database-backed deterministic fixtures
         run: |

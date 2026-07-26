@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "node --check src/index.js",
-    "typecheck": "node --check src/index.js",
+    "typecheck": "node --check src/index.js && tsc -p fixtures/typescript/tsconfig.json --noEmit",
     "lint": "node --check src/index.js",
     "test": "node --test"
   },

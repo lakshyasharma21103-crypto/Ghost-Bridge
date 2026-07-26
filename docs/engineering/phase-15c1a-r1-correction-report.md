@@ -76,13 +76,15 @@ transaction support, atomic Install Grant redemption, adapter name, and adapter 
 boolean `durable` claim is not sufficient. Direct Maps, obvious Map wrappers, test/fake/
 memory identities, and the local JSON adapter are rejected in production.
 
-Production redemption now invokes one `installGrantTransactions.redeemInstallGrant`
-operation without a prior grant read. The store operation must atomically verify active
-status, expiry, exact scope, and capability selection; mark the grant redeemed; create
-exactly one Connection; and store the Connection reference. The runtime validates and reads
-back the returned grant/Connection pair and fails closed on malformed or unavailable
-transaction results. A concurrent loser receives
-`INSTALL_GRANT_ALREADY_REDEEMED`.
+Production redemption now obtains a trusted immutable grant snapshot for result binding,
+then invokes one `installGrantTransactions.redeemInstallGrant` consumption operation. The
+snapshot is not treated as the atomic consumption decision: the store operation must still
+atomically reverify active status, expiry, exact scope, and capability selection; mark the
+grant redeemed; create exactly one Connection; and store the Connection reference. The
+runtime constructs the complete expected Connection, compares the entire returned grant
+against the trusted snapshot plus the exact redemption transition, validates durable
+readback, and fails closed on malformed or unavailable transaction results. A concurrent
+loser receives `INSTALL_GRANT_ALREADY_REDEEMED`.
 
 The filesystem adapter remains useful for deterministic get/put/delete/has/values/scan,
 restart, Approval Decision, terminal-pair, and grant-redemption contract tests. Its
@@ -134,8 +136,10 @@ read` and concurrency cancellation, sets a 45-minute job timeout, and keeps Ubun
 Node 20/22, and MongoDB 7. Checkout and setup-node are pinned to full commit SHAs. The
 workflow runs the R1 aggregate in addition to the existing typecheck, lint, tests, build,
 Phase 15C.1, Phase 15C.1A, database, casing, package-integrity, and package dry-run gates.
-No manual, external-provider, migration, deployment, publication, or performance command
-was added.
+It now also starts an isolated replica-set member inside the MongoDB service container and
+explicitly runs `npm run verify:phase-15c1a-r1-mongo-store-contract`. That verifier exercises
+the Native Agent production store contract with MongoDB transactions. No manual,
+external-provider, migration, deployment, publication, or performance command was added.
 
 ## 13. Tests added
 
@@ -144,6 +148,14 @@ was added.
 - Native Agent R1 tests covering action binding, terminal consistency, local persistence/
   restart, production adapter rejection, verified authorization evidence, atomic Install
   Grant redemption, and Connection revocation.
+- Development-mode authorization tests proving simplified positive results fail while a
+  complete verified decision succeeds.
+- A TypeScript compilation fixture covering full production authorization evidence and a
+  Promise-compatible protocol Task store.
+- A 21-case malicious redemption-adapter matrix covering the complete returned grant and
+  Connection security binding.
+- An isolated MongoDB production-store verifier covering one-time redemption, single-use
+  approval consumption, terminal Task/Receipt commit, rollback, and reconstruction.
 - Governed and core black-box conformance assertions for actual implementation errors.
 - Eight focused R1 verifier groups, including the production authorization boundary, plus
   one aggregate.
@@ -170,6 +182,15 @@ was added.
 | `npm run verify:ghostbridge-phase-15c1` | PASS, 8/8 groups, final production-correction rerun 18.7 s |
 | `npm run verify:ghostbridge-phase-15c1a` | PASS, final production-correction rerun 12.3 s |
 | `npm run verify:ghostbridge-phase-15c1a-r1` | PASS, 8/8 groups, final production-correction rerun 8.7 s |
+| `npm run typecheck` (final tree rerun) | PASS, including the relocated production TypeScript fixture, 27.9 s |
+| `npm run lint` (final integration-blocker pass) | PASS, 35.4 s |
+| `npm test` (first integration-blocker pass) | FAIL: Node 22 test discovery executed the compile-only `.ts` fixture under `test/`; all 28 Native Agent behavioral tests passed |
+| `npm test` (after moving the fixture outside test discovery) | PASS, all workspaces, 0 failed/skipped, 26.5 s |
+| `npm run build` (final integration-blocker pass) | PASS, 122 public pages, 32.6 s |
+| `npm run verify:ghostbridge-phase-15c1` (final integration-blocker pass) | PASS, 8/8 groups, 19.5 s |
+| `npm run verify:ghostbridge-phase-15c1a` (final integration-blocker pass) | PASS, 12.3 s |
+| `npm run verify:ghostbridge-phase-15c1a-r1` (final integration-blocker pass) | PASS, 8/8 groups, 9.1 s |
+| `npm run verify:phase-15c1a-r1-mongo-store-contract` | NOT RUN locally; requires the isolated replica-set member configured in CI |
 | `node --test backend/src/tests/releaseReadiness.test.js` | PASS, 11/11 |
 | `npm run verify:phase-15b1-realignment` | PASS, 12/12 checks |
 | `node scripts/verifyGhostBridgeBlackBoxConformance.mjs --profile=core` | PASS, 17/17 |
@@ -195,10 +216,13 @@ No commit, push, merge, or Phase 15C.2 work occurred.
 
 Added:
 
+- `backend/scripts/verifyPhase15c1aR1MongoStoreContract.js`
 - `docs/engineering/phase-15c1a-r1-audit-baseline.md`
 - `docs/engineering/phase-15c1a-r1-correction-report.md`
 - `docs/engineering/phase-15c1a-r1-residual-inventory.md`
 - `frontend/tests/phase15c1aR1InstallationAuth.test.mjs`
+- `packages/ghostbridge-native-agent/fixtures/typescript/production-configuration.ts`
+- `packages/ghostbridge-native-agent/fixtures/typescript/tsconfig.json`
 - `packages/ghostbridge-native-agent/src/fileProtocolStores.js`
 - `packages/ghostbridge-protocol-core/test/approvalAction15c1aR1.test.js`
 - `scripts/lib/phase15c1Cleanup.mjs`
@@ -219,6 +243,7 @@ Modified:
 - `frontend/src/api/apiClient.js`
 - `frontend/src/pages/ResolvePassportKey.jsx`
 - `package.json`
+- `packages/ghostbridge-native-agent/package.json`
 - `packages/ghostbridge-native-agent/src/index.d.ts`
 - `packages/ghostbridge-native-agent/src/index.js`
 - `packages/ghostbridge-native-agent/test/security15c1a.test.js`
@@ -293,6 +318,28 @@ pass, all eight R1 groups pass, package dry-runs pass, and core/governed conform
 contain implementation-produced safe errors. After the regression corrections, the Phase
 15C.1, Phase 15C.1A, and Phase 15C.1A-R1 aggregates all exited zero.
 
+### Final integration-blocker correction pass
+
+1. `developmentMode` now follows the verified-decision boundary used by production:
+   simplified `true` and `{ allowed: true }` results remain fixture-only, while complete
+   principal/policy/timestamp/version evidence succeeds in development and production.
+2. Public declarations now expose the complete verified authorization decision and accept
+   either the Promise-compatible durable protocol Task store or the supported local Map
+   shape. The production compilation fixture is executed by the Native Agent typecheck.
+3. Atomic redemption now binds the complete returned grant and Connection to the trusted
+   grant snapshot and submitted candidate. Twenty-one self-consistent malicious adapter
+   mutations all fail closed with `INSTALL_GRANT_INVALID`.
+4. The root MongoDB store-contract command and explicit GitHub Actions step now exist. The
+   verifier uses transactions to prove atomic grant redemption, atomic Approval Decision
+   consumption, atomic terminal Task/Receipt persistence, rollback without partial state,
+   and reconstruction reads. This command was not run locally because no isolated local
+   replica set was established, and no remote workflow was triggered.
+
+The first final `npm test` run found that Node 22 discovered and executed a compile-only
+TypeScript fixture placed under `test/`. The fixture was moved to `fixtures/typescript`,
+its dedicated TypeScript compilation still passes, and the complete `npm test` rerun passes
+with zero failures or skips.
+
 ## 20. Remote CI status
 
 **BLOCKED.** The workflow is prepared but no pull request was created or pushed, so no
@@ -303,9 +350,10 @@ Ubuntu Node 20/22 plus MongoDB 7 workflow result has been observed.
 There is no known deterministic local code blocker. The remaining evidence blockers are:
 
 1. An observed successful pull-request workflow on Ubuntu for both Node matrix entries.
-2. An observed successful isolated MongoDB 7 run of the database-backed verifiers,
-   including genuinely transactional production-store evidence. The JSON filesystem
-   adapter cannot satisfy this gate.
+2. An observed successful isolated MongoDB 7 run of
+   `verify:phase-15c1a-r1-mongo-store-contract` and the other database-backed verifiers.
+   The verifier is implemented and CI-wired, but no run has been observed. The JSON
+   filesystem adapter cannot satisfy this gate.
 
 The configured live external MongoDB connection was intentionally not used as a substitute
 for isolated test evidence.

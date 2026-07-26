@@ -25,6 +25,39 @@ export interface AuthenticatedHostPrincipal {
   credentialReference?: string;
 }
 
+export interface AuthorizationRequest {
+  action: string;
+  capabilityKey: string;
+  organizationScope: string;
+  workspaceScope?: string;
+  connectionId?: string;
+  initiatingSubject?: string;
+  authenticatedPrincipal?: AuthenticatedHostPrincipal;
+}
+
+export interface SimplifiedAuthorizationDecision {
+  allowed: boolean;
+  code?: string;
+  safeMessage?: string;
+}
+
+export interface VerifiedAuthorizationDecision {
+  allowed: true;
+  principalId: string;
+  policyDecisionId: string;
+  evaluatedAt: string;
+  policyVersion: string;
+}
+
+export type AuthorizationDecision =
+  | boolean
+  | SimplifiedAuthorizationDecision
+  | VerifiedAuthorizationDecision;
+
+export type AuthorizationHandler = (
+  request: AuthorizationRequest,
+) => AuthorizationDecision | Promise<AuthorizationDecision>;
+
 export interface ProtocolStoreCapabilities {
   readonly persistence: 'durable' | 'deterministic_local';
   readonly productionEligible: boolean;
@@ -49,6 +82,10 @@ export interface DurableProtocolStore<T = unknown> {
     nextValue: T,
   ): Promise<boolean> | boolean;
 }
+
+export type PromiseCompatibleTaskStore =
+  | DurableProtocolStore<ExecutionTask>
+  | Pick<Map<string, ExecutionTask>, 'get' | 'set'>;
 
 export interface DurableApprovalDecisionStore
   extends DurableProtocolStore<Record<string, unknown>> {
@@ -99,7 +136,7 @@ export interface InstallGrantTransactionStore {
 export interface ProtocolStores {
   installGrants: DurableProtocolStore;
   connections: DurableProtocolStore;
-  tasks: DurableProtocolStore;
+  tasks: DurableProtocolStore<ExecutionTask>;
   taskContexts: DurableProtocolStore;
   receipts: DurableProtocolStore;
   approvals: DurableProtocolStore;
@@ -164,13 +201,8 @@ export interface CapabilityDefinition<TInput = Record<string, unknown>, TOutput 
 export interface GhostBridgeAgent {
   configurePassport(passport: AgentPassport): this;
   configureDiscovery(discovery: Record<string, unknown>): this;
-  configureAuthorization(
-    handler: (request: Record<string, unknown>) =>
-      | boolean
-      | { allowed: boolean; code?: string; safeMessage?: string }
-      | Promise<boolean | { allowed: boolean; code?: string; safeMessage?: string }>,
-  ): this;
-  configureTaskStore(store: Map<string, ExecutionTask>): this;
+  configureAuthorization(handler: AuthorizationHandler): this;
+  configureTaskStore(store: PromiseCompatibleTaskStore): this;
   configureApprovalHandler(handler: (...args: unknown[]) => unknown): this;
   configureReceiptIssuer(issuer: (...args: unknown[]) => unknown): this;
   configureRevocationResolver(resolver: (...args: unknown[]) => unknown): this;
@@ -256,11 +288,12 @@ export function createGhostBridgeAgent(options: {
   approveAllFixtureCapabilities?: boolean;
   enableLegacyGrantPath?: boolean;
   stores?: Partial<ProtocolStores>;
+  taskStore?: PromiseCompatibleTaskStore;
   discovery?: Record<string, unknown>;
   authenticationModes?: AuthenticationMode[];
   authenticationSetupReference?: string;
   clock?: () => number;
-  authorization?: (...args: unknown[]) => unknown;
+  authorization?: AuthorizationHandler;
   authorizationTimeoutMs?: number;
   authenticateHttpRequest?: (input: {
     request: unknown;

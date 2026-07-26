@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const http = require('node:http');
+const { isDeepStrictEqual } = require('node:util');
 const {
   AUTHENTICATION_MODES,
   DEFAULT_LIMITS,
@@ -252,9 +253,9 @@ function createGhostBridgeAgent(options = {}) {
       } else if (
         !value ||
         typeof value.get !== 'function' ||
-        typeof value.set !== 'function'
+        (typeof value.put !== 'function' && typeof value.set !== 'function')
       ) {
-        throw new TypeError('Task store must implement get() and set().');
+        throw new TypeError('Task store must implement get() and put() or set().');
       }
       taskStore = value;
       return agent;
@@ -1319,7 +1320,12 @@ function createGhostBridgeAgent(options = {}) {
     ) {
       return;
     }
-    if (productionMode && isVerifiedAuthorizationDecision(decision)) return;
+    if (
+      mode !== 'localFixtureMode' &&
+      isVerifiedAuthorizationDecision(decision)
+    ) {
+      return;
+    }
     throw protocolError(
       'AUTHORIZATION_DENIED',
       'The capability is not authorized in this scope.',
@@ -1695,12 +1701,50 @@ function createGhostBridgeAgent(options = {}) {
     }
 
     const keyHash = digest({ key });
+    let trustedGrant;
+    try {
+      trustedGrant = await storeGet(installGrants, keyHash);
+    } catch {
+      throw protocolError(
+        'INSTALL_GRANT_INVALID',
+        'The Install Grant trusted context was unavailable.',
+      );
+    }
+    if (
+      !trustedGrant ||
+      trustedGrant.keyHash !== keyHash ||
+      trustedGrant.issuer !== passport.issuer ||
+      trustedGrant.agentId !== passport.agentId ||
+      !Array.isArray(trustedGrant.allowedCapabilityKeys)
+    ) {
+      throw protocolError(
+        'INSTALL_GRANT_INVALID',
+        'The Install Grant trusted context is invalid.',
+      );
+    }
+    assertGrantScope(trustedGrant, scope, clock);
+    const uniqueEnabledCapabilityKeys = [...new Set(enabledCapabilityKeys)];
+    if (
+      uniqueEnabledCapabilityKeys.some(
+        (capabilityKey) =>
+          !trustedGrant.allowedCapabilityKeys.includes(capabilityKey),
+      )
+    ) {
+      throw protocolError(
+        'AUTHORIZATION_DENIED',
+        'The requested capability enablement is not authorized by the Install Grant.',
+      );
+    }
     const connectionId = `connection_${crypto.randomUUID()}`;
     const now = new Date(clock()).toISOString();
     const connectionCandidate = {
       connectionId,
       agentId: passport.agentId,
       passportVersion: passport.passportVersion,
+      organizationScope: trustedGrant.organizationScope,
+      ...(trustedGrant.workspaceScope
+        ? { workspaceScope: trustedGrant.workspaceScope }
+        : {}),
       status: 'active',
       authenticationMode: selectedAuthenticationMode,
       authenticationState:
@@ -1714,7 +1758,14 @@ function createGhostBridgeAgent(options = {}) {
               scope.authenticationBinding.transportBindingReference,
           }
         : {}),
-      hostAudience: scope.hostAudience || options.hostAudience,
+      ...(scope.hostAudience || options.hostAudience
+        ? { hostAudience: scope.hostAudience || options.hostAudience }
+        : {}),
+      enabledCapabilityKeys: uniqueEnabledCapabilityKeys,
+      disabledCapabilityKeys: trustedGrant.allowedCapabilityKeys.filter(
+        (capabilityKey) =>
+          !uniqueEnabledCapabilityKeys.includes(capabilityKey),
+      ),
       createdAt: now,
       revocationReference: `revocations/connection/${connectionId}`,
     };
@@ -1728,7 +1779,7 @@ function createGhostBridgeAgent(options = {}) {
         ...(scope.workspaceScope
           ? { workspaceScope: scope.workspaceScope }
           : {}),
-        approvedCapabilityKeys: [...new Set(enabledCapabilityKeys)],
+        approvedCapabilityKeys: uniqueEnabledCapabilityKeys,
         connection: connectionCandidate,
       });
     } catch (error) {
@@ -1756,19 +1807,17 @@ function createGhostBridgeAgent(options = {}) {
 
     const transactionGrant = result?.grant;
     const connection = result?.connection;
+    const expectedTransactionGrant = {
+      ...trustedGrant,
+      status: 'redeemed',
+      redeemedAt: now,
+      connectionId,
+    };
     if (
       !transactionGrant ||
       !connection ||
-      transactionGrant.keyHash !== keyHash ||
-      transactionGrant.status !== 'redeemed' ||
-      transactionGrant.connectionId !== connectionId ||
-      connection.connectionId !== connectionId ||
-      connection.status !== 'active' ||
-      connection.organizationScope !== scope.organizationScope ||
-      (connection.workspaceScope || undefined) !==
-        (scope.workspaceScope || undefined) ||
-      boundedSerialize(connection.enabledCapabilityKeys) !==
-        boundedSerialize([...new Set(enabledCapabilityKeys)])
+      !isDeepStrictEqual(transactionGrant, expectedTransactionGrant) ||
+      !isDeepStrictEqual(connection, connectionCandidate)
     ) {
       throw protocolError(
         'INSTALL_GRANT_INVALID',

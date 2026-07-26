@@ -98,6 +98,7 @@
     "verify:phase-15c1a-r1-revocation": "node scripts/verifyPhase15c1aR1.mjs revocation",
     "verify:phase-15c1a-r1-conformance": "node scripts/verifyPhase15c1aR1.mjs conformance",
     "verify:phase-15c1a-r1-ci-contract": "node scripts/verifyPhase15c1aR1.mjs ci-contract",
+    "verify:phase-15c1a-r1-mongo-store-contract": "node backend/scripts/verifyPhase15c1aR1MongoStoreContract.js",
     "verify:ghostbridge-phase-15c1a-r1": "node scripts/verifyPhase15c1aR1.mjs all",
     "perf:local-load": "npm run perf:local-load --workspace backend",
     "perf:local-spike": "npm run perf:local-spike --workspace backend",

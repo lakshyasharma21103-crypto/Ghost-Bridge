@@ -56,7 +56,7 @@ function approvalBinding() {
 function authorizationBoundary() {
   nodeTest(
     [agentSecurityTest],
-    'production authorization evidence',
+    'development authorization evidence|production authorization evidence',
   );
 }
 
@@ -138,6 +138,7 @@ function ciContract() {
     'npm run verify:ghostbridge-phase-15c1',
     'npm run verify:ghostbridge-phase-15c1a',
     'npm run verify:ghostbridge-phase-15c1a-r1',
+    'npm run verify:phase-15c1a-r1-mongo-store-contract',
     'npm run verify:demo',
     'npm run verify:sandbox',
     'npm run verify:enterprise-operations',
