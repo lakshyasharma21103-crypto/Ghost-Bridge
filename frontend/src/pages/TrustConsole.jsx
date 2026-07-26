@@ -20,7 +20,7 @@ export function TrustConsole() {
     </nav>
     <Panel>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="font-semibold text-slate-950">{section}</h2><p className="mt-1 text-sm text-slate-600">No trust records are available from the current workspace fixture.</p></div>
+        <div><h2 className="font-semibold text-slate-950">{section}</h2><p className="mt-1 text-sm text-slate-600">Static demo placeholder only. No operational Trust Console API is connected, and no trust records are loaded.</p></div>
         <StatusBadge tone="pending">Administrator review required</StatusBadge>
       </div>
       <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-2 xl:grid-cols-4">

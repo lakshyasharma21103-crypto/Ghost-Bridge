@@ -41,7 +41,7 @@ async function createPhase15cTrustFixture(options = {}) {
       replayCache: new ReplayCache({ clock }),
     },
   });
-  const runtime = await provider.listen({ port: 0, host: '127.0.0.1' });
+  const runtime = await provider.listen({ port: 8787, host: '127.0.0.1' });
   const scope = {
     organizationScope: 'organization_flowdesk',
     workspaceScope: 'workspace_builder',
@@ -51,6 +51,8 @@ async function createPhase15cTrustFixture(options = {}) {
     publicTrust: provider.publicTrust,
     capabilities: provider.agent.listCapabilities(),
     installGrantResolver: () => ({ baseUrl: runtime.baseUrl }),
+    localFixtureMode: true,
+    allowedLocalOrigins: [runtime.baseUrl],
     localTestMode: true,
     allowedLocalIssuers: [provider.publicTrust.metadata.issuerId],
     hostAudience: 'flowdesk-host',

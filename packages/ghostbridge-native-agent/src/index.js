@@ -16,7 +16,6 @@ const {
   validateApprovalDecision,
   validateCapabilityContract,
   validateContractValue,
-  validateDelegation,
   validateInvocation,
   validatePassport,
   validateProtocolVersion,
@@ -42,8 +41,6 @@ const AUDIT_EVENTS = Object.freeze([
   'protocol.invocation.accepted',
   'protocol.invocation.rejected',
   'protocol.task.changed',
-  'protocol.delegation.created',
-  'protocol.delegation.rejected',
   'protocol.data_contract.rejected',
   'protocol.approval.requested',
   'protocol.approval.decided',
@@ -55,12 +52,51 @@ const AUDIT_EVENTS = Object.freeze([
 ]);
 
 function createGhostBridgeAgent(options = {}) {
+  const mode =
+    options.mode ||
+    (options.localFixtureMode === true ? 'localFixtureMode' : 'developmentMode');
+  if (!['localFixtureMode', 'developmentMode', 'productionMode'].includes(mode)) {
+    throw new TypeError('Agent mode must be localFixtureMode, developmentMode, or productionMode.');
+  }
+  const productionMode = mode === 'productionMode';
+  if (productionMode && typeof options.authorization !== 'function') {
+    throw new TypeError('Production mode requires an authorization handler.');
+  }
+  if (productionMode && typeof options.revocationResolver !== 'function') {
+    throw new TypeError('Production mode requires a revocation resolver.');
+  }
+  if (productionMode && typeof options.receiptIssuer !== 'function') {
+    throw new TypeError('Production mode requires an explicit Receipt issuer.');
+  }
+  const requiredProductionStores = [
+    'installGrants',
+    'connections',
+    'tasks',
+    'receipts',
+    'approvals',
+    'idempotency',
+    'replay',
+    'revocation',
+  ];
+  if (
+    productionMode &&
+    requiredProductionStores.some((name) => !options.stores?.[name])
+  ) {
+    throw new TypeError('Production mode requires durable protocol stores.');
+  }
+  if (productionMode && !options.publicBaseUrl) {
+    throw new TypeError('Production mode requires publicBaseUrl.');
+  }
   let passport = validatePassport(options.passport, { clock: options.clock });
   let discoveryOverrides = options.discovery || {};
-  let taskStore = options.taskStore || new Map();
+  let taskStore = options.stores?.tasks || options.taskStore || new Map();
   let receiptIssuer = options.receiptIssuer || defaultReceiptIssuer;
-  let revocationResolver = options.revocationResolver || (() => ({ status: 'active' }));
-  let authorizationHandler = options.authorization || (() => ({ allowed: true }));
+  let revocationResolver =
+    options.revocationResolver ||
+    (() => (mode === 'localFixtureMode' ? { status: 'active', freshness: 'fresh' } : { status: 'unknown' }));
+  let authorizationHandler =
+    options.authorization ||
+    (() => ({ allowed: mode === 'localFixtureMode' }));
   let approvalHandler = options.approvalHandler;
   let logger = createSafeLogger(options.logger);
   let metricsSink = typeof options.metrics === 'function' ? options.metrics : () => undefined;
@@ -111,15 +147,16 @@ function createGhostBridgeAgent(options = {}) {
     };
   }
   const capabilities = new Map();
-  const installGrants = new Map();
-  const connections = new Map();
-  const receipts = new Map();
-  const delegations = new Map();
-  const challenges = new Map();
-  const decisions = new Map();
-  const idempotency = new Map();
+  const installGrants = options.stores?.installGrants || new Map();
+  const connections = options.stores?.connections || new Map();
+  const receipts = options.stores?.receipts || new Map();
+  const challenges = options.stores?.approvals || new Map();
+  const decisions = options.stores?.approvalDecisions || new Map();
+  const idempotency = options.stores?.idempotency || new Map();
+  const activeExecutions = new Map();
   const metrics = new Map();
   const auditSink = typeof options.auditSink === 'function' ? options.auditSink : () => undefined;
+  let runtimePublicBaseUrl = options.publicBaseUrl;
   let server;
 
   function metric(category, outcome) {
@@ -144,6 +181,9 @@ function createGhostBridgeAgent(options = {}) {
   }
 
   const agent = {
+    mode,
+    legacyGrantPathEnabled:
+      mode === 'localFixtureMode' && options.enableLegacyGrantPath === true,
     trustedInstallResolutionConfigured:
       typeof options.installResolutionSigner === 'function',
     configurePassport(nextPassport) {
@@ -203,7 +243,16 @@ function createGhostBridgeAgent(options = {}) {
       return agent.capability(capabilityKey, definition);
     },
     getDiscovery(baseUrl = '') {
-      const prefix = String(baseUrl).replace(/\/$/, '');
+      const prefix = String(
+        runtimePublicBaseUrl ||
+          (mode === 'localFixtureMode' ? baseUrl : ''),
+      ).replace(/\/$/, '');
+      if (!prefix) {
+        throw protocolError(
+          'INVALID_MESSAGE',
+          'Agent discovery requires a configured publicBaseUrl.',
+        );
+      }
       const discovery = {
         protocol: 'ghostbridge',
         supportedVersions: [PROTOCOL_VERSION],
@@ -212,19 +261,23 @@ function createGhostBridgeAgent(options = {}) {
         features: {
           tasks: true,
           approvals: true,
-          delegation: true,
+          delegation: false,
           receipts: true,
           revocation: true,
         },
-        profiles: DEFAULT_PROFILE_DECLARATIONS,
-        transports: ['http-json'],
+        profiles: {
+          core: DEFAULT_PROFILE_DECLARATIONS.core,
+          governedExecution: DEFAULT_PROFILE_DECLARATIONS.governedExecution,
+        },
+        transports: [new URL(prefix).protocol === 'https:' ? 'https-json' : 'http-json'],
         maximumMessageBytes: DEFAULT_LIMITS.maximumMessageBytes,
         endpoints: {
           passport: `${prefix}/ghostbridge/passport`,
           capabilities: `${prefix}/ghostbridge/capabilities`,
           capabilitySearch: `${prefix}/ghostbridge/capabilities/search`,
           capabilityDetails: `${prefix}/ghostbridge/capabilities/{capabilityKey}`,
-          installGrantResolution: `${prefix}/ghostbridge/install-grants/{grant}/resolve`,
+          installGrantResolution: `${prefix}/ghostbridge/install-grants/resolve`,
+          installGrantRedemption: `${prefix}/ghostbridge/install-grants/redeem`,
           invocations: `${prefix}/ghostbridge/invocations`,
           tasks: `${prefix}/ghostbridge/tasks/{taskId}`,
           receipts: `${prefix}/ghostbridge/receipts/{receiptId}`,
@@ -441,14 +494,34 @@ function createGhostBridgeAgent(options = {}) {
           'The selected authentication mode is not supported.',
         );
       }
-      const enabledCapabilityKeys = scope.approvedCapabilityKeys || grant.allowedCapabilityKeys;
+      const enabledCapabilityKeys =
+        scope.approvedCapabilityKeys ||
+        (mode === 'localFixtureMode' && options.approveAllFixtureCapabilities === true
+          ? grant.allowedCapabilityKeys
+          : undefined);
       if (
         !Array.isArray(enabledCapabilityKeys) ||
+        enabledCapabilityKeys.length === 0 ||
         enabledCapabilityKeys.some((key) => !grant.allowedCapabilityKeys.includes(key))
       ) {
         throw protocolError(
           'AUTHORIZATION_DENIED',
           'The requested capability enablement is not authorized by the Install Grant.',
+        );
+      }
+      if (
+        selectedAuthenticationMode !== 'none' &&
+        (!scope.authenticationBinding ||
+          (!scope.authenticationBinding.credentialReference &&
+            !scope.authenticationBinding.transportBindingReference) ||
+          scope.authenticationBinding.authenticationMode !== selectedAuthenticationMode ||
+          scope.authenticationBinding.organizationScope !== grant.organizationScope ||
+          (scope.authenticationBinding.workspaceScope || undefined) !==
+            (grant.workspaceScope || undefined))
+      ) {
+        throw protocolError(
+          'AUTHENTICATION_REQUIRED',
+          'The selected authentication mode requires a scope-bound opaque binding.',
         );
       }
       const connectionId = `connection_${crypto.randomUUID()}`;
@@ -461,7 +534,15 @@ function createGhostBridgeAgent(options = {}) {
         workspaceScope: grant.workspaceScope,
         status: 'active',
         authenticationMode: selectedAuthenticationMode,
-        authenticationState: selectedAuthenticationMode === 'none' ? 'not_required' : 'configured',
+        authenticationState:
+          selectedAuthenticationMode === 'none' ? 'not_required' : 'verified_and_bound',
+        ...(scope.authenticationBinding
+          ? {
+              authenticationBindingReference:
+                scope.authenticationBinding.credentialReference ||
+                scope.authenticationBinding.transportBindingReference,
+            }
+          : {}),
         hostAudience: scope.hostAudience || options.hostAudience,
         enabledCapabilityKeys: [...enabledCapabilityKeys],
         disabledCapabilityKeys: grant.allowedCapabilityKeys.filter(
@@ -486,16 +567,6 @@ function createGhostBridgeAgent(options = {}) {
         outcome: 'created',
       });
       return { ...publicConnection(connection), idempotentReplay: false };
-    },
-    registerDelegation(grant) {
-      validateDelegation(grant, { clock });
-      delegations.set(grant.delegationId, structuredClone(grant));
-      audit('protocol.delegation.created', {
-        organizationScope: grant.organizationScope,
-        workspaceScope: grant.workspaceScope,
-        capabilityCount: grant.allowedCapabilityKeys.length,
-      });
-      return structuredClone(grant);
     },
     issueApprovalChallenge(input) {
       const now = clock();
@@ -604,6 +675,17 @@ function createGhostBridgeAgent(options = {}) {
         throw protocolError('REVOKED', 'The Agent Connection has been revoked.');
       }
       if (
+        productionMode &&
+        (!revocation ||
+          revocation.status === 'unknown' ||
+          ['stale', 'unavailable', 'invalid'].includes(revocation.freshness))
+      ) {
+        throw protocolError(
+          'REVOKED',
+          'Fresh Connection revocation state is required in production mode.',
+        );
+      }
+      if (
         connection.organizationScope !== envelope.organizationScope ||
         (connection.workspaceScope && connection.workspaceScope !== envelope.workspaceScope)
       ) {
@@ -668,21 +750,11 @@ function createGhostBridgeAgent(options = {}) {
         return structuredClone({ ...recorded.result, idempotentReplay: true });
       }
 
-      let delegation;
       if (registered.delegationRequired || envelope.delegationReference) {
-        delegation = delegations.get(envelope.delegationReference);
-        if (!delegation) {
-          throw protocolError('DELEGATION_REQUIRED', 'A valid Delegation Grant is required.');
-        }
-        validateDelegation(delegation, {
-          clock,
-          capabilityKey: envelope.capabilityKey,
-          organizationScope: envelope.organizationScope,
-          workspaceScope: envelope.workspaceScope,
-        });
-        if (delegation.delegateAgentId !== passport.agentId) {
-          throw protocolError('DELEGATION_INVALID', 'The Delegation Grant targets another agent.');
-        }
+        throw protocolError(
+          'DELEGATION_REQUIRED',
+          'Direct Agent Coordination is not available on the Native Agent surface.',
+        );
       }
 
       if (registered.contract.approvalRequirement === 'required') {
@@ -740,6 +812,7 @@ function createGhostBridgeAgent(options = {}) {
       taskStore.set(task.taskId, running);
       try {
         const abortController = new AbortController();
+        activeExecutions.set(running.taskId, abortController);
         const deadlineMs = Math.max(1, Date.parse(envelope.deadline) - clock());
         const configuredTimeout = Number(registered.contract.timeoutBounds?.maximumMs) || deadlineMs;
         const timeoutMs = Math.min(deadlineMs, configuredTimeout);
@@ -759,8 +832,6 @@ function createGhostBridgeAgent(options = {}) {
             idempotencyKey: envelope.idempotencyKey,
             traceContext: envelope.traceContext,
             approvalReference: envelope.approvalReference,
-            delegationReference: envelope.delegationReference,
-            delegation: delegation ? structuredClone(delegation) : undefined,
             signal: abortController.signal,
             logger,
           },
@@ -782,13 +853,13 @@ function createGhostBridgeAgent(options = {}) {
           ]);
         } finally {
           clearTimeout(timeout);
+          activeExecutions.delete(running.taskId);
+        }
+        if (abortController.signal.aborted) {
+          throw protocolError('TASK_CANCELLED', 'Capability execution was cancelled.');
         }
         if (registered.contract.outputSchema) {
           validateContractValue(result.output, registered.contract.outputSchema, 'output');
-        }
-        if (delegation) {
-          delegation.remainingInvocations =
-            Number(delegation.remainingInvocations ?? delegation.maximumInvocations) - 1;
         }
         const completed = transitionTask(running, 'completed', new Date(clock()).toISOString());
         const receipt = await receiptIssuer({
@@ -826,6 +897,9 @@ function createGhostBridgeAgent(options = {}) {
         });
         return response;
       } catch (error) {
+        if (taskStore.get(running.taskId)?.state === 'cancelled') {
+          throw protocolError('TASK_CANCELLED', 'Capability execution was cancelled.');
+        }
         const failed = transitionTask(running, 'failed', new Date(clock()).toISOString());
         failed.safeFailureCode =
           error instanceof GhostBridgeProtocolError ? error.errorCode : 'INTERNAL_ERROR';
@@ -845,6 +919,9 @@ function createGhostBridgeAgent(options = {}) {
       if (!task.cancellationSupported || !['accepted', 'queued', 'running', 'waiting_for_approval'].includes(task.state)) {
         throw protocolError('TASK_NOT_CANCELLABLE', 'The Execution Task cannot be cancelled.');
       }
+      activeExecutions
+        .get(taskId)
+        ?.abort(new Error('Capability execution was cancelled by the Host.'));
       const cancelled = transitionTask(task, 'cancelled', new Date(clock()).toISOString());
       taskStore.set(taskId, cancelled);
       return structuredClone(cancelled);
@@ -911,6 +988,7 @@ function createGhostBridgeAgent(options = {}) {
       });
       const address = server.address();
       const baseUrl = `http://${address.address.includes(':') ? `[${address.address}]` : address.address}:${address.port}`;
+      if (mode === 'localFixtureMode' && !runtimePublicBaseUrl) runtimePublicBaseUrl = baseUrl;
       return {
         baseUrl,
         address,
@@ -1247,14 +1325,28 @@ async function handleHttp(agent, request, response) {
       const receiptPath = /^\/ghostbridge\/receipts\/([^/]+)$/.exec(url.pathname);
       const approvalPath = /^\/ghostbridge\/approvals\/([^/]+)\/decisions$/.exec(url.pathname);
       const revocationPath = /^\/ghostbridge\/revocations\/([^/]+)\/([^/]+)$/.exec(url.pathname);
-      if (request.method === 'POST' && grantResolve) {
+      if (
+        request.method === 'POST' &&
+        url.pathname === '/ghostbridge/install-grants/resolve'
+      ) {
+        const body = await readBody(request);
+        result = agent.trustedInstallResolutionConfigured
+          ? await agent.resolveInstallGrantTrusted(body.grant, body)
+          : agent.resolveInstallGrant(body.grant, body);
+      } else if (
+        request.method === 'POST' &&
+        url.pathname === '/ghostbridge/install-grants/redeem'
+      ) {
+        const body = await readBody(request);
+        result = agent.redeemInstallGrant(body.grant, body);
+      } else if (request.method === 'POST' && grantResolve && agent.legacyGrantPathEnabled) {
         result = agent.trustedInstallResolutionConfigured
           ? await agent.resolveInstallGrantTrusted(
               decodeURIComponent(grantResolve[1]),
               await readBody(request),
             )
           : agent.resolveInstallGrant(decodeURIComponent(grantResolve[1]), await readBody(request));
-      } else if (request.method === 'POST' && grantRedeem) {
+      } else if (request.method === 'POST' && grantRedeem && agent.legacyGrantPathEnabled) {
         result = agent.redeemInstallGrant(decodeURIComponent(grantRedeem[1]), await readBody(request));
       } else if (request.method === 'POST' && url.pathname === '/ghostbridge/invocations') {
         const body = await readBody(request);

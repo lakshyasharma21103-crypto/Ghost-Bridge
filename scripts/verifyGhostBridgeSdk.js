@@ -74,7 +74,12 @@ async function main() {
 
   const agent = createInvoiceAgent();
   const listener = await agent.listen();
-  const client = createGhostBridgeClient({ baseUrl: listener.baseUrl, timeoutMs: 2_000 });
+  const client = createGhostBridgeClient({
+    baseUrl: listener.baseUrl,
+    timeoutMs: 2_000,
+    localFixtureMode: true,
+    allowedLocalOrigins: [listener.baseUrl],
+  });
   try {
     const discovery = await client.discover();
     assert.equal(discovery.preferredVersion, PROTOCOL_VERSION);
@@ -125,10 +130,12 @@ async function main() {
     const result = await client.invokeAndWait(invokeOptions);
     assert.equal(result.task.state, 'completed');
     assert.equal(result.output.total, 42);
-    assert.equal((await client.verifyReceipt(result.receipt)).valid, true);
+    const receiptVerification = await client.verifyReceipt(result.receipt);
+    assert.equal(receiptVerification.valid, false);
+    assert.ok(['invalid', 'unverified'].includes(receiptVerification.proofState));
     const replay = await client.invoke(invokeOptions);
     assert.equal(replay.idempotentReplay, true);
-    pass('invocation, Task waiting, Receipt, and idempotency');
+    pass('invocation, Task waiting, unverified Receipt handling, and idempotency');
 
     agent.revokeConnection(installed.connectionId);
     assert.equal(
@@ -145,6 +152,8 @@ async function main() {
   abortController.abort();
   const cancelledClient = createGhostBridgeClient({
     baseUrl: 'http://127.0.0.1:9',
+    localFixtureMode: true,
+    allowedLocalOrigins: ['http://127.0.0.1:9'],
     fetch: async (_url, { signal }) => {
       if (signal.aborted) throw new DOMException('aborted', 'AbortError');
       return new Promise((_resolve, reject) =>
@@ -165,6 +174,8 @@ async function main() {
 
   const timeoutClient = createGhostBridgeClient({
     baseUrl: 'http://127.0.0.1:9',
+    localFixtureMode: true,
+    allowedLocalOrigins: ['http://127.0.0.1:9'],
     timeoutMs: 50,
     fetch: async (_url, { signal }) =>
       new Promise((_resolve, reject) =>

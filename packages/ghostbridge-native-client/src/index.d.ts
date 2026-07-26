@@ -14,6 +14,9 @@ import type {
 
 export interface GhostBridgeClientOptions {
   baseUrl?: string;
+  localFixtureMode?: boolean;
+  allowedLocalOrigins?: string[];
+  approveAllFixtureCapabilities?: boolean;
   installGrantResolver?: (input: {
     grant: string;
     organizationScope: string;
@@ -27,7 +30,12 @@ export interface GhostBridgeClientOptions {
     setupReference?: string;
     agent: Record<string, unknown>;
     scope: { organizationScope: string; workspaceScope?: string };
-  }) => Promise<Record<string, unknown> | void>;
+  }) => Promise<{
+    credentialReference?: string;
+    transportBindingReference?: string;
+    expiresAt?: string;
+    [key: string]: unknown;
+  }>;
   supportedProtocolVersions?: string[];
   profiles?: ProfileDeclarations;
   supportedAuthenticationModes?: AuthenticationMode[];

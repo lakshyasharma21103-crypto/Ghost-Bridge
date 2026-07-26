@@ -27,6 +27,7 @@ const {
 const {
   AntiRollbackStore,
   RevocationCache,
+  digest,
   discoverIssuer: discoverTrustIssuer,
   evaluateTrustPolicy,
   loadIssuerJwks,
@@ -108,7 +109,13 @@ const ERROR_CLASS_BY_CODE = Object.freeze({
 
 class GhostBridgeClient {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl ? normalizeBaseUrl(options.baseUrl) : undefined;
+    this.targetPolicy = Object.freeze({
+      localFixtureMode: options.localFixtureMode === true,
+      allowedLocalOrigins: Object.freeze([...(options.allowedLocalOrigins || [])]),
+    });
+    this.baseUrl = options.baseUrl
+      ? normalizeBaseUrl(options.baseUrl, this.targetPolicy)
+      : undefined;
     this.installGrantResolver = options.installGrantResolver;
     this.issuerKeyResolver = options.issuerKeyResolver;
     this.authenticationHandler = options.authenticationHandler;
@@ -134,10 +141,11 @@ class GhostBridgeClient {
     this.trustAntiRollback = options.trust?.antiRollbackStore || new AntiRollbackStore();
     this.revocationCache = options.trust?.revocationCache || new RevocationCache();
     this.discovery = null;
-    this.installations = new Map();
     this.connections = new Map();
     this.installPreviews = new Map();
-    this.authenticatedGrants = new Set();
+    this.authenticatedGrants = new Map();
+    this.approveAllFixtureCapabilities =
+      this.targetPolicy.localFixtureMode && options.approveAllFixtureCapabilities === true;
     this.closed = false;
     if (!this.baseUrl && typeof this.installGrantResolver !== 'function') {
       throw new TypeError('A baseUrl or installGrantResolver is required.');
@@ -164,7 +172,6 @@ class GhostBridgeClient {
 
   async discoverIssuer(issuerId, options = {}) {
     const metadata = await discoverTrustIssuer(issuerId, {
-      fetch: this.fetch,
       timeoutMs: this.timeoutMs,
       ...(this.trust || {}),
       ...options,
@@ -172,7 +179,12 @@ class GhostBridgeClient {
         options.minimumMetadataSequence ||
         this.trustMetadata.get(issuerId)?.metadataSequence,
     });
-    this.trustAntiRollback.observe('metadata', metadata.issuerId, metadata.metadataSequence);
+    this.trustAntiRollback.observe(
+      'metadata',
+      metadata.issuerId,
+      metadata.metadataSequence,
+      trustDocumentDigest(metadata),
+    );
     this.trustMetadata.set(metadata.issuerId, metadata);
     return metadata;
   }
@@ -194,7 +206,6 @@ class GhostBridgeClient {
       return structuredClone(this.trustKeys.get(cacheKey));
     }
     const jwks = await loadIssuerJwks(metadata, {
-      fetch: this.fetch,
       timeoutMs: this.timeoutMs,
       ...(this.trust || {}),
       ...options,
@@ -246,7 +257,7 @@ class GhostBridgeClient {
     });
     const policy = this.evaluateIssuerTrust({
       issuerId: metadata.issuerId,
-      rootKeyThumbprint: metadata.rootKeyThumbprints?.[0],
+      rootKeyThumbprint: metadataProof.keyThumbprint,
       highImpact: options.highImpact === true,
       organizationPolicy: options.organizationPolicy,
       workspacePolicy: options.workspacePolicy,
@@ -301,7 +312,10 @@ class GhostBridgeClient {
       options.metadata || this.trust?.metadata || (await this.getIssuerMetadata(issuerId, options));
     const jwks =
       options.jwks || this.trust?.jwks || (await this.getIssuerKeys(metadata, options));
-    const document = await this.request(metadata.revocationSetUri);
+    const document =
+      options.revocationSet ||
+      this.trust?.revocationSet ||
+      (await this.request(metadata.revocationSetUri));
     const previous = this.revocationCache.get(metadata.issuerId)?.document;
     const verification = validateRevocationSet(document, jwks, {
       ...(this.trust || {}),
@@ -310,7 +324,16 @@ class GhostBridgeClient {
       minimumSequence: previous?.sequence,
       previousSet: previous,
     });
-    this.trustAntiRollback.observe('revocation', metadata.issuerId, document.sequence);
+    this.trustAntiRollback.observe(
+      'revocation',
+      metadata.issuerId,
+      document.sequence,
+      verification.digest,
+      {
+        contiguous: Boolean(previous),
+        previousDigest: document.previousSetDigest,
+      },
+    );
     if (!previous || document.sequence > previous.sequence) {
       this.revocationCache.put(metadata.issuerId, document, verification);
     }
@@ -428,13 +451,11 @@ class GhostBridgeClient {
 
   async resolveInstallGrant(grant, scope) {
     const discovery = await this.ensureDiscovery();
-    const url = endpointWith(
-      this.baseUrl,
-      discovery.endpoints.installGrantResolution,
-      '{grant}',
-      grant,
-    );
-    const response = await this.request(url, { method: 'POST', body: scope });
+    const url = resolveEndpoint(this.baseUrl, discovery.endpoints.installGrantResolution);
+    const response = await this.request(url, {
+      method: 'POST',
+      body: { grant, ...scope },
+    });
     validatePassport(response.passport);
     validateConnectionOffer(response.connectionOffer);
     if (!Array.isArray(response.capabilities)) {
@@ -457,10 +478,17 @@ class GhostBridgeClient {
     await verifyIssuer(this.issuerKeyResolver, passport);
     let trust;
     if (this.trust) {
-      if (this.trust.required === true && (!passport.proof || !resolution.capabilityManifest)) {
+      if (
+        this.trust.required === true &&
+        (!this.trust.hostAudience ||
+          !passport.proof ||
+          !resolution.capabilityManifest?.proof ||
+          !resolution.proof ||
+          !resolution.connectionOffer?.proof)
+      ) {
         throw createSdkError(
           'PROOF_REQUIRED',
-          'The required signed Passport or Capability Manifest is missing.',
+          'Trust-required installation is missing an audience or required signed object.',
         );
       }
       if (passport.proof && resolution.capabilityManifest) {
@@ -493,7 +521,32 @@ class GhostBridgeClient {
           installResolution: installTrust,
           connectionOffer: connectionTrust,
         });
+        if (
+          this.trust.required === true &&
+          passportTrust.policy.category !== 'verified_and_trusted'
+        ) {
+          throw createSdkError(
+            'AUTHORIZATION_DENIED',
+            'The issuer trust policy did not approve this exact installation.',
+          );
+        }
+        if (this.trust.required === true) {
+          const revocation = await this.getRevocationSet(passport.issuer, passportTrust);
+          if (!['fresh', 'nearing_expiry'].includes(revocation.verification.freshness)) {
+            throw createSdkError(
+              'REVOKED',
+              'Current revocation information is required for installation.',
+            );
+          }
+          trust = Object.freeze({ ...trust, revocation });
+        }
       }
+    }
+    if (this.trust?.required === true && !trust) {
+      throw createSdkError(
+        'PROOF_REQUIRED',
+        'Trust-required installation could not establish verified trust state.',
+      );
     }
     const compatibilityInput = {
       host: this.hostSupport,
@@ -514,7 +567,7 @@ class GhostBridgeClient {
       compatibility,
       scope,
     });
-    const key = installGrantCacheKey(grant);
+    const key = installGrantCacheKey(grant, scope, this.trust);
     this.installPreviews.set(key, {
       preview,
       compatibility,
@@ -544,7 +597,7 @@ class GhostBridgeClient {
       throw createSdkError('INSTALL_GRANT_INVALID', 'An opaque Install Grant is required.');
     }
     await this.prepareInstallTarget(grant, scope);
-    const key = installGrantCacheKey(grant);
+    const key = installGrantCacheKey(grant, scope, this.trust);
     const record = this.installPreviews.get(key) || {
       preview: await this.previewInstall(options),
       compatibility: undefined,
@@ -567,25 +620,44 @@ class GhostBridgeClient {
         agent: cached.preview.agent,
         scope,
       });
-      assertSafeAuthenticationResult(authenticationResult);
-      this.authenticatedGrants.add(key);
+      this.authenticatedGrants.set(
+        key,
+        normalizeAuthenticationBinding(authenticationResult, {
+          grantDigest: key,
+          mode: authenticationMode,
+          ...scope,
+        }),
+      );
+    }
+    const approvedCapabilityKeys =
+      options.approvedCapabilityKeys ||
+      (this.approveAllFixtureCapabilities
+        ? cached.preview.capabilities?.map((capability) => capability.capabilityKey)
+        : undefined);
+    if (!Array.isArray(approvedCapabilityKeys) || approvedCapabilityKeys.length === 0) {
+      throw createSdkError(
+        'AUTHORIZATION_DENIED',
+        'Explicit approvedCapabilityKeys are required for governed installation.',
+      );
     }
     return this.redeemInstallGrant(grant, {
       ...scope,
       authenticationMode,
-      approvedCapabilityKeys:
-        options.approvedCapabilityKeys ||
-        cached.preview.capabilities?.map((capability) => capability.capabilityKey),
-    });
+      approvedCapabilityKeys,
+      ...(this.authenticatedGrants.get(key)
+        ? { authenticationBinding: this.authenticatedGrants.get(key) }
+        : {}),
+    }, key);
   }
 
-  async redeemInstallGrant(grant, scope) {
+  async redeemInstallGrant(grant, scope, previewCacheKey) {
     const discovery = await this.ensureDiscovery();
-    const resolution = discovery.endpoints.installGrantResolution;
-    const template = resolution.replace(/\/resolve$/, '/redeem');
+    const template =
+      discovery.endpoints.installGrantRedemption ||
+      discovery.endpoints.installGrantResolution.replace(/\/resolve$/, '/redeem');
     const response = await this.request(
-      endpointWith(this.baseUrl, template, '{grant}', grant),
-      { method: 'POST', body: scope },
+      resolveEndpoint(this.baseUrl, template),
+      { method: 'POST', body: { grant, ...scope } },
     );
     if (
       response.protocolVersion !== PROTOCOL_VERSION ||
@@ -594,9 +666,10 @@ class GhostBridgeClient {
     ) {
       throw protocolError('INVALID_MESSAGE', 'The Connection response is malformed.');
     }
-    this.installations.set(response.agentId, response);
     this.connections.set(response.connectionId, response);
-    const cached = this.installPreviews.get(installGrantCacheKey(grant));
+    const cached = this.installPreviews.get(
+      previewCacheKey || installGrantCacheKey(grant, scope, this.trust),
+    );
     if (cached?.trust) {
       this.connectionTrustRecords.set(response.connectionId, Object.freeze({
         connectionId: response.connectionId,
@@ -631,13 +704,14 @@ class GhostBridgeClient {
       const options = connectionOrOptions;
       const installation = options.connectionId
         ? this.connections.get(options.connectionId)
-        : this.installations.get(options.agentId);
+        : uniqueConnectionForAgent(this.connections, options.agentId);
       if (!installation) {
         throw createSdkError(
           'CONNECTION_NOT_ACTIVE',
           'Install the target agent before invoking a capability.',
         );
       }
+      assertInvocationScope(installation, options);
       selectedCapability = await this.getCapabilityDetails({
         agentId: options.agentId || installation.agentId,
         capabilityKey: options.capability,
@@ -794,13 +868,14 @@ class GhostBridgeClient {
         receipt,
       };
     }
+    if (!receipt.proof) {
+      return { valid: false, proofState: 'invalid', receipt };
+    }
     const proofValid = options.verifier
       ? await options.verifier.verify(receipt, receipt.proof)
-      : receipt.proof
-        ? undefined
-        : true;
+      : undefined;
     return {
-      valid: proofValid !== false,
+      valid: proofValid === true,
       proofState: proofValid === undefined ? 'unverified' : proofValid ? 'valid' : 'invalid',
       receipt,
     };
@@ -836,9 +911,6 @@ class GhostBridgeClient {
       body: { reasonCode: options.reasonCode || 'REVOKED_BY_HOST' },
     });
     this.connections.delete(connectionId);
-    for (const [agentId, connection] of this.installations) {
-      if (connection.connectionId === connectionId) this.installations.delete(agentId);
-    }
     return validateRevocation(response);
   }
 
@@ -867,7 +939,7 @@ class GhostBridgeClient {
         'The Install Grant resolver did not return a machine-facing target.',
       );
     }
-    const normalized = normalizeBaseUrl(target);
+    const normalized = normalizeBaseUrl(target, this.targetPolicy);
     if (this.baseUrl !== normalized) {
       this.baseUrl = normalized;
       this.discovery = null;
@@ -878,7 +950,6 @@ class GhostBridgeClient {
   close() {
     this.closed = true;
     this.discovery = null;
-    this.installations.clear();
     this.connections.clear();
     this.installPreviews.clear();
     this.authenticatedGrants.clear();
@@ -898,6 +969,7 @@ class GhostBridgeClient {
     try {
       const response = await this.fetch(url, {
         method: options.method || 'GET',
+        redirect: 'manual',
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
@@ -909,6 +981,16 @@ class GhostBridgeClient {
         body: options.body === undefined ? undefined : boundedSerialize(options.body),
         signal: controller.signal,
       });
+      if (response.status >= 300 && response.status < 400) {
+        throw protocolError('INVALID_MESSAGE', 'Protocol redirects are rejected.');
+      }
+      const contentType = String(response.headers.get('content-type') || '')
+        .split(';', 1)[0]
+        .trim()
+        .toLowerCase();
+      if (contentType !== 'application/json') {
+        throw protocolError('INVALID_MESSAGE', 'The peer returned an unexpected content type.');
+      }
       const announcedLength = Number(response.headers.get('content-length') || 0);
       if (announcedLength > DEFAULT_LIMITS.maximumMessageBytes) {
         throw protocolError('MESSAGE_TOO_LARGE', 'The protocol response exceeds the configured size.');
@@ -986,14 +1068,23 @@ function fromProtocolError(error) {
 }
 
 function classifyRetry(error, options = {}) {
-  const idempotent = options.idempotent === true || Boolean(options.idempotencyKey);
   const safeMethod = ['GET', 'HEAD', 'OPTIONS'].includes(String(options.method || 'GET').toUpperCase());
+  const negotiatedIdempotency =
+    Boolean(options.idempotencyKey) &&
+    ['required', 'optional'].includes(options.capabilityIdempotencySupport) &&
+    options.peerAcknowledgedIdempotency === true &&
+    options.sameRequestFingerprint === true &&
+    options.ambiguousRemoteOutcome !== true;
   const retryableCode = ['RATE_LIMITED', 'PROVIDER_UNAVAILABLE', 'DEADLINE_EXCEEDED'].includes(
     error?.code || error?.errorCode,
   );
   return Object.freeze({
-    retryable: retryableCode && (safeMethod || idempotent),
-    reason: retryableCode ? (safeMethod || idempotent ? 'transient_safe' : 'unsafe_side_effect') : 'permanent',
+    retryable: retryableCode && (safeMethod || negotiatedIdempotency),
+    reason: retryableCode
+      ? safeMethod || negotiatedIdempotency
+        ? 'transient_safe'
+        : 'unsafe_side_effect'
+      : 'permanent',
     retryAfterMs: Number.isFinite(error?.retryAfterMs) ? error.retryAfterMs : undefined,
   });
 }
@@ -1085,8 +1176,13 @@ async function verifyIssuer(resolver, passport) {
   return { status: 'verified' };
 }
 
-function assertSafeAuthenticationResult(result) {
-  if (result === undefined) return;
+function normalizeAuthenticationBinding(result, context) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    throw createSdkError(
+      'AUTHENTICATION_REQUIRED',
+      'Authentication must return an opaque credential or transport binding.',
+    );
+  }
   assertPlainData(result);
   const original = boundedSerialize(result);
   const sanitized = boundedSerialize(redactPublicData(result));
@@ -1096,16 +1192,56 @@ function assertSafeAuthenticationResult(result) {
       'Authentication handlers must return only safe connection references.',
     );
   }
+  if (!result.credentialReference && !result.transportBindingReference) {
+    throw createSdkError(
+      'AUTHENTICATION_REQUIRED',
+      'Authentication did not return an opaque binding reference.',
+    );
+  }
+  return Object.freeze({
+    ...structuredClone(result),
+    grantDigest: context.grantDigest,
+    authenticationMode: context.mode,
+    organizationScope: context.organizationScope,
+    ...(context.workspaceScope ? { workspaceScope: context.workspaceScope } : {}),
+    ...(context.expiresAt ? { expiresAt: context.expiresAt } : {}),
+  });
 }
 
-function installGrantCacheKey(grant) {
-  return crypto.createHash('sha256').update(String(grant)).digest('hex');
+function installGrantCacheKey(grant, scope = {}, trust = {}) {
+  return crypto
+    .createHash('sha256')
+    .update(
+      boundedSerialize({
+        grantDigest: crypto.createHash('sha256').update(String(grant)).digest('hex'),
+        organizationScope: scope.organizationScope,
+        workspaceScope: scope.workspaceScope || null,
+        hostAudience: trust?.hostAudience || null,
+        approvedCapabilityKeys: [...(scope.approvedCapabilityKeys || [])].sort(),
+        authenticationMode: scope.authenticationMode || null,
+        policyRevision:
+          trust?.workspacePolicy?.version || trust?.organizationPolicy?.version || null,
+      }),
+    )
+    .digest('hex');
 }
 
-function normalizeBaseUrl(value) {
+function trustDocumentDigest(document) {
+  const { proof: _proof, ...payload } = document;
+  return digest(payload);
+}
+
+function normalizeBaseUrl(value, policy = {}) {
   const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol)) {
-    throw new TypeError('Ghost Bridge baseUrl must use HTTP or HTTPS.');
+  const allowedLocalOrigins = new Set(
+    (policy.allowedLocalOrigins || []).map((item) => new URL(item).origin.toLowerCase()),
+  );
+  const localFixture =
+    policy.localFixtureMode === true &&
+    /^(?:localhost|127(?:\.\d{1,3}){3}|::1)$/i.test(url.hostname) &&
+    allowedLocalOrigins.has(url.origin.toLowerCase());
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && localFixture)) {
+    throw new TypeError('Ghost Bridge baseUrl requires HTTPS outside explicit local fixture mode.');
   }
   if (url.username || url.password) {
     throw new TypeError('Ghost Bridge baseUrl must not contain credentials.');
@@ -1118,7 +1254,38 @@ function normalizeBaseUrl(value) {
 
 function resolveEndpoint(baseUrl, value) {
   if (!value) throw protocolError('INVALID_MESSAGE', 'Discovery omitted a required endpoint.');
-  return new URL(value, `${baseUrl}/`).toString();
+  const endpoint = new URL(value, `${baseUrl}/`);
+  if (endpoint.origin !== new URL(baseUrl).origin) {
+    throw protocolError('INVALID_MESSAGE', 'Discovery endpoint origin does not match the agent.');
+  }
+  if (endpoint.username || endpoint.password || endpoint.hash) {
+    throw protocolError('INVALID_MESSAGE', 'Discovery contains an unsafe endpoint URL.');
+  }
+  return endpoint.toString();
+}
+
+function uniqueConnectionForAgent(connections, agentId) {
+  const matches = [...connections.values()].filter((connection) => connection.agentId === agentId);
+  if (matches.length !== 1) {
+    throw createSdkError(
+      'CONNECTION_NOT_ACTIVE',
+      matches.length
+        ? 'Connection ID is required when multiple scoped Connections target the same agent.'
+        : 'Install the target agent before invoking a capability.',
+    );
+  }
+  return matches[0];
+}
+
+function assertInvocationScope(connection, options) {
+  for (const field of ['organizationScope', 'workspaceScope']) {
+    if (options[field] !== undefined && options[field] !== connection[field]) {
+      throw createSdkError(
+        'SCOPE_MISMATCH',
+        `Invocation ${field} must exactly match the stored Connection scope.`,
+      );
+    }
+  }
 }
 
 function endpointWith(baseUrl, template, token, value) {

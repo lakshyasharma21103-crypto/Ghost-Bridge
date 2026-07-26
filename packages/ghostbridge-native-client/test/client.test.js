@@ -12,6 +12,8 @@ const {
 
 test('client discovers, negotiates, installs, and invokes a native agent', async (context) => {
   const agent = createGhostBridgeAgent({
+    mode: 'localFixtureMode',
+    approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,
       passportId: 'passport_client_test',
@@ -59,7 +61,12 @@ test('client discovers, negotiates, installs, and invokes a native agent', async
   });
   const listener = await agent.listen();
   context.after(() => listener.close());
-  const client = createGhostBridgeClient({ baseUrl: listener.baseUrl });
+  const client = createGhostBridgeClient({
+    baseUrl: listener.baseUrl,
+    localFixtureMode: true,
+    allowedLocalOrigins: [listener.baseUrl],
+    approveAllFixtureCapabilities: true,
+  });
   assert.equal((await client.discover()).preferredVersion, PROTOCOL_VERSION);
   assert.equal((await client.getPassport()).agentId, 'agent_client_test');
   const grant = agent.issueInstallGrant({
@@ -102,7 +109,13 @@ test('client discovers, negotiates, installs, and invokes a native agent', async
   });
   assert.deepEqual(result.output, { ok: true });
   assert.equal((await client.getReceipt(result.receipt.receiptId)).outcome, 'completed');
-  assert.equal((await client.verifyReceipt(result.receipt)).valid, true);
+  assert.deepEqual(
+    {
+      valid: (await client.verifyReceipt(result.receipt)).valid,
+      proofState: (await client.verifyReceipt(result.receipt)).proofState,
+    },
+    { valid: false, proofState: 'invalid' },
+  );
   assert.equal(
     classifyRetry({ code: 'PROVIDER_UNAVAILABLE' }, { method: 'POST' }).retryable,
     false,
@@ -112,7 +125,75 @@ test('client discovers, negotiates, installs, and invokes a native agent', async
       { code: 'PROVIDER_UNAVAILABLE' },
       { method: 'POST', idempotencyKey: 'safe-retry' },
     ).retryable,
+    false,
+  );
+  assert.equal(
+    classifyRetry(
+      { code: 'PROVIDER_UNAVAILABLE' },
+      {
+        method: 'POST',
+        idempotencyKey: 'safe-retry',
+        capabilityIdempotencySupport: 'required',
+        peerAcknowledgedIdempotency: true,
+        sameRequestFingerprint: true,
+        ambiguousRemoteOutcome: false,
+      },
+    ).retryable,
     true,
   );
   client.close();
+});
+
+test('client rejects unsafe targets, cross-origin endpoints, scope overrides, and ambiguous agent lookup', async () => {
+  assert.throws(
+    () => createGhostBridgeClient({ baseUrl: 'http://127.0.0.1:8080' }),
+    /requires HTTPS/,
+  );
+  const client = createGhostBridgeClient({
+    baseUrl: 'https://agent.example',
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          protocol: 'ghostbridge',
+          supportedVersions: [PROTOCOL_VERSION],
+          preferredVersion: PROTOCOL_VERSION,
+          status: 'experimental',
+          features: {},
+          transports: ['https-json'],
+          maximumMessageBytes: 1000,
+          endpoints: { passport: 'https://other.example/passport' },
+          extensionNamespaces: [],
+        }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+  });
+  await client.discover();
+  await assert.rejects(() => client.getPassport(), /endpoint origin/);
+
+  const first = {
+    connectionId: 'connection_1',
+    agentId: 'agent_same',
+    organizationScope: 'org_a',
+    workspaceScope: 'workspace_a',
+  };
+  client.connections.set(first.connectionId, first);
+  client.connections.set('connection_2', {
+    ...first,
+    connectionId: 'connection_2',
+    organizationScope: 'org_b',
+  });
+  await assert.rejects(
+    () => client.invoke({ agentId: 'agent_same', capability: 'fixture.read', input: {} }),
+    /Connection ID is required/,
+  );
+  await assert.rejects(
+    () =>
+      client.invoke({
+        connectionId: first.connectionId,
+        capability: 'fixture.read',
+        organizationScope: 'org_other',
+        input: {},
+      }),
+    (error) => error instanceof ScopeMismatchError,
+  );
 });

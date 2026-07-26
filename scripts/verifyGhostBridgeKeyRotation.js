@@ -87,8 +87,11 @@ async function run() {
   assert.ok(toolkit.metadataSequence >= 5);
   pass('metadata sequence increase');
   const rollback = new AntiRollbackStore();
-  rollback.observe('metadata', toolkit.issuerId, toolkit.metadataSequence);
-  assert.throws(() => rollback.observe('metadata', toolkit.issuerId, 1));
+  rollback.observe('metadata', toolkit.issuerId, toolkit.metadataSequence, {
+    issuerId: toolkit.issuerId,
+    metadataSequence: toolkit.metadataSequence,
+  });
+  assert.throws(() => rollback.observe('metadata', toolkit.issuerId, 1, { sequence: 1 }));
   pass('metadata rollback rejection');
   assert.ok(audit.some((event) => event.event === 'trust.key.active'));
   pass('audit events');

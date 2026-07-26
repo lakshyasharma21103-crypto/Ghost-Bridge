@@ -53,6 +53,8 @@ async function main() {
 
     const incompatibleHost = createFlowDeskHost({
       installGrantResolver: resolver,
+      localFixtureMode: true,
+      allowedLocalOrigins: [listener.baseUrl],
       supportedAuthenticationModes: ['signed_request'],
       extensions: [
         {
@@ -80,13 +82,15 @@ async function main() {
     let authenticationCalls = 0;
     host = createFlowDeskHost({
       installGrantResolver: resolver,
+      localFixtureMode: true,
+      allowedLocalOrigins: [listener.baseUrl],
       issuerKeyResolver: async (issuer) =>
         issuer === 'codeforge-agent-provider.synthetic' ? { verified: true } : undefined,
       supportedAuthenticationModes: ['signed_request', 'oauth'],
       authenticationHandler: async ({ mode }) => {
         assert.equal(mode, 'signed_request');
         authenticationCalls += 1;
-        return { connectionReference: 'auth_session_synthetic' };
+        return { credentialReference: 'auth_session_synthetic' };
       },
     });
 
@@ -117,7 +121,7 @@ async function main() {
     assert.equal(preview.compatibility.status, 'compatible');
     assert.equal(preview.compatibility.profiles.core.supported, true);
     assert.equal(preview.compatibility.profiles.governedExecution.supported, true);
-    assert.equal(preview.compatibility.profiles.agentCoordination.status, 'deferred');
+    assert.equal(preview.compatibility.profiles.agentCoordination, undefined);
     pass('profile compatibility');
     assert.equal(preview.redemptionState, 'available');
     pass('generic Install Grant resolution');
@@ -177,8 +181,10 @@ async function main() {
     pass('Execution Task');
     validateContractValue(invocation.output, createAppOutputSchema, 'output');
     pass('result validation');
-    assert.equal((await host.client.verifyReceipt(invocation.receipt)).valid, true);
-    pass('Execution Receipt verification');
+    const receiptVerification = await host.client.verifyReceipt(invocation.receipt);
+    assert.equal(receiptVerification.valid, false);
+    assert.ok(['invalid', 'unverified'].includes(receiptVerification.proofState));
+    pass('unverified Execution Receipt rejection');
 
     const revocation = await host.revokeConnection(connection.connectionId);
     assert.equal(revocation.status, 'revoked');

@@ -25,6 +25,8 @@ function createFlowDeskHost(options = {}) {
     extensions: options.extensions || [],
     requiredProfiles: options.requiredProfiles || [PROFILE_IDS.core],
     requiredGovernedFeatures: options.requiredGovernedFeatures || {},
+    localFixtureMode: options.localFixtureMode === true,
+    allowedLocalOrigins: options.allowedLocalOrigins || [],
   });
 
   return Object.freeze({
@@ -63,7 +65,7 @@ function createTrustedFlowDeskHost(options = {}) {
     issuerKeyResolver: options.issuerKeyResolver || (() => ({ publicOnly: true })),
     authenticationHandler:
       options.authenticationHandler ||
-      (() => ({ authenticationState: 'synthetic_authorized' })),
+      (() => ({ credentialReference: 'fixture_credential_binding' })),
     supportedAuthenticationModes: ['signed_request'],
   });
   host.client.trust = {
@@ -73,6 +75,7 @@ function createTrustedFlowDeskHost(options = {}) {
     hostAudience: options.hostAudience || 'flowdesk-host',
     metadata: options.publicTrust.metadata,
     jwks: options.publicTrust.jwks,
+    revocationSet: options.publicTrust.revocationSet,
     organizationPolicy:
       options.organizationPolicy || {
         version: '1',

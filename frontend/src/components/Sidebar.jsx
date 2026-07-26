@@ -94,8 +94,6 @@ const primaryItems = [
   { label: 'Selection Policies', path: '/selection-policies', icon: ListChecks },
   { label: 'Selection Decisions', path: '/selection-decisions', icon: GitBranch },
   { label: 'Data Contracts', path: '/data-contracts', icon: FileKey2 },
-  { label: 'Delegation Grants', path: '/delegation-grants', icon: KeySquare },
-  { label: 'Delegation Invocations', path: '/delegation-invocations', icon: Workflow },
   { label: 'Passports', path: '/passports', icon: ShieldCheck },
   { label: 'Install Agents', path: '/install-keys/resolve', icon: KeyRound, match: '/install-keys' },
   { label: 'Connections', path: '/connections', icon: Link2 },

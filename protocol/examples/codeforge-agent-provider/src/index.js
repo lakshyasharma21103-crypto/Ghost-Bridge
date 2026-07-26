@@ -58,6 +58,9 @@ const createAppContract = Object.freeze({
 function createCodeForgeProvider(options = {}) {
   const projects = new Map();
   const agent = createGhostBridgeAgent({
+    mode: options.mode || 'localFixtureMode',
+    approveAllFixtureCapabilities: options.approveAllFixtureCapabilities !== false,
+    ...(options.publicBaseUrl ? { publicBaseUrl: options.publicBaseUrl } : {}),
     passport: options.passport || {
       protocolVersion: PROTOCOL_VERSION,
       passportId: 'passport_codeforge_development_agent',

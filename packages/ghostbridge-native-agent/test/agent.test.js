@@ -7,6 +7,8 @@ const { createGhostBridgeAgent } = require('../src');
 
 function fixtureAgent() {
   const agent = createGhostBridgeAgent({
+    mode: 'localFixtureMode',
+    approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,
       passportId: 'passport_fixture',
@@ -138,4 +140,115 @@ test('native invocation produces a Task and Receipt, and revocation stops execut
     () => agent.invoke(connection.connectionId, { ...envelope, invocationId: 'invocation_2' }),
     (error) => error.errorCode === 'CONNECTION_NOT_ACTIVE',
   );
+});
+
+test('production mode fails closed without authorization, revocation, Receipt, and durable stores', () => {
+  const passport = fixtureAgent().getPassport();
+  assert.throws(
+    () => createGhostBridgeAgent({ mode: 'productionMode', passport }),
+    /authorization handler/,
+  );
+  assert.throws(
+    () =>
+      createGhostBridgeAgent({
+        mode: 'productionMode',
+        passport,
+        authorization: () => ({ allowed: true }),
+      }),
+    /revocation resolver/,
+  );
+});
+
+test('discovery ignores an arbitrary Host-derived base and omits Agent Coordination', async () => {
+  const agent = fixtureAgent();
+  const listener = await agent.listen();
+  try {
+    const discovery = agent.getDiscovery('https://attacker.example');
+    assert.equal(discovery.features.delegation, false);
+    assert.equal(Object.hasOwn(discovery.profiles, 'agentCoordination'), false);
+    assert.equal(
+      Object.values(discovery.endpoints).some((endpoint) =>
+        endpoint.includes('attacker.example'),
+      ),
+      false,
+    );
+    assert.equal(discovery.endpoints.installGrantResolution.includes('{grant}'), false);
+  } finally {
+    await listener.close();
+  }
+});
+
+test('task cancellation aborts the executing capability handler', async () => {
+  let observedSignal;
+  let runningTaskId;
+  const taskStore = new Map();
+  const originalSet = taskStore.set.bind(taskStore);
+  taskStore.set = (key, value) => {
+    if (value.state === 'running') runningTaskId = key;
+    originalSet(key, value);
+    return taskStore;
+  };
+  const base = fixtureAgent().getPassport();
+  const agent = createGhostBridgeAgent({
+    mode: 'localFixtureMode',
+    approveAllFixtureCapabilities: true,
+    taskStore,
+    passport: base,
+  });
+  agent.capability('fixture.read', {
+    contract: {
+      capabilityVersion: '1',
+      displayName: 'Cancelable fixture',
+      safeDescription: 'Waits for cancellation.',
+      inputContractReference: 'data:fixture-input@1',
+      outputContractReference: 'data:fixture-output@1',
+      acceptedDataClasses: ['business'],
+      producedDataClasses: ['business'],
+      prohibitedDataClasses: ['secret'],
+      riskCategory: 'low',
+      sideEffectCategory: 'read',
+      idempotencySupport: 'optional',
+      asynchronousSupport: true,
+      cancellationSupport: true,
+      requiredPermissions: [],
+      approvalRequirement: 'none',
+      delegationPolicy: { allowed: false },
+      timeoutBounds: { minimumMs: 1, maximumMs: 10_000 },
+      receiptRequirement: 'required',
+      status: 'active',
+    },
+    handler: ({ context }) =>
+      new Promise((resolve) => {
+        observedSignal = context.signal;
+        context.signal.addEventListener(
+          'abort',
+          () => resolve({ outcome: 'cancelled', output: { value: null } }),
+          { once: true },
+        );
+      }),
+  });
+  const scope = { organizationScope: 'org_cancel', workspaceScope: 'workspace_cancel' };
+  const grant = agent.issueInstallGrant(scope);
+  const connection = agent.redeemInstallGrant(grant.key, scope);
+  const pending = agent.invoke(connection.connectionId, {
+    protocolVersion: PROTOCOL_VERSION,
+    invocationId: 'invocation_cancel',
+    messageId: 'message_cancel',
+    ...scope,
+    initiatingSubject: 'user_fixture',
+    targetAgentId: base.agentId,
+    targetPassportVersion: base.passportVersion,
+    capabilityKey: 'fixture.read',
+    capabilityVersion: '1',
+    inputContractReference: 'data:fixture-input@1',
+    deadline: '2099-01-01T00:00:00.000Z',
+    payload: { value: 1 },
+    payloadClassification: ['business'],
+    requestedReceiptProfile: 'standard',
+  });
+  while (!runningTaskId) await new Promise((resolve) => setImmediate(resolve));
+  agent.cancelTask(runningTaskId);
+  await assert.rejects(pending, (error) => error.errorCode === 'TASK_CANCELLED');
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(agent.getTask(runningTaskId).state, 'cancelled');
 });

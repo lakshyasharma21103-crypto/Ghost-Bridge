@@ -1,0 +1,98 @@
+const { AppError } = require('../utils/AppError');
+const { ErrorCodes } = require('../utils/errorCodes');
+const { validateAgentPassportV1 } = require('../services/passportValidator');
+const { resolveInstallKey } = require('../services/connectionService');
+const { env } = require('../config/env');
+
+function validatePassport(request, response, next) {
+  const result = validateAgentPassportV1(request.body);
+
+  if (!result.valid) {
+    next(
+      new AppError(
+        400,
+        ErrorCodes.PASSPORT_VALIDATION_FAILED,
+        'Agent Passport validation failed.',
+        result.errors,
+      ),
+    );
+    return;
+  }
+
+  response.json({
+    success: true,
+    data: {
+      valid: true,
+      protocol: result.passport.protocol,
+      agent: result.passport.agent,
+      runtime: {
+        type: result.passport.runtime.type,
+        endpoint: result.passport.runtime.endpoint,
+        method: result.passport.runtime.method,
+      },
+      install: {
+        supportedModes: result.passport.install.supportedModes,
+        requiresUserConsent: result.passport.install.requiresUserConsent,
+      },
+      capabilityCount: result.passport.capabilities.length,
+    },
+  });
+}
+
+async function resolvePassportInstallKey(request, response, next) {
+  try {
+    const principal = installationPrincipal(request);
+    const data = await resolveInstallKey({
+      ...request.body,
+      receivingUserId: principal.userId,
+      receivingWorkspaceId: principal.workspaceId,
+    }, {
+      requestId: request.requestId,
+      traceId: request.traceId,
+      observer: request.observer,
+    });
+    response.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+function installationPrincipal(request) {
+  const requestedUserId = String(request.body?.receivingUserId || '');
+  const requestedWorkspaceId = String(request.body?.receivingWorkspaceId || '');
+  const principal = request.authenticatedPrincipal;
+  if (!principal) {
+    if (env.NODE_ENV !== 'development') {
+      throw new AppError(
+        401,
+        ErrorCodes.AUTHENTICATION_REQUIRED,
+        'Authenticated Host principal is required for installation.',
+      );
+    }
+    return {
+      userId: requestedUserId,
+      workspaceId: requestedWorkspaceId,
+      developmentFixture: true,
+    };
+  }
+  const permittedWorkspaces = new Set(principal.permittedWorkspaceIds || []);
+  if (
+    !principal.userId ||
+    !requestedWorkspaceId ||
+    requestedUserId !== principal.userId ||
+    !permittedWorkspaces.has(requestedWorkspaceId)
+  ) {
+    throw new AppError(
+      403,
+      ErrorCodes.FORBIDDEN,
+      'Requested installation scope is outside the authenticated principal.',
+    );
+  }
+  return { userId: principal.userId, workspaceId: requestedWorkspaceId };
+}
+
+module.exports = {
+  validatePassport,
+  resolvePassportInstallKey,
+  installationPrincipal,
+};

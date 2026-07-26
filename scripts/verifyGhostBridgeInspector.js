@@ -56,7 +56,7 @@ async function main() {
     });
     assert.equal((await inspector.inspectTask(result.task.taskId)).state, 'completed');
     assert.equal((await inspector.inspectReceipt(result.receipt.receiptId)).receipt.outcome, 'completed');
-    pass('invocation, Task tracking, and Receipt verification');
+    pass('invocation, Task tracking, and Receipt inspection');
 
     const projected = inspector.previewDataContract(
       {
@@ -123,4 +123,3 @@ main().catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);
   process.exitCode = 1;
 });
-

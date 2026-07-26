@@ -34,8 +34,16 @@ async function runTwoAgentWorkflow(options = {}) {
       accountingAgent.listen(),
     ]);
     listeners.push(invoiceListener, accountingListener);
-    const invoiceClient = createGhostBridgeClient({ baseUrl: invoiceListener.baseUrl });
-    const accountingClient = createGhostBridgeClient({ baseUrl: accountingListener.baseUrl });
+    const invoiceClient = createGhostBridgeClient({
+      baseUrl: invoiceListener.baseUrl,
+      localFixtureMode: true,
+      allowedLocalOrigins: [invoiceListener.baseUrl],
+    });
+    const accountingClient = createGhostBridgeClient({
+      baseUrl: accountingListener.baseUrl,
+      localFixtureMode: true,
+      allowedLocalOrigins: [accountingListener.baseUrl],
+    });
 
     const [invoiceDiscovery, accountingDiscovery] = await Promise.all([
       invoiceClient.discover(),

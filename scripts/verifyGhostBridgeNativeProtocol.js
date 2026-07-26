@@ -1,17 +1,27 @@
 'use strict';
 
-const { runTwoAgentWorkflow } = require('../protocol/examples/two-agent-workflow');
+const assert = require('node:assert/strict');
+const { createGhostBridgeClient } = require('@ghostbridge/native-client');
+const { createInvoiceAgent } = require('../protocol/examples/invoice-agent/src');
 
 async function main() {
-  const report = await runTwoAgentWorkflow({
-    onCheck(check) {
-      process.stdout.write(`PASS ${check.name}\n`);
-    },
+  const agent = createInvoiceAgent();
+  const listener = await agent.listen();
+  const client = createGhostBridgeClient({
+    baseUrl: listener.baseUrl,
+    localFixtureMode: true,
+    allowedLocalOrigins: [listener.baseUrl],
   });
-  if (!report.checks.every((check) => check.status === 'pass')) {
-    throw new Error('One or more Ghost Bridge Native checks failed.');
+  try {
+    const discovery = await client.discover();
+    assert.equal(discovery.features.delegation, false);
+    assert.equal(Object.hasOwn(discovery.profiles, 'agentCoordination'), false);
+    assert.equal(typeof agent.registerDelegation, 'undefined');
+    process.stdout.write('PASS Agent Coordination is isolated from the Native Agent surface\n');
+  } finally {
+    client.close();
+    await listener.close();
   }
-  process.stdout.write('PASS Ghost Bridge Native protocol verification\n');
 }
 
 main().catch((error) => {

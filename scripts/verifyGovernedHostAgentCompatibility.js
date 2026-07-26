@@ -40,11 +40,13 @@ async function main() {
     let authenticatedSubject;
     host = createOpsCanvasHost({
       installGrantResolver: resolver,
+      localFixtureMode: true,
+      allowedLocalOrigins: [listener.baseUrl],
       issuerKeyResolver: async () => ({ verified: true }),
       authenticationHandler: async ({ mode }) => {
         assert.equal(mode, 'platform_brokered');
         authenticatedSubject = 'employee_ap_001';
-        return { connectionReference: 'employee_session_synthetic' };
+        return { credentialReference: 'employee_session_synthetic' };
       },
     });
 
@@ -54,7 +56,7 @@ async function main() {
       preview.compatibility.profiles.governedExecution.conformance,
       ['G1', 'G2', 'G3'],
     );
-    assert.equal(preview.compatibility.profiles.agentCoordination.id, PROFILE_IDS.agentCoordination);
+    assert.equal(preview.compatibility.profiles.agentCoordination, undefined);
     pass('Governed Execution profile');
 
     await assert.rejects(
@@ -62,6 +64,8 @@ async function main() {
         createGhostBridgeClient({
           installGrantResolver: resolver,
           supportedAuthenticationModes: ['platform_brokered'],
+          localFixtureMode: true,
+          allowedLocalOrigins: [listener.baseUrl],
         }).previewInstall({
           grant: grant.key,
           organizationScope: 'organization_b',
@@ -75,6 +79,8 @@ async function main() {
         createGhostBridgeClient({
           installGrantResolver: resolver,
           supportedAuthenticationModes: ['platform_brokered'],
+          localFixtureMode: true,
+          allowedLocalOrigins: [listener.baseUrl],
         }).previewInstall({
           grant: grant.key,
           organizationScope: scope.organizationScope,
@@ -244,8 +250,10 @@ async function main() {
     assert.equal((await host.getTask(completed.task.taskId)).state, 'completed');
     pass('durable Execution Task');
     validateReceipt(completed.receipt);
-    assert.equal((await host.verifyReceipt(completed.receipt)).valid, true);
-    pass('Execution Receipt');
+    const receiptVerification = await host.verifyReceipt(completed.receipt);
+    assert.equal(receiptVerification.valid, false);
+    assert.ok(['invalid', 'unverified'].includes(receiptVerification.proofState));
+    pass('unverified Execution Receipt rejection');
 
     const revoked = await host.revokeConnection(connection.connectionId);
     assert.equal(revoked.status, 'revoked');

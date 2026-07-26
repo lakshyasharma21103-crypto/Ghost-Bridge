@@ -7,6 +7,8 @@ function createAccountingAgent() {
   const invoiceIds = new Set(['INV-EXISTING']);
   const drafts = new Map();
   const agent = createGhostBridgeAgent({
+    mode: 'localFixtureMode',
+    approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,
       passportId: 'passport_accounting_agent',

@@ -47,7 +47,13 @@ export class RevocationCache {
 }
 
 export class AntiRollbackStore {
-  observe(namespace: string, issuer: string, sequence: number): number;
+  observe(
+    namespace: string,
+    issuer: string,
+    sequence: number,
+    documentOrDigest: unknown,
+    options?: { contiguous?: boolean; previousDigest?: string },
+  ): number;
 }
 
 export class IssuerReviewWorkflow {
@@ -77,7 +83,18 @@ export const ISSUER_REVIEW_STATES: readonly string[];
 export const TRUST_ERROR_CODES: readonly string[];
 export const DEFAULT_TRUST_LIMITS: Readonly<Record<string, number>>;
 
+export interface TrustSecurityTransport {
+  readonly securityProperties?: Readonly<Record<string, unknown>>;
+  get(url: string | URL, options?: Record<string, unknown>): Promise<{
+    status: number;
+    ok: boolean;
+    headers: { get(name: string): string | null };
+    text(): Promise<string>;
+  }>;
+}
+
 export function normalizeIssuerId(value: string, options?: Record<string, unknown>): string;
+export function createNodeSecurityTransport(options?: Record<string, unknown>): TrustSecurityTransport;
 export function issuerDiscoveryUrl(value: string, options?: Record<string, unknown>): string;
 export function discoverIssuer(value: string, options?: Record<string, unknown>): Promise<Record<string, unknown>>;
 export function loadIssuerJwks(metadata: Record<string, unknown>, options?: Record<string, unknown>): Promise<Readonly<Record<string, unknown>>>;

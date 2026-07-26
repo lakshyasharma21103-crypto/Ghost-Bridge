@@ -63,6 +63,8 @@ class GhostBridgeInspector {
       baseUrl: target.baseUrl,
       fetch: options.fetch,
       timeoutMs: options.timeoutMs || 5_000,
+      localFixtureMode: target.loopback,
+      allowedLocalOrigins: target.loopback ? [target.baseUrl] : [],
     });
     this.timeline = [];
     this.connected = false;

@@ -24,8 +24,6 @@ export interface CapabilityHandlerContext {
   idempotencyKey?: string;
   traceContext?: Record<string, string>;
   approvalReference?: string;
-  delegationReference?: string;
-  delegation?: Record<string, unknown>;
   signal: AbortSignal;
   logger: SafeLogger;
 }
@@ -107,7 +105,6 @@ export interface GhostBridgeAgent {
       approvedCapabilityKeys?: string[];
     },
   ): Record<string, unknown>;
-  registerDelegation(grant: Record<string, unknown>): Record<string, unknown>;
   issueApprovalChallenge(input: Record<string, unknown>): Record<string, unknown>;
   submitApprovalDecision(decision: Record<string, unknown>): Record<string, unknown>;
   invoke(
@@ -137,6 +134,12 @@ export interface GhostBridgeAgent {
 export const AUDIT_EVENTS: readonly string[];
 export function createGhostBridgeAgent(options: {
   passport: AgentPassport;
+  mode?: 'localFixtureMode' | 'developmentMode' | 'productionMode';
+  localFixtureMode?: boolean;
+  publicBaseUrl?: string;
+  approveAllFixtureCapabilities?: boolean;
+  enableLegacyGrantPath?: boolean;
+  stores?: Record<string, Map<string, unknown>>;
   discovery?: Record<string, unknown>;
   authenticationModes?: AuthenticationMode[];
   authenticationSetupReference?: string;

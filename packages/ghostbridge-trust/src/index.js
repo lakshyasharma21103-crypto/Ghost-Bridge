@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const net = require('node:net');
 const { assertPlainData, redactPublicData } = require('@ghostbridge/protocol-core');
+const { createNodeSecurityTransport } = require('./nodeTransport');
 
 const TRUST_PROFILE_VERSION = 'ghostbridge-trust/0.1-draft';
 const CANONICALIZATION_PROFILE = 'ghostbridge-jcs/0.1-draft';
@@ -123,6 +124,7 @@ const TRUST_ERROR_CODES = Object.freeze([
   'NONCE_REQUIRED',
   'NONCE_INVALID',
   'REPLAY_DETECTED',
+  'REPLAY_CAPACITY_EXCEEDED',
   'REVOCATION_STATUS_STALE',
   'REVOCATION_STATUS_UNAVAILABLE',
   'REVOCATION_SET_INVALID',
@@ -285,29 +287,30 @@ function isPrivateIp(hostname) {
 async function discoverIssuer(issuerId, options = {}) {
   const normalizedIssuer = normalizeIssuerId(issuerId, options);
   const url = issuerDiscoveryUrl(normalizedIssuer, options);
-  const fetchImplementation = options.fetch || globalThis.fetch;
-  if (typeof fetchImplementation !== 'function') {
-    throw trustError('ISSUER_DISCOVERY_FAILED', 'A Fetch implementation is required.');
-  }
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    boundedInteger(options.timeoutMs, 50, 30_000, DEFAULT_TRUST_LIMITS.networkTimeoutMs),
-  );
   let response;
   try {
-    response = await fetchImplementation(url, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: options.signal || controller.signal,
-      headers: { accept: 'application/json' },
+    response = await trustTransport(options).get(url, {
+      signal: options.signal,
+      timeoutMs: boundedInteger(
+        options.timeoutMs,
+        50,
+        30_000,
+        DEFAULT_TRUST_LIMITS.networkTimeoutMs,
+      ),
+      maximumBytes:
+        options.maximumBytes || DEFAULT_TRUST_LIMITS.maximumIssuerMetadataBytes,
+      expectedContentTypes: ['application/json'],
+      localFixtureMode: options.localTestMode === true,
+      allowedLocalOrigins: options.allowedLocalIssuers,
+      allowedPorts: options.allowedPorts,
     });
-  } catch {
+  } catch (error) {
+    if (['UNSAFE_DISCOVERY_TARGET', 'RESPONSE_TOO_LARGE'].includes(error?.code)) {
+      throw trustError(error.code, error.message, { retryable: error.retryable });
+    }
     throw trustError('ISSUER_DISCOVERY_FAILED', 'Issuer discovery could not be completed.', {
       retryable: true,
     });
-  } finally {
-    clearTimeout(timeout);
   }
   if (response.status >= 300 && response.status < 400) {
     throw trustError('ISSUER_DISCOVERY_FAILED', 'Issuer discovery redirects are rejected by default.');
@@ -335,34 +338,34 @@ async function loadIssuerJwks(metadata, options = {}) {
     ...options,
     expectedIssuer: options.expectedIssuer || metadata.issuerId,
   });
-  const fetchImplementation = options.fetch || globalThis.fetch;
-  if (typeof fetchImplementation !== 'function') {
-    throw trustError('ISSUER_DISCOVERY_FAILED', 'A Fetch implementation is required.');
-  }
   const endpoint = new URL(validatedMetadata.jwksUri);
   if (endpoint.origin.toLowerCase() !== new URL(validatedMetadata.issuerId).origin.toLowerCase() &&
       options.allowCrossOriginEndpoints !== true) {
     throw trustError('JWKS_INVALID', 'The JWKS endpoint is not bound to the issuer origin.');
   }
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    boundedInteger(options.timeoutMs, 50, 30_000, DEFAULT_TRUST_LIMITS.networkTimeoutMs),
-  );
   let response;
   try {
-    response = await fetchImplementation(endpoint, {
-      method: 'GET',
-      redirect: 'manual',
-      signal: options.signal || controller.signal,
-      headers: { accept: 'application/jwk-set+json, application/json' },
+    response = await trustTransport(options).get(endpoint, {
+      signal: options.signal,
+      timeoutMs: boundedInteger(
+        options.timeoutMs,
+        50,
+        30_000,
+        DEFAULT_TRUST_LIMITS.networkTimeoutMs,
+      ),
+      maximumBytes: options.maximumBytes || DEFAULT_TRUST_LIMITS.maximumJwksBytes,
+      expectedContentTypes: ['application/jwk-set+json', 'application/json'],
+      localFixtureMode: options.localTestMode === true,
+      allowedLocalOrigins: options.allowedLocalIssuers,
+      allowedPorts: options.allowedPorts,
     });
-  } catch {
+  } catch (error) {
+    if (['UNSAFE_DISCOVERY_TARGET', 'RESPONSE_TOO_LARGE'].includes(error?.code)) {
+      throw trustError(error.code, error.message, { retryable: error.retryable });
+    }
     throw trustError('ISSUER_DISCOVERY_FAILED', 'Issuer public-key discovery could not be completed.', {
       retryable: true,
     });
-  } finally {
-    clearTimeout(timeout);
   }
   if (response.status >= 300 && response.status < 400) {
     throw trustError('JWKS_INVALID', 'JWKS redirects are rejected by default.');
@@ -379,6 +382,30 @@ async function loadIssuerJwks(metadata, options = {}) {
   return validateJwks(parseJsonStrict(text, {
     maximumBytes: options.maximumBytes || DEFAULT_TRUST_LIMITS.maximumJwksBytes,
   }), options);
+}
+
+function trustTransport(options) {
+  if (options.transport && typeof options.transport.get === 'function') {
+    return options.transport;
+  }
+  if (typeof options.fetch === 'function') {
+    if (options.allowInsecureFixtureFetch !== true || options.localTestMode !== true) {
+      throw trustError(
+        'UNSAFE_DISCOVERY_TARGET',
+        'A raw Fetch implementation is unsuitable for untrusted issuer discovery.',
+      );
+    }
+    return {
+      get: (url, requestOptions) =>
+        options.fetch(url, {
+          method: 'GET',
+          redirect: 'manual',
+          signal: requestOptions.signal,
+          headers: { accept: requestOptions.expectedContentTypes.join(', ') },
+        }),
+    };
+  }
+  return createNodeSecurityTransport();
 }
 
 async function boundedResponseText(response, maximumBytes) {
@@ -830,6 +857,7 @@ function digest(value) {
 async function createProof(payload, signer, options = {}) {
   validatePlainTrustData(payload);
   if (!signer || typeof signer.sign !== 'function') throw new TypeError('A signer is required.');
+  const issuedAt = signedIssuanceTime(payload);
   const algorithm = assertAlgorithmAllowed(options.algorithm || signer.algorithm || MANDATORY_ALGORITHM);
   const kid = String(options.kid || signer.kid || '');
   if (!/^[A-Za-z0-9._~-]{1,128}$/.test(kid)) throw trustError('PROOF_INVALID', 'A protected key identifier is required.');
@@ -853,7 +881,7 @@ async function createProof(payload, signer, options = {}) {
     protectedJws: compact,
     kid,
     algorithm,
-    createdAt: options.createdAt || new Date().toISOString(),
+    createdAt: options.createdAt || issuedAt,
   });
 }
 
@@ -900,6 +928,13 @@ function verifyProof(payload, proof, jwks, options = {}) {
   if (header.kid !== proof.kid || header.alg !== proof.algorithm) {
     throw trustError('PROOF_INVALID', 'Protected proof fields do not match the proof metadata.');
   }
+  const issuedAt = signedIssuanceTime(payload);
+  if (proof.createdAt !== issuedAt) {
+    throw trustError(
+      'PROOF_INVALID',
+      'Unsigned proof creation metadata does not match the signed issuance time.',
+    );
+  }
   const canonicalPayload = canonicalize(payload, { maximumBytes: options.maximumPayloadBytes });
   if (encodedPayload !== canonicalPayload) {
     throw trustError('PAYLOAD_DIGEST_MISMATCH', 'The signed payload does not match the supplied document.');
@@ -910,7 +945,7 @@ function verifyProof(payload, proof, jwks, options = {}) {
   assertKeyUsable(key, {
     ...options,
     purpose: options.purpose,
-    issuedAt: options.issuedAt || payload.issuedAt || proof.createdAt,
+    issuedAt: options.issuedAt || issuedAt,
     historical: options.historical === true,
   });
   let publicKey;
@@ -947,7 +982,7 @@ function verifyDocument(document, jwks, options = {}) {
   validateTimeWindow(payload, {
     now: clockValue(options.clock),
     clockSkewMs: options.clockSkewMs,
-    requireFutureExpiry: options.requireFutureExpiry !== false,
+    requireFutureExpiry: options.requireFutureExpiry,
   });
   if (options.expectedAudience) validateAudience(payload.audience, options.expectedAudience);
   const proofResult = verifyProof(payload, document.proof, jwks, {
@@ -977,13 +1012,14 @@ function assertKeyUsable(key, options = {}) {
       throw trustError('KEY_NOT_ACTIVE', 'The signing key is not authorized for this proof purpose.');
     }
   }
-  const issuedAt = Date.parse(options.issuedAt || new Date().toISOString());
+  const issuedAt = Date.parse(options.issuedAt);
   if (!Number.isFinite(issuedAt)) throw trustError('PROOF_INVALID', 'The signed object issuance time is invalid.');
   if (issuedAt < Date.parse(key.notBefore)) throw trustError('KEY_NOT_ACTIVE', 'The key was not active at issuance.');
   if (issuedAt >= Date.parse(key.expiresAt)) throw trustError('KEY_EXPIRED', 'The key was expired at issuance.');
   if (key.state === 'revoked') throw trustError('KEY_REVOKED', 'The signing key is revoked.');
   if (key.state === 'compromised') throw trustError('KEY_COMPROMISED', 'The signing key is compromised.');
   if (key.state === 'suspended') throw trustError('KEY_NOT_ACTIVE', 'The signing key is suspended.');
+  if (key.state === 'expired') throw trustError('KEY_EXPIRED', 'The signing key is expired.');
   if (['generated', 'prepublished'].includes(key.state)) {
     throw trustError('KEY_NOT_ACTIVE', 'The signing key is not active.');
   }
@@ -1140,8 +1176,21 @@ function validateRevocationSet(document, jwks, options = {}) {
   if (Number.isSafeInteger(options.minimumSequence) && document.sequence < options.minimumSequence) {
     throw trustError('REVOCATION_ROLLBACK', 'A revocation-set rollback was detected.');
   }
-  if (options.previousSet && document.sequence > 1 && document.previousSetDigest !== digest(withoutProof(options.previousSet))) {
-    throw trustError('REVOCATION_ROLLBACK', 'The revocation-set digest chain is invalid.');
+  if (options.previousSet) {
+    if (document.issuer !== options.previousSet.issuer) {
+      throw trustError('REVOCATION_ROLLBACK', 'The revocation-set issuer chain is invalid.');
+    }
+    if (document.sequence !== Number(options.previousSet.sequence) + 1) {
+      throw trustError('REVOCATION_ROLLBACK', 'The revocation-set sequence must be contiguous.');
+    }
+    if (document.previousSetDigest !== digest(withoutProof(options.previousSet))) {
+      throw trustError('REVOCATION_ROLLBACK', 'The revocation-set digest chain is invalid.');
+    }
+  } else if (document.sequence > 1 && options.allowSignedCheckpoint !== true) {
+    throw trustError(
+      'REVOCATION_ROLLBACK',
+      'A non-initial revocation set requires its verified predecessor.',
+    );
   }
   if (!Array.isArray(document.entries) || document.entries.length > (options.maximumEntries || DEFAULT_TRUST_LIMITS.maximumRevocationEntries)) {
     throw trustError('REVOCATION_SET_INVALID', 'The revocation-set entry list is invalid.');
@@ -1185,10 +1234,24 @@ class RevocationCache {
 
   put(issuer, document, verification) {
     const current = this.records.get(issuer);
-    if (current && document.sequence <= current.document.sequence) {
-      throw trustError('REVOCATION_ROLLBACK', 'A non-increasing revocation-set sequence was rejected.');
+    const documentDigest = digest(withoutProof(document));
+    if (current && document.sequence === current.document.sequence) {
+      if (documentDigest !== current.digest) {
+        throw trustError('REVOCATION_ROLLBACK', 'Revocation content changed at the same sequence.');
+      }
+      return this.get(issuer);
     }
-    this.records.set(issuer, { document: structuredClone(document), verification: structuredClone(verification) });
+    if (current && document.sequence !== current.document.sequence + 1) {
+      throw trustError('REVOCATION_ROLLBACK', 'A non-contiguous revocation-set sequence was rejected.');
+    }
+    if (current && document.previousSetDigest !== current.digest) {
+      throw trustError('REVOCATION_ROLLBACK', 'The revocation-set previous digest is invalid.');
+    }
+    this.records.set(issuer, {
+      document: structuredClone(document),
+      verification: structuredClone(verification),
+      digest: documentDigest,
+    });
     this.trim();
     return this.get(issuer);
   }
@@ -1246,7 +1309,13 @@ class ReplayCache {
       connectionId: input.connectionId || null,
     });
     if (this.entries.has(key)) throw trustError('REPLAY_DETECTED', 'The authenticated message was already presented.');
-    if (this.entries.size >= this.maximumEntries) this.entries.delete(this.entries.keys().next().value);
+    if (this.entries.size >= this.maximumEntries) {
+      throw trustError(
+        'REPLAY_CAPACITY_EXCEEDED',
+        'Replay protection capacity is exhausted; the message was rejected.',
+        { retryable: true },
+      );
+    }
     this.entries.set(key, expiresAt);
     return true;
   }
@@ -1261,15 +1330,31 @@ class AntiRollbackStore {
     this.sequences = new Map();
   }
 
-  observe(namespace, issuer, sequence) {
+  observe(namespace, issuer, sequence, documentOrDigest, options = {}) {
     if (!Number.isSafeInteger(sequence) || sequence < 1) throw trustError('PROOF_INVALID', 'A sequence must be a positive integer.');
+    const documentDigest =
+      typeof documentOrDigest === 'string' ? documentOrDigest : digest(documentOrDigest);
     const key = `${namespace}:${issuer}`;
     const previous = this.sequences.get(key);
-    if (previous !== undefined && sequence < previous) {
+    const rollbackCode =
+      namespace === 'revocation' ? 'REVOCATION_ROLLBACK' : 'ISSUER_METADATA_ROLLBACK';
+    if (previous && sequence < previous.sequence) {
       throw trustError(namespace === 'revocation' ? 'REVOCATION_ROLLBACK' : 'ISSUER_METADATA_ROLLBACK', 'A trust-document rollback was detected.');
     }
-    this.sequences.set(key, Math.max(previous || 0, sequence));
-    return this.sequences.get(key);
+    if (previous && sequence === previous.sequence) {
+      if (documentDigest !== previous.digest) {
+        throw trustError(rollbackCode, 'Trust-document content changed at the same sequence.');
+      }
+      return previous.sequence;
+    }
+    if (previous && options.contiguous === true && sequence !== previous.sequence + 1) {
+      throw trustError(rollbackCode, 'A contiguous trust-document sequence was skipped.');
+    }
+    if (previous && options.previousDigest && options.previousDigest !== previous.digest) {
+      throw trustError(rollbackCode, 'The trust-document previous digest is invalid.');
+    }
+    this.sequences.set(key, { sequence, digest: documentDigest });
+    return sequence;
   }
 }
 
@@ -1520,7 +1605,13 @@ function verifyRequest(request, signedRequest, jwks, options = {}) {
   if (canonicalize(expected) !== canonicalize(signedRequest.descriptor)) {
     throw trustError('PAYLOAD_DIGEST_MISMATCH', 'The signed request does not match the HTTP request.');
   }
-  validateAudience(expected.audience, options.expectedAudience || expected.audience);
+  if (!options.expectedAudience) {
+    throw trustError(
+      'AUDIENCE_MISMATCH',
+      'Expected audience must come from trusted Connection configuration.',
+    );
+  }
+  validateAudience(expected.audience, options.expectedAudience);
   if (options.connectionId && expected.connectionId !== options.connectionId) {
     throw trustError('CONNECTION_TRUST_INVALID', 'The signed request is bound to another Connection.');
   }
@@ -1573,6 +1664,35 @@ function verifyReceipt(receipt, passport, jwks, options = {}) {
     expectedIssuer: passport.issuer,
     requireFutureExpiry: false,
   });
+  if (Object.hasOwn(options, 'actualOutput')) {
+    assertDigestBinding(receipt.outputDigest, options.actualOutput, 'Receipt output');
+  }
+  if (Object.hasOwn(options, 'actualEvidence')) {
+    assertDigestBinding(receipt.evidenceDigest, options.actualEvidence, 'Receipt evidence');
+  }
+  if (options.invocation) {
+    for (const field of ['invocationId', 'organizationScope', 'workspaceScope']) {
+      if (
+        options.invocation[field] !== undefined &&
+        receipt[field] !== options.invocation[field]
+      ) {
+        throw trustError(
+          'RECEIPT_PROOF_INVALID',
+          `The Receipt ${field} binding does not match the Invocation context.`,
+        );
+      }
+    }
+  }
+  if (
+    options.connectionTrustRecord?.connectionId &&
+    options.invocation?.connectionId &&
+    options.connectionTrustRecord.connectionId !== options.invocation.connectionId
+  ) {
+    throw trustError(
+      'CONNECTION_TRUST_INVALID',
+      'The Receipt context is not bound to the Connection Trust Record.',
+    );
+  }
   return Object.freeze({
     ...verification,
     historicalStatus: historicalReceiptStatus(receipt, key, options.revocationEntry),
@@ -1611,11 +1731,35 @@ function validateTimeWindow(document, options = {}) {
     const notBefore = validateTimestamp(document.notBefore, 'MESSAGE_NOT_YET_VALID');
     if (notBefore > now + skew) throw trustError('MESSAGE_NOT_YET_VALID', 'The signed object is not yet valid.');
   }
+  if (options.requireFutureExpiry === true && !document.expiresAt) {
+    throw trustError('MESSAGE_EXPIRED', 'The signed object is missing its required expiration.');
+  }
   if (document.expiresAt && options.requireFutureExpiry !== false) {
     const expiresAt = validateTimestamp(document.expiresAt, 'MESSAGE_EXPIRED');
     if (expiresAt <= now - skew) throw trustError('MESSAGE_EXPIRED', 'The signed object has expired.');
   }
   return true;
+}
+
+function signedIssuanceTime(payload) {
+  const value = payload?.issuedAt || payload?.generatedAt || payload?.completedAt;
+  if (!value) {
+    throw trustError(
+      'PROOF_INVALID',
+      'A signed object must contain an authoritative issuance timestamp.',
+    );
+  }
+  validateTimestamp(value, 'PROOF_INVALID');
+  return value;
+}
+
+function assertDigestBinding(expected, actual, label) {
+  const calculated = digest(actual);
+  const left = Buffer.from(String(expected || ''), 'utf8');
+  const right = Buffer.from(calculated, 'utf8');
+  if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) {
+    throw trustError('RECEIPT_PROOF_INVALID', `${label} digest does not match the actual value.`);
+  }
 }
 
 function validateTimestamp(value, code = 'PROOF_INVALID') {
@@ -1673,6 +1817,7 @@ module.exports = {
   assertKeyUsable,
   calculateJwkThumbprint,
   canonicalize,
+  createNodeSecurityTransport,
   createProof,
   createRequestDescriptor,
   digest,

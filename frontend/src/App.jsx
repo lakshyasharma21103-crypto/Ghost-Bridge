@@ -34,10 +34,6 @@ import { SelectionDecisions } from './pages/SelectionDecisions.jsx';
 import { SelectionDecisionDetail } from './pages/SelectionDecisionDetail.jsx';
 import { DataContracts } from './pages/DataContracts.jsx';
 import { DataContractDetail } from './pages/DataContractDetail.jsx';
-import { DelegationGrants } from './pages/DelegationGrants.jsx';
-import { DelegationGrantDetail } from './pages/DelegationGrantDetail.jsx';
-import { DelegationInvocations } from './pages/DelegationInvocations.jsx';
-import { DelegationInvocationDetail } from './pages/DelegationInvocationDetail.jsx';
 import { RecoveryPolicies } from './pages/RecoveryPolicies.jsx';
 import { RecoveryPolicyDetail } from './pages/RecoveryPolicyDetail.jsx';
 import { Interventions } from './pages/Interventions.jsx';
@@ -143,7 +139,6 @@ export default function App() {
         <Route path="/console/install" element={<ResolvePassportKey />} />
         <Route path="/console/workflows" element={<Orchestrations />} />
         <Route path="/console/invocations" element={<Invocations />} />
-        <Route path="/console/delegations" element={<DelegationGrants />} />
         <Route path="/console/approvals" element={<ConsoleProtocolPlaceholder />} />
         <Route path="/console/tasks" element={<OrchestrationRuns />} />
         <Route path="/console/receipts" element={<ConsoleProtocolPlaceholder />} />
@@ -238,10 +233,6 @@ export default function App() {
         <Route path="/selection-decisions/:decisionId" element={<SelectionDecisionDetail />} />
         <Route path="/data-contracts" element={<DataContracts />} />
         <Route path="/data-contracts/:contractId" element={<DataContractDetail />} />
-        <Route path="/delegation-grants" element={<DelegationGrants />} />
-        <Route path="/delegation-grants/:grantId" element={<DelegationGrantDetail />} />
-        <Route path="/delegation-invocations" element={<DelegationInvocations />} />
-        <Route path="/delegation-invocations/:invocationId" element={<DelegationInvocationDetail />} />
         <Route path="/passports/new" element={<CreatePassport />} />
         <Route path="/passports" element={<PassportsList />} />
         <Route path="/passports/:passportId" element={<PassportDetail />} />

@@ -20,6 +20,8 @@ function createOpsCanvasHost(options = {}) {
     supportedAuthenticationModes: ['platform_brokered', 'signed_request'],
     requiredProfiles: [PROFILE_IDS.core, PROFILE_IDS.governedExecution],
     requiredGovernedFeatures: { tasks: true, receipts: true },
+    localFixtureMode: options.localFixtureMode === true,
+    allowedLocalOrigins: options.allowedLocalOrigins || [],
   });
 }
 

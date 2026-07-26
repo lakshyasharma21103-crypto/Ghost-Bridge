@@ -240,15 +240,44 @@ test('replay cache atomically rejects repeated authenticated messages', () => {
   expectCode(() => replay.consume(record), 'MESSAGE_EXPIRED');
 });
 
-test('anti-rollback store rejects older metadata and revocation sequences', () => {
-  const store = new AntiRollbackStore();
-  assert.equal(store.observe('metadata', 'issuer', 2), 2);
-  expectCode(() => store.observe('metadata', 'issuer', 1), 'ISSUER_METADATA_ROLLBACK');
-  assert.equal(store.observe('revocation', 'issuer', 4), 4);
-  expectCode(() => store.observe('revocation', 'issuer', 3), 'REVOCATION_ROLLBACK');
+test('replay cache fails closed instead of evicting an unexpired entry at capacity', () => {
+  const replay = new ReplayCache({ maximumEntries: 1, clock: () => 1_000 });
+  const record = {
+    issuer: 'https://issuer.example',
+    kid: 'key_1',
+    messageId: 'message_1',
+    audience: 'flowdesk',
+    expiresAt: new Date(3_000).toISOString(),
+  };
+  replay.consume(record);
+  expectCode(
+    () => replay.consume({ ...record, messageId: 'message_2' }),
+    'REPLAY_CAPACITY_EXCEEDED',
+  );
+  expectCode(() => replay.consume(record), 'REPLAY_DETECTED');
 });
 
-test('revocation cache is issuer-scoped and rejects non-increasing updates', () => {
+test('anti-rollback store binds sequence to digest and enforces contiguous chains', () => {
+  const store = new AntiRollbackStore();
+  assert.equal(store.observe('metadata', 'issuer', 2, { value: 'a' }), 2);
+  assert.equal(store.observe('metadata', 'issuer', 2, { value: 'a' }), 2);
+  expectCode(
+    () => store.observe('metadata', 'issuer', 2, { value: 'changed' }),
+    'ISSUER_METADATA_ROLLBACK',
+  );
+  expectCode(
+    () => store.observe('metadata', 'issuer', 1, { value: 'old' }),
+    'ISSUER_METADATA_ROLLBACK',
+  );
+  assert.equal(store.observe('revocation', 'issuer', 4, { value: 'four' }), 4);
+  expectCode(
+    () =>
+      store.observe('revocation', 'issuer', 6, { value: 'six' }, { contiguous: true }),
+    'REVOCATION_ROLLBACK',
+  );
+});
+
+test('revocation cache is issuer-scoped, idempotent, and rejects changed same-sequence content', () => {
   const cache = new RevocationCache();
   const document = {
     sequence: 1,
@@ -263,5 +292,14 @@ test('revocation cache is issuer-scoped and rejects non-increasing updates', () 
     }).status,
     'revoked',
   );
-  expectCode(() => cache.put('issuer', document, { valid: true }), 'REVOCATION_ROLLBACK');
+  assert.equal(cache.put('issuer', document, { valid: true }).document.sequence, 1);
+  expectCode(
+    () =>
+      cache.put(
+        'issuer',
+        { ...document, entries: [{ ...document.entries[0], status: 'active' }] },
+        { valid: true },
+      ),
+    'REVOCATION_ROLLBACK',
+  );
 });

@@ -33,6 +33,8 @@ const invoiceSummaryDataContract = Object.freeze({
 
 function createInvoiceAgent() {
   const agent = createGhostBridgeAgent({
+    mode: 'localFixtureMode',
+    approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,
       passportId: 'passport_invoice_agent',

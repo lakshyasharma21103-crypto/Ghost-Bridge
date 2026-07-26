@@ -61,6 +61,8 @@ const accountingDraftOutputSchema = Object.freeze({
 function createLedgerWorksProvider() {
   const drafts = new Map();
   const agent = createGhostBridgeAgent({
+    mode: 'localFixtureMode',
+    approveAllFixtureCapabilities: true,
     passport: {
       protocolVersion: PROTOCOL_VERSION,
       passportId: 'passport_ledgerworks_accounting_agent',

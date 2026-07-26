@@ -1,0 +1,140 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const mode = process.argv[2];
+
+function run(command, args, cwd = root) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    windowsHide: true,
+    shell: process.platform === 'win32' && command.endsWith('.cmd'),
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      npm_config_cache: path.join(root, 'node_modules', '.cache', 'npm-phase15c1'),
+    },
+  });
+  if (result.status !== 0) {
+    process.stderr.write(String(result.stdout || '').slice(-8_000));
+    process.stderr.write(String(result.stderr || '').slice(-8_000));
+    throw new Error(`${command} ${args.join(' ')} failed with status ${result.status}`);
+  }
+  return String(result.stdout || '');
+}
+
+function nodeTest(...files) {
+  run(process.execPath, ['--test', ...files]);
+}
+
+function backendTest(...files) {
+  run(process.execPath, ['--test', ...files], path.join(root, 'backend'));
+}
+
+function read(relative) {
+  return fs.readFileSync(path.join(root, relative), 'utf8');
+}
+
+function critical() {
+  nodeTest(
+    'backend/src/tests/reservedInvocation.test.js',
+    'backend/src/tests/nativeProtocol.test.js',
+  );
+}
+
+function network() {
+  nodeTest('packages/ghostbridge-trust/test/networkSafety.test.js');
+  backendTest('src/tests/securityFoundation.test.js');
+}
+
+function trust() {
+  nodeTest(
+    'packages/ghostbridge-trust/test/trust.test.js',
+    'packages/ghostbridge-native-client/test/client.test.js',
+    'packages/ghostbridge-native-agent/test/agent.test.js',
+  );
+}
+
+function platformTruth() {
+  nodeTest('backend/src/tests/nativeProtocol.test.js');
+  const routes = read('backend/src/routes/nativeProtocolRoutes.js');
+  assert.match(routes, /PLATFORM_NATIVE_PUBLIC_ENDPOINTS = Object\.freeze\(\{\}\)/);
+  assert.doesNotMatch(routes, /request\.get\(['"]host['"]\)/);
+}
+
+function authenticatedScope() {
+  nodeTest(
+    'backend/src/tests/partnerAuth.test.js',
+    'packages/ghostbridge-native-client/test/client.test.js',
+  );
+  assert.doesNotMatch(read('backend/src/middleware/authenticatePartner.js'), /Partner\.find\(/);
+  assert.match(read('backend/src/controllers/passportController.js'), /authenticatedPrincipal/);
+}
+
+function packageIntegrity() {
+  const manifests = fs
+    .readdirSync(path.join(root, 'packages'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(root, 'packages', entry.name, 'package.json'));
+  for (const manifestPath of manifests) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    assert.ok(manifest.name.startsWith('@ghostbridge/'));
+    assert.ok(manifest.exports?.['.']?.types);
+    assert.ok(manifest.exports?.['.']?.require);
+    run('npm.cmd', ['pack', '--dry-run', '--json'], path.dirname(manifestPath));
+  }
+}
+
+function cleanup() {
+  const inventory = read('docs/engineering/phase-15c1-cleanup-inventory.md');
+  assert.match(
+    inventory,
+    /\| ID \| Path\/symbol\/route\/dependency \| Active callers \| Runtime loading mechanism \| Classification \| Action \| Replacement \| Evidence \|/,
+  );
+  assert.match(inventory, /Files deleted: none/);
+  assert.ok(fs.existsSync(path.join(root, 'backend')));
+  const rootDirectories = fs
+    .readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  assert.equal(rootDirectories.includes('Backend'), false);
+  assert.equal(rootDirectories.filter((name) => name.toLowerCase() === 'backend').length, 1);
+  const scan = spawnSync('rg', [
+    '-l',
+    'Backend[/\\\\]',
+    '-g',
+    '!node_modules/**',
+    '-g',
+    '!.git/**',
+    '-g',
+    '!docs/engineering/phase-15c1-audit-baseline.md',
+    '-g',
+    '!docs/engineering/phase-15c1-cleanup-inventory.md',
+    '-g',
+    '!docs/engineering/phase-15c1-hardening-report.md',
+  ], { cwd: root, encoding: 'utf8', windowsHide: true });
+  assert.ok([0, 1].includes(scan.status));
+  assert.equal(String(scan.stdout || '').trim(), '');
+  assert.doesNotMatch(read('frontend/src/components/Sidebar.jsx'), /Delegation Grants|Delegation Invocations/);
+  assert.match(read('backend/src/routes/index.js'), /EXPERIMENTAL_AGENT_COORDINATION_ENABLED/);
+  assert.match(read('backend/src/routes/connectionRoutes.js'), /LEGACY_MCP_ENABLED/);
+}
+
+const operations = {
+  critical,
+  network,
+  trust,
+  platform: platformTruth,
+  scope: authenticatedScope,
+  package: packageIntegrity,
+  cleanup,
+  blackbox: () => run(process.execPath, ['scripts/verifyGhostBridgeBlackBoxConformance.mjs']),
+};
+
+if (!operations[mode]) throw new Error(`Unknown Phase 15C.1 verifier: ${mode}`);
+operations[mode]();
+process.stdout.write(`${JSON.stringify({ verifier: mode, status: 'PASS' })}\n`);
