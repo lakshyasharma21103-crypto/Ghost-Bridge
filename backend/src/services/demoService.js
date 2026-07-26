@@ -1,5 +1,6 @@
 const { env } = require('../config/env');
 const Partner = require('../models/Partner');
+const Workspace = require('../models/Workspace');
 const { generatePartnerApiKey, hashPartnerApiKey } = require('../utils/crypto');
 const { developmentDemoRuntimeUrl } = require('../utils/safeFetch');
 const { AppError } = require('../utils/AppError');
@@ -12,6 +13,11 @@ const FLOWAI_DEMO_PARTNER = {
 };
 
 const FLOWAI_DEMO_PARTNER_AGENT_ID = 'flowai_research_agent_001';
+const FLOWAI_DEMO_WORKSPACE = {
+  externalWorkspaceId: 'workspace_flowai_demo',
+  name: 'FlowAI Demo Workspace',
+  slug: 'flowai-demo',
+};
 
 function requireDevelopmentMode() {
   if (env.NODE_ENV !== 'development') {
@@ -94,8 +100,24 @@ async function createOrRefreshFlowAiDemoPartner() {
     },
     { upsert: true, new: true, runValidators: true },
   );
+  const workspace = await Workspace.findOneAndUpdate(
+    {
+      partnerId: partner._id,
+      externalWorkspaceId: FLOWAI_DEMO_WORKSPACE.externalWorkspaceId,
+    },
+    {
+      $set: {
+        ...FLOWAI_DEMO_WORKSPACE,
+        organizationId: partner._id,
+        status: 'active',
+        environment: 'DEVELOPMENT',
+        productionApproved: false,
+      },
+    },
+    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true },
+  );
 
-  return { partner, apiKey };
+  return { partner, apiKey, workspace };
 }
 
 async function seedFlowAiDemo(requestId = 'seed_flowai_demo') {
@@ -120,6 +142,7 @@ async function seedFlowAiDemo(requestId = 'seed_flowai_demo') {
 module.exports = {
   FLOWAI_DEMO_PARTNER,
   FLOWAI_DEMO_PARTNER_AGENT_ID,
+  FLOWAI_DEMO_WORKSPACE,
   buildFlowAiDemoPassport,
   createOrRefreshFlowAiDemoPartner,
   seedFlowAiDemo,
