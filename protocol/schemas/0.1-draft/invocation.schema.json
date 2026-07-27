@@ -19,6 +19,7 @@
     "delegationReference": { "type": "string", "maxLength": 500 },
     "inputContractReference": { "type": "string", "minLength": 1, "maxLength": 500 },
     "approvalReference": { "type": "string", "maxLength": 500 },
+    "policyDecisionReference": { "type": "string", "maxLength": 500 },
     "idempotencyKey": { "type": "string", "maxLength": 200 },
     "deadline": { "$ref": "https://ghostbridge.dev/schemas/0.1-draft/common.schema.json#/$defs/timestamp" },
     "traceContext": { "type": "object", "maxProperties": 20, "additionalProperties": { "type": "string", "maxLength": 200 } },

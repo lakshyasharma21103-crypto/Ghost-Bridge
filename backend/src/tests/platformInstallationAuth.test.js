@@ -8,6 +8,9 @@ const {
   DEVELOPMENT_FIXTURE_HEADER,
   fixturePrincipal,
 } = require('../middleware/authenticateHostPrincipal');
+const {
+  LEGACY_PROTOCOL_FIXTURE_HEADER,
+} = require('../middleware/requireLegacyProtocolFixture');
 const { hashPartnerApiKey } = require('../utils/crypto');
 
 const RAW_KEY = 'agentpass_partner_phase15c1a_authentication_fixture';
@@ -46,7 +49,9 @@ function patchIdentityModels() {
 async function withServer(operation, options = {}) {
   const restoreModels = patchIdentityModels();
   const originalFixtureFlag = env.ALLOW_DEVELOPMENT_IDENTITY_FIXTURES;
+  const originalLegacyFixtureFlag = env.ALLOW_LEGACY_PROTOCOL_FIXTURES;
   env.ALLOW_DEVELOPMENT_IDENTITY_FIXTURES = options.fixtureEnabled === true;
+  env.ALLOW_LEGACY_PROTOCOL_FIXTURES = true;
   const app = createApp();
   let resolvedInput;
   app.locals.resolveInstallKey = async (input) => {
@@ -68,6 +73,7 @@ async function withServer(operation, options = {}) {
   } finally {
     await new Promise((resolve) => server.close(resolve));
     env.ALLOW_DEVELOPMENT_IDENTITY_FIXTURES = originalFixtureFlag;
+    env.ALLOW_LEGACY_PROTOCOL_FIXTURES = originalLegacyFixtureFlag;
     restoreModels();
   }
 }
@@ -79,6 +85,7 @@ async function installRequest(origin, body, options = {}) {
       'content-type': 'application/json',
       ...(options.auth === false ? {} : { 'X-Partner-Api-Key': RAW_KEY }),
       ...(options.fixture ? { [DEVELOPMENT_FIXTURE_HEADER]: '1' } : {}),
+      [LEGACY_PROTOCOL_FIXTURE_HEADER]: '1',
       ...(options.cookie ? { cookie: `session=${COOKIE_SECRET}` } : {}),
     },
     body: JSON.stringify({ key: 'agentpass_install_phase15c1a_fixture_value', ...body }),

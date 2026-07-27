@@ -38,6 +38,7 @@ test('development-only demo and sandbox routes are absent when the app loads in 
         NODE_ENV: 'production',
         MONGODB_URI: 'mongodb://example.com/agent-passport-runtime-gateway',
         CREDENTIAL_ENCRYPTION_KEY: 'abcdefghijklmnopqrstuvwxyz123456',
+        PLATFORM_NATIVE_CLIENT_BINDING_SECRET: 'phase-15c2-app-load-binding-secret-32-bytes',
       },
       encoding: 'utf8',
     },

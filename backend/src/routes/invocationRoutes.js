@@ -9,10 +9,12 @@ const {
 } = require('../controllers/invocationController');
 const { authenticatePartner } = require('../middleware/authenticatePartner');
 const { requiresPermission } = require('../middleware/requiresPermission');
+const { requireLegacyProtocolFixture } = require('../middleware/requireLegacyProtocolFixture');
 
 const invocationRouter = express.Router();
 
 invocationRouter.use(authenticatePartner);
+invocationRouter.use(requireLegacyProtocolFixture);
 invocationRouter.get(
   '/',
   requiresPermission('invocation.read', { resourceType: 'Invocation' }),

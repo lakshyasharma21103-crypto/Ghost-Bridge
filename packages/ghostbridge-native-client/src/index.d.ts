@@ -90,6 +90,7 @@ export interface GhostBridgeClientOptions {
    */
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
+  maximumResponseBytes?: number;
   requestIdFactory?: () => string;
   traceIdFactory?: () => string;
   trust?: {

@@ -161,6 +161,13 @@ function worstCircuit(circuits, now) {
 }
 
 async function refreshCapabilityCatalog(input = {}, caller = {}, options = {}) {
+  if (env.NODE_ENV === 'production') {
+    throw new AppError(
+      409,
+      'PLATFORM_NATIVE_CLIENT_REQUIRED',
+      'Database-backed Agent discovery is prohibited in production; use the Platform Native Client.',
+    );
+  }
   const scope = options.scope || callerScope(input, caller);
   const now = options.now instanceof Date ? options.now : new Date(options.now || Date.now());
   const freshnessMs = Number(env.AGENT_SELECTION_HEALTH_FRESHNESS_MS || 300_000);

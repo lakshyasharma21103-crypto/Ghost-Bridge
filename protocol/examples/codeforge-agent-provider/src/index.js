@@ -103,8 +103,8 @@ function createCodeForgeProvider(options = {}) {
   });
 
   agent.capability('codeforge.create_app', {
-    contract: createAppContract,
-    handler: async ({ input, context }) => {
+    contract: options.capabilityContract || createAppContract,
+    handler: options.capabilityHandler || (async ({ input, context }) => {
       const projectId = `project_${String(input.projectName)
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')}`;
@@ -121,7 +121,7 @@ function createCodeForgeProvider(options = {}) {
       const { organizationScope, workspaceScope, ...publicProject } =
         projects.get(projectId);
       return { outcome: 'completed', output: publicProject };
-    },
+    }),
   });
 
   return {
@@ -144,6 +144,10 @@ function createCodeForgeProvider(options = {}) {
 async function createTrustedCodeForgeProvider(options = {}) {
   const clock = options.clock || Date.now;
   const now = clock();
+  const trustedContract = Object.freeze({
+    ...createAppContract,
+    ...(options.contract || {}),
+  });
   const issuer = await createSyntheticIssuer({
     issuerId: options.issuerId || 'http://127.0.0.1:8787',
     displayName: 'CodeForge Issuer',
@@ -157,7 +161,7 @@ async function createTrustedCodeForgeProvider(options = {}) {
       issuedAt: new Date(now).toISOString(),
       expiresAt: new Date(now + 3_600_000).toISOString(),
     },
-    [{ capabilityKey: 'codeforge.create_app', ...createAppContract }],
+    [{ capabilityKey: 'codeforge.create_app', ...trustedContract }],
     issuer.keyIds.operational,
   );
   const passport = await issuer.toolkit.signPassport(
@@ -199,6 +203,8 @@ async function createTrustedCodeForgeProvider(options = {}) {
   });
   const provider = createCodeForgeProvider({
     passport,
+    capabilityContract: trustedContract,
+    ...(options.capabilityHandler ? { capabilityHandler: options.capabilityHandler } : {}),
     agentOptions: {
       clock,
       hostAudience: options.hostAudience || 'flowdesk-host',

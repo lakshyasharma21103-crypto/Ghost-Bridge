@@ -2,6 +2,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 
 process.env.PORT = process.env.SANDBOX_VERIFY_PORT || '5013';
+process.env.ALLOW_LEGACY_PROTOCOL_FIXTURES = 'true';
 
 const { env } = require('../src/config/env');
 const { createApp } = require('../src/app');
@@ -14,6 +15,7 @@ const { hashKey } = require('../src/utils/crypto');
 const WORKSPACE_ID = 'workspace_developer_sandbox';
 const TOPIC = 'remaining FIFA matches in the US';
 const MAX_TRANSIENT_POLICY_ATTEMPTS = 3;
+const LEGACY_FIXTURE_HEADER = 'X-GhostBridge-Legacy-Protocol-Fixture';
 
 class SandboxVerificationError extends Error {}
 
@@ -57,6 +59,41 @@ function isRetryablePolicyRead(result, method) {
     result.body?.error?.code === 'AUTHORIZATION_DENIED' &&
     result.body?.error?.reasonCode === 'POLICY_EVALUATION_ERROR'
   );
+}
+
+function safeErrorCode(error) {
+  return String(error?.code || error?.name || 'DATABASE_READ_FAILED')
+    .replace(/[^A-Za-z0-9_.-]/g, '_')
+    .slice(0, 100);
+}
+
+function isTransientDatabaseError(error) {
+  return /Mongo|Topology|ServerSelection|Pool|timed out|ECONN|DATABASE_READ_FAILED/i.test(
+    `${error?.name || ''} ${error?.code || ''} ${error?.message || ''}`,
+  );
+}
+
+async function readPersistedFixture(label, operation) {
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_POLICY_ATTEMPTS; attempt += 1) {
+    try {
+      const value = await operation();
+      if (value) return value;
+      const unavailable = new Error('Persisted fixture is not visible yet.');
+      unavailable.code = 'DATABASE_READ_FAILED';
+      throw unavailable;
+    } catch (error) {
+      if (!isTransientDatabaseError(error) || attempt === MAX_TRANSIENT_POLICY_ATTEMPTS) {
+        throw new SandboxVerificationError(
+          `${label} could not be read from the local MongoDB primary (${safeErrorCode(error)}).`,
+        );
+      }
+      console.warn(
+        `RETRY ${label}: transient MongoDB read failure (${attempt}/${MAX_TRANSIENT_POLICY_ATTEMPTS}).`,
+      );
+      await delay(250 * attempt);
+    }
+  }
+  throw new SandboxVerificationError(`${label} exhausted retry attempts.`);
 }
 
 async function request(baseUrl, path, options = {}) {
@@ -128,7 +165,20 @@ async function verify() {
       }),
       'sandbox partner creation',
     );
-    const storedPartner = await Partner.findById(sandbox.partner.id).lean();
+    if (
+      !sandbox.partner?.id ||
+      typeof sandbox.apiKey !== 'string' ||
+      !sandbox.apiKey ||
+      !sandbox.workspace?.externalWorkspaceId
+    ) {
+      throw new SandboxVerificationError(
+        'sandbox partner creation returned an incomplete safe response.',
+      );
+    }
+    const storedPartner = await readPersistedFixture(
+      'sandbox Partner persistence',
+      () => Partner.findById(sandbox.partner.id).lean(),
+    );
     const receivingUserId = `partner:${sandbox.partner.id}`;
     assert.equal(storedPartner.status, 'active');
     assert.equal(storedPartner.plan, 'developer');
@@ -190,7 +240,10 @@ async function verify() {
       'sandbox install key issuance',
     );
     assert.equal(installKey.shownOnlyOnce, true);
-    const storedKey = await PassportInstallKey.findOne({ keyHash: hashKey(installKey.key) }).lean();
+    const storedKey = await readPersistedFixture(
+      'sandbox install-key persistence',
+      () => PassportInstallKey.findOne({ keyHash: hashKey(installKey.key) }).lean(),
+    );
     assert.equal(storedKey.status, 'active');
     assert.equal(JSON.stringify(storedKey).includes(installKey.key), false);
     report('install key', 'issued once and stored only as a hash');
@@ -198,7 +251,10 @@ async function verify() {
     const resolved = success(
       await request(baseUrl, '/passports/resolve', {
         method: 'POST',
-        headers: partnerAuthHeaders,
+        headers: {
+          ...partnerAuthHeaders,
+          [LEGACY_FIXTURE_HEADER]: '1',
+        },
         body: {
           key: installKey.key,
           receivingWorkspaceId: WORKSPACE_ID,
@@ -213,6 +269,10 @@ async function verify() {
     const invocation = success(
       await request(baseUrl, `/connections/${resolved.connectionId}/invoke`, {
         method: 'POST',
+        headers: {
+          ...partnerAuthHeaders,
+          [LEGACY_FIXTURE_HEADER]: '1',
+        },
         body: {
           capability: 'research_topic',
           input: { topic: TOPIC },
@@ -225,12 +285,19 @@ async function verify() {
     );
     assert.equal(invocation.status, 'completed');
     assert.equal(invocation.output.summary, `Demo research result for ${TOPIC}`);
-    assert.equal((await Invocation.findById(invocation.invocationId).lean()).status, 'completed');
+    const storedInvocation = await readPersistedFixture(
+      'sandbox invocation persistence',
+      () => Invocation.findById(invocation.invocationId).lean(),
+    );
+    assert.equal(storedInvocation.status, 'completed');
     report('invocation', 'research_topic invoked through the REST Runtime Gateway');
 
     const reused = await request(baseUrl, '/passports/resolve', {
       method: 'POST',
-      headers: partnerAuthHeaders,
+      headers: {
+        ...partnerAuthHeaders,
+        [LEGACY_FIXTURE_HEADER]: '1',
+      },
       body: {
         key: installKey.key,
         receivingWorkspaceId: WORKSPACE_ID,
@@ -250,7 +317,11 @@ async function main() {
   try {
     await verify();
   } catch (error) {
-    fail(error instanceof SandboxVerificationError ? error.message : 'Unable to complete the sandbox flow.');
+    fail(
+      error instanceof SandboxVerificationError
+        ? error.message
+        : `Unable to complete the sandbox flow (${safeErrorCode(error)}).`,
+    );
   } finally {
     await disconnectDatabase().catch(() => undefined);
   }

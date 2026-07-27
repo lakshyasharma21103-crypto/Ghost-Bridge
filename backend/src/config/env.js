@@ -229,6 +229,29 @@ const dataAccessWorkerOperationTimeoutMs = integerInRangeFromEnv(
   1_000,
   600_000,
 );
+const platformNativeClientBindingSecret =
+  process.env.PLATFORM_NATIVE_CLIENT_BINDING_SECRET ||
+  (nodeEnv === 'development'
+    ? 'ghostbridge-development-native-client-binding-secret-v1'
+    : '');
+if (Buffer.byteLength(platformNativeClientBindingSecret, 'utf8') < 32) {
+  throw new Error('PLATFORM_NATIVE_CLIENT_BINDING_SECRET must contain at least 32 bytes');
+}
+
+function jsonObjectFromEnv(name, fallback = {}) {
+  const raw = process.env[name];
+  if (raw == null || raw === '') return Object.freeze({ ...fallback });
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`${name} must be valid JSON`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${name} must be a JSON object`);
+  }
+  return Object.freeze(parsed);
+}
 
 if (runtimeRetryMaxDelayMs < runtimeRetryBaseDelayMs) {
   throw new Error(
@@ -422,6 +445,26 @@ const env = {
   ),
   EXTERNAL_TEST_AGENT_BASE_URL: process.env.EXTERNAL_TEST_AGENT_BASE_URL || 'http://127.0.0.1:5002',
   EXTERNAL_TEST_AGENT_RUNTIME_TOKEN: process.env.EXTERNAL_TEST_AGENT_RUNTIME_TOKEN || '',
+  PLATFORM_NATIVE_CLIENT_TIMEOUT_MS: integerInRangeFromEnv(
+    'PLATFORM_NATIVE_CLIENT_TIMEOUT_MS',
+    10_000,
+    50,
+    120_000,
+  ),
+  PLATFORM_NATIVE_CLIENT_MAX_RESPONSE_BYTES: integerInRangeFromEnv(
+    'PLATFORM_NATIVE_CLIENT_MAX_RESPONSE_BYTES',
+    131_072,
+    1,
+    262_144,
+  ),
+  PLATFORM_NATIVE_CLIENT_HOST_AUDIENCE: safeIdentifierFromEnv(
+    'PLATFORM_NATIVE_CLIENT_HOST_AUDIENCE',
+    'ghostbridge-platform',
+  ),
+  PLATFORM_NATIVE_CLIENT_BINDING_SECRET: platformNativeClientBindingSecret,
+  PLATFORM_NATIVE_CLIENT_TRUST_POLICY: jsonObjectFromEnv(
+    'PLATFORM_NATIVE_CLIENT_TRUST_POLICY_JSON',
+  ),
   ALLOW_PRIVATE_RUNTIME_URLS_IN_DEV: allowPrivateRuntimeUrlsInDev,
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
   COOKIE_SECURE: booleanFromEnv('COOKIE_SECURE', false),
@@ -431,6 +474,14 @@ const env = {
   ENABLE_TEST_FAULT_INJECTION: booleanFromEnv('ENABLE_TEST_FAULT_INJECTION', false),
   ALLOW_DEVELOPMENT_IDENTITY_FIXTURES: booleanFromEnv(
     'ALLOW_DEVELOPMENT_IDENTITY_FIXTURES',
+    false,
+  ),
+  ALLOW_NATIVE_PROTOCOL_FIXTURES: booleanFromEnv(
+    'ALLOW_NATIVE_PROTOCOL_FIXTURES',
+    false,
+  ),
+  ALLOW_LEGACY_PROTOCOL_FIXTURES: booleanFromEnv(
+    'ALLOW_LEGACY_PROTOCOL_FIXTURES',
     false,
   ),
   ENABLE_PRODUCTION_LOAD_TARGET: booleanFromEnv('ENABLE_PRODUCTION_LOAD_TARGET', false),

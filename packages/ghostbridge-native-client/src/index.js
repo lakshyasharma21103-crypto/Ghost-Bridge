@@ -142,10 +142,16 @@ class GhostBridgeClient {
         : {}),
     });
     this.timeoutMs = Math.max(50, Math.min(options.timeoutMs || 10_000, 120_000));
+    this.maximumResponseBytes = boundedTransportInteger(
+      options.maximumResponseBytes,
+      1,
+      DEFAULT_LIMITS.maximumMessageBytes,
+      DEFAULT_LIMITS.maximumMessageBytes,
+    );
     this.transport = createClientTransport(options, {
       ...this.targetPolicy,
       timeoutMs: this.timeoutMs,
-      maximumBytes: DEFAULT_LIMITS.maximumMessageBytes,
+      maximumBytes: this.maximumResponseBytes,
     });
     this.transportHeaders = options.transportHeaders;
     this.requestIdFactory = options.requestIdFactory || (() => `request_${crypto.randomUUID()}`);
@@ -347,12 +353,18 @@ class GhostBridgeClient {
       this.trust?.revocationSet ||
       (await this.request(metadata.revocationSetUri));
     const previous = this.revocationCache.get(metadata.issuerId)?.document;
+    const advancesSequence = previous && document.sequence > previous.sequence;
     const verification = validateRevocationSet(document, jwks, {
       ...(this.trust || {}),
       ...options,
       expectedIssuer: metadata.issuerId,
       minimumSequence: previous?.sequence,
-      previousSet: previous,
+      ...(advancesSequence ? { previousSet: previous } : {}),
+      ...(
+        previous && document.sequence === previous.sequence
+          ? { allowSignedCheckpoint: true }
+          : {}
+      ),
     });
     this.trustAntiRollback.observe(
       'revocation',
@@ -1016,7 +1028,7 @@ class GhostBridgeClient {
         body: options.body === undefined ? undefined : boundedSerialize(options.body),
         signal: controller.signal,
         timeoutMs: this.timeoutMs,
-        maximumBytes: DEFAULT_LIMITS.maximumMessageBytes,
+        maximumBytes: this.maximumResponseBytes,
         expectedContentTypes: ['application/json'],
         allowQuery: true,
       });
@@ -1031,11 +1043,11 @@ class GhostBridgeClient {
         throw protocolError('INVALID_MESSAGE', 'The peer returned an unexpected content type.');
       }
       const announcedLength = Number(response.headers.get('content-length') || 0);
-      if (announcedLength > DEFAULT_LIMITS.maximumMessageBytes) {
+      if (announcedLength > this.maximumResponseBytes) {
         throw protocolError('MESSAGE_TOO_LARGE', 'The protocol response exceeds the configured size.');
       }
       const text = await response.text();
-      if (Buffer.byteLength(text, 'utf8') > DEFAULT_LIMITS.maximumMessageBytes) {
+      if (Buffer.byteLength(text, 'utf8') > this.maximumResponseBytes) {
         throw protocolError('MESSAGE_TOO_LARGE', 'The protocol response exceeds the configured size.');
       }
       let document;

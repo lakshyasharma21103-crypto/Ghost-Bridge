@@ -2,6 +2,7 @@ const http = require('node:http');
 const assert = require('node:assert/strict');
 
 process.env.PORT = process.env.DEMO_VERIFY_PORT || '5011';
+process.env.ALLOW_LEGACY_PROTOCOL_FIXTURES = 'true';
 
 const { env } = require('../src/config/env');
 const { createApp } = require('../src/app');
@@ -20,6 +21,8 @@ const { hashKey } = require('../src/utils/crypto');
 
 const WORKSPACE_ID = 'workspace_flowai_demo';
 const TOPIC = 'remaining FIFA matches in the US';
+const LEGACY_FIXTURE_HEADER = 'X-GhostBridge-Legacy-Protocol-Fixture';
+const MAX_TRANSIENT_POLICY_ATTEMPTS = 3;
 
 class DemoVerificationError extends Error {}
 
@@ -53,24 +56,49 @@ function close(server) {
   return new Promise((resolve) => server.close(resolve));
 }
 
-async function request(baseUrl, path, options = {}) {
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: options.method || 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...(options.headers || {}),
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-  });
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new DemoVerificationError(`${options.label || path} returned unreadable JSON.`);
+function isRetryablePolicyEvaluation(result, options) {
+  return (
+    options.retryPolicyEvaluation === true &&
+    result.body?.error?.code === 'AUTHORIZATION_DENIED' &&
+    result.body?.error?.reasonCode === 'POLICY_EVALUATION_ERROR'
+  );
+}
+
+async function request(baseUrl, path, options = {}) {
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_POLICY_ATTEMPTS; attempt += 1) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...(options.headers || {}),
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+    });
+
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      throw new DemoVerificationError(`${options.label || path} returned unreadable JSON.`);
+    }
+    const result = { response, body };
+    if (
+      !isRetryablePolicyEvaluation(result, options) ||
+      attempt === MAX_TRANSIENT_POLICY_ATTEMPTS
+    ) {
+      return result;
+    }
+    console.warn(
+      `RETRY ${options.label || path}: transient policy evaluation failure (${attempt}/${MAX_TRANSIENT_POLICY_ATTEMPTS}).`,
+    );
+    await delay(250 * attempt);
   }
-  return { response, body };
+  throw new DemoVerificationError(`${options.label || path} exhausted retry attempts.`);
 }
 
 function success(result, label) {
@@ -122,9 +150,11 @@ async function verify() {
         headers: partnerHeaders,
         body: {
           partnerAgentId: FLOWAI_DEMO_PARTNER_AGENT_ID,
+          receivingWorkspaceId: WORKSPACE_ID,
           passport: buildFlowAiDemoPassport(),
         },
         label: 'passport registration',
+        retryPolicyEvaluation: true,
       }),
       'passport registration',
     );
@@ -157,7 +187,10 @@ async function verify() {
     const resolved = success(
       await request(baseUrl, '/passports/resolve', {
         method: 'POST',
-        headers: partnerHeaders,
+        headers: {
+          ...partnerHeaders,
+          [LEGACY_FIXTURE_HEADER]: '1',
+        },
         body: {
           key: issued.key,
           receivingWorkspaceId: WORKSPACE_ID,
@@ -175,6 +208,10 @@ async function verify() {
     const invoked = success(
       await request(baseUrl, `/connections/${resolved.connectionId}/invoke`, {
         method: 'POST',
+        headers: {
+          ...partnerHeaders,
+          [LEGACY_FIXTURE_HEADER]: '1',
+        },
         body: {
           capability: 'research_topic',
           input: { topic: TOPIC },
@@ -192,7 +229,10 @@ async function verify() {
     const identity = { receivingWorkspaceId: WORKSPACE_ID, receivingUserId };
     const invocationList = success(
       await request(baseUrl, `/invocations?${query(identity)}`, {
-        headers: partnerHeaders,
+        headers: {
+          ...partnerHeaders,
+          [LEGACY_FIXTURE_HEADER]: '1',
+        },
         label: 'invocation history',
       }),
       'invocation history',
@@ -308,7 +348,10 @@ async function verify() {
 
     const reused = await request(baseUrl, '/passports/resolve', {
       method: 'POST',
-      headers: partnerHeaders,
+      headers: {
+        ...partnerHeaders,
+        [LEGACY_FIXTURE_HEADER]: '1',
+      },
       body: {
         key: issued.key,
         receivingWorkspaceId: WORKSPACE_ID,

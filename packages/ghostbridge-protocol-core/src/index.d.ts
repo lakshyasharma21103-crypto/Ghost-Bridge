@@ -199,6 +199,7 @@ export interface InvocationEnvelope {
   delegationReference?: string;
   inputContractReference: string;
   approvalReference?: string;
+  policyDecisionReference?: string;
   idempotencyKey?: string;
   deadline: string;
   traceContext?: Record<string, string>;
@@ -213,6 +214,13 @@ export interface ExecutionTask {
   taskId: string;
   connectionId?: string;
   invocationId: string;
+  organizationScope?: string;
+  workspaceScope?: string;
+  agentId?: string;
+  passportVersion?: string;
+  capabilityKey?: string;
+  capabilityVersion?: string;
+  approvalReference?: string;
   state: string;
   safeProgressCategory: string;
   createdAt: string;
