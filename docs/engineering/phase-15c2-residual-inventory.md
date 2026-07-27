@@ -6,13 +6,18 @@ Repository state:
 
 - branch: `phase-15c2`;
 - starting base: `5bb5980ed4abfafe50373819f879b721fd60565d`;
-- committed and pushed branch state before corrections:
+- initial Phase 15C.2 commit:
   `60839a0d21364228f2a2894344b9a0a83a68bb38`;
-- corrections are uncommitted and unpushed;
-- no Phase 15C.2 pull-request CI has run;
-- independent review identified production authorization, cross-request
-  anti-rollback, and Task scope-binding blockers;
-- Phase 15C.2 remains **NOT PASS**.
+- independent-review correction commit:
+  `9e3262da52cc231637dae679b0c3f7d6914583f2`;
+- both Phase 15C.2 commits are committed and pushed to `phase-15c2`;
+- the production authorization, cross-request anti-rollback, and Task
+  scope-binding blockers are corrected;
+- required local non-database commands passed;
+- no Phase 15C.2 pull request exists yet;
+- no Phase 15C.2 GitHub Actions matrix has run;
+- MongoDB replica-set gates remain unobserved in Phase 15C.2 CI;
+- Phase 15C.2 remains **NOT PASS** until mandatory CI succeeds.
 
 This inventory is intentionally broader than the new Native Client API. A
 remaining implementation is not considered migrated merely because production
@@ -46,5 +51,7 @@ service-level guards provide separate enforcement.
 The production-reachable Partner, Trust, history, and protocol-server entries
 above are management/storage/server responsibilities, not substitutes for the
 Host Native Client operation path. This conclusion is locally tested but is
-not a Phase PASS claim: no Phase 15C.2 pull-request CI has run, and the
-mandatory GitHub Actions and MongoDB replica-set gates remain unobserved.
+not a Phase PASS claim: no Phase 15C.2 pull request exists yet, no Phase 15C.2
+GitHub Actions matrix has run, and MongoDB replica-set gates remain unobserved
+in Phase 15C.2 CI. Phase 15C.2 remains **NOT PASS** until mandatory CI
+succeeds.

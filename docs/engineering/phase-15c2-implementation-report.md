@@ -2,28 +2,30 @@
 
 ## Status
 
-**INDEPENDENT-REVIEW CORRECTIONS IMPLEMENTED LOCALLY; NOT PASS.**
+**INDEPENDENT-REVIEW CORRECTIONS COMMITTED AND PUSHED; NOT PASS.**
 
 Independent review identified production-authorization,
 cross-request anti-rollback, and Task scope-binding blockers in commit
-`60839a0d21364228f2a2894344b9a0a83a68bb38`. Corrections are present in the
-current uncommitted working tree. No Phase 15C.2 pull-request CI has run, and
-no intentional local MongoDB replica set was available for the correction
-review. Phase 15C.2 remains **NOT PASS**.
+`60839a0d21364228f2a2894344b9a0a83a68bb38`. All three blockers are corrected
+in commit `9e3262da52cc231637dae679b0c3f7d6914583f2`, and both Phase 15C.2 commits
+are pushed to `phase-15c2`. Required local non-database commands passed. No
+Phase 15C.2 pull request exists yet, no Phase 15C.2 GitHub Actions matrix has
+run, and MongoDB replica-set gates remain unobserved in Phase 15C.2 CI. Phase
+15C.2 remains **NOT PASS** until mandatory CI succeeds.
 
 ## Repository baseline
 
 - Branch: `phase-15c2`
 - Starting base: `5bb5980ed4abfafe50373819f879b721fd60565d`
-- Branch commit before independent-review corrections:
+- Initial Phase 15C.2 commit:
   `60839a0d21364228f2a2894344b9a0a83a68bb38`
-- The branch and the pre-correction commit have been committed and pushed.
-- The independent-review corrections are intentionally uncommitted and
-  unpushed.
+- Independent-review correction commit:
+  `9e3262da52cc231637dae679b0c3f7d6914583f2`
+- Both Phase 15C.2 commits are committed and pushed to `phase-15c2`.
 - Baseline audit: `docs/engineering/phase-15c2-audit-baseline.md`
-- No new branch, pull request, correction commit, correction push, merge,
-  publish, deployment, migration, external-provider invocation, or
-  performance suite was performed during corrections.
+- No new branch or pull request was created, and no merge, publish,
+  deployment, migration, external-provider invocation, or performance suite
+  was performed.
 
 ## Independent-review corrections
 
@@ -282,7 +284,8 @@ non-fatal frontend chunk-size warning.
 Database commands were not run because no intentional local MongoDB
 replica set was running or configured. They were not redirected to an external
 database, and MongoDB Atlas was not used. No external Agent provider was used.
-The GitHub Actions workflow cannot observe an uncommitted local tree.
+No Phase 15C.2 pull request exists yet, so no Phase 15C.2 GitHub Actions
+matrix has run.
 
 ## Environment variables
 
@@ -301,9 +304,9 @@ Host identity fixtures; it does not enable Native Client transport fixtures.
 
 ## Unresolved issues
 
-- No Phase 15C.2 pull-request CI has run.
-- MongoDB transaction and deterministic database fixture gates have not been
-  observed locally.
+- No Phase 15C.2 pull request exists yet.
+- No Phase 15C.2 GitHub Actions matrix has run.
+- MongoDB replica-set gates remain unobserved in Phase 15C.2 CI.
 - Legacy protocol implementations remain for explicit development fixtures
   and historical operational records. Their inventory and production
   eligibility are documented separately.
@@ -312,4 +315,4 @@ Host identity fixtures; it does not enable Native Client transport fixtures.
 
 **The independent-review blockers are corrected and required local
 non-database verification is green, but Phase 15C.2 remains NOT PASS until
-mandatory CI and intentional MongoDB replica-set gates are observed.**
+mandatory CI succeeds.**
