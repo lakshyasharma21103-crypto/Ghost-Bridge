@@ -223,6 +223,13 @@ async function propagateDurableCancellation(context, invocation, reasonCode, act
 }
 
 async function requestCancellation(invocationId, input, actor = {}) {
+  if (env.NODE_ENV === 'production') {
+    throw new AppError(
+      409,
+      'PLATFORM_NATIVE_CLIENT_REQUIRED',
+      'Direct runtime cancellation is prohibited in production; use Native Client Task cancellation.',
+    );
+  }
   const context = await authorizedContext(invocationId, input, actor.partner, {
     permission: 'invocation.cancel',
     requestId: actor.requestId,

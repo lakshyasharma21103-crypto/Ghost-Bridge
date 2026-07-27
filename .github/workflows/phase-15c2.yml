@@ -1,0 +1,126 @@
+name: Phase 15C.2 Platform Native Client verification
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase-15c2-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Ubuntu / Node ${{ matrix.node-version }} / MongoDB 7
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version:
+          - 20
+          - 22
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+          - 27018:27018
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: development
+      MONGODB_URI: mongodb://127.0.0.1:27018/?replicaSet=ghostbridge-rs&directConnection=true
+      MONGODB_STORE_URI: mongodb://127.0.0.1:27018/?replicaSet=ghostbridge-rs&directConnection=true
+      MONGODB_DB_NAME: ghost_bridge_15c2_${{ github.run_id }}_${{ matrix.node-version }}
+      PLATFORM_NATIVE_CLIENT_BINDING_SECRET: phase-15c2-ci-binding-secret-is-at-least-32-bytes
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Configure isolated MongoDB 7 transaction replica set
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          container_id="$(docker ps --filter ancestor=mongo:7 --format '{{.ID}}' | head -n 1)"
+          test -n "$container_id"
+          docker exec "$container_id" mkdir -p /data/ghostbridge-rs
+          docker exec "$container_id" mongod \
+            --replSet ghostbridge-rs \
+            --port 27018 \
+            --bind_ip_all \
+            --dbpath /data/ghostbridge-rs \
+            --logpath /tmp/ghostbridge-rs.log \
+            --fork
+          for attempt in {1..30}; do
+            if docker exec "$container_id" mongosh --quiet --port 27018 \
+              --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec "$container_id" mongosh --quiet --port 27018 \
+            --eval 'rs.initiate({ _id: "ghostbridge-rs", members: [{ _id: 0, host: "127.0.0.1:27018" }] })'
+          for attempt in {1..30}; do
+            if docker exec "$container_id" mongosh --quiet --port 27018 \
+              --eval 'db.hello().isWritablePrimary' | grep -q true; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify Phase 15C.1
+        run: npm run verify:ghostbridge-phase-15c1
+
+      - name: Verify Phase 15C.1A
+        run: npm run verify:ghostbridge-phase-15c1a
+
+      - name: Verify Phase 15C.1A-R1
+        run: npm run verify:ghostbridge-phase-15c1a-r1
+
+      - name: Verify Phase 15C.2 Platform Native Client
+        run: npm run verify:ghostbridge-phase-15c2
+
+      - name: Verify MongoDB-backed transactions
+        run: npm run verify:phase-15c1a-r1-mongo-store-contract
+
+      - name: Verify database-backed deterministic fixtures
+        run: |
+          npm run verify:demo
+          npm run verify:sandbox
+          npm run verify:enterprise-operations
+          npm run verify:durable-recovery
+
+      - name: Verify public package dry-runs
+        run: npm run verify:ghostbridge-package-integrity

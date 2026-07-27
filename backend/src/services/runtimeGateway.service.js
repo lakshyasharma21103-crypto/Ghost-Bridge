@@ -1556,6 +1556,13 @@ async function loadInvocationContext(
 }
 
 async function invoke(connectionId, capabilityName, input, actor = {}) {
+  if (env.NODE_ENV === 'production') {
+    throw new AppError(
+      409,
+      'PLATFORM_NATIVE_CLIENT_REQUIRED',
+      'Direct REST/MCP runtime invocation is prohibited in production; use the Platform Native Client.',
+    );
+  }
   let lifecycleAdmission = serviceLifecycle.beginInvocationAdmission();
   const startedAt = Date.now();
   const stageMetrics = [];

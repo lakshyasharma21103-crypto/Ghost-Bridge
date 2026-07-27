@@ -211,6 +211,13 @@ async function markKeyExpired(installKey) {
 }
 
 async function resolveInstallKey(input, requestContext) {
+  if (env.NODE_ENV === 'production') {
+    throw new AppError(
+      409,
+      'PLATFORM_NATIVE_CLIENT_REQUIRED',
+      'Database-backed Agent installation is prohibited in production; use the Platform Native Client.',
+    );
+  }
   const context =
     typeof requestContext === 'string' ? { requestId: requestContext } : requestContext || {};
   const requestId = context.requestId;
@@ -810,6 +817,13 @@ function healthTarget(connection) {
 }
 
 async function checkConnectionHealth(connectionId, body, requestId) {
+  if (env.NODE_ENV === 'production') {
+    throw new AppError(
+      409,
+      'PLATFORM_NATIVE_CLIENT_REQUIRED',
+      'Direct Agent health probes are prohibited in production; use Native Client discovery and revocation checks.',
+    );
+  }
   const { connection, identity } = await findOwnedConnection(connectionId, body);
   const snapshot = connection.resolvedPassportSnapshot || {};
   await assertAuthorized(

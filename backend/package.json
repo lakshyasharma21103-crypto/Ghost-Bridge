@@ -61,7 +61,9 @@
     ,"migrate:ghostbridge-trust": "node scripts/migrateGhostBridgeTrust.js"
   },
   "dependencies": {
+    "@ghostbridge/native-client": "0.1.0-draft",
     "@ghostbridge/protocol-core": "0.1.0-draft",
+    "@ghostbridge/trust": "0.1.0-draft",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "compression": "^1.7.5",
@@ -72,5 +74,8 @@
     "helmet": "^8.0.0",
     "mongoose": "^8.9.5",
     "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@ghostbridge/example-codeforge-provider": "0.1.0-draft"
   }
 }

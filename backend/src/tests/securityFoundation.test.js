@@ -158,6 +158,7 @@ test('safeFetch production mode requires HTTPS', () => {
         NODE_ENV: 'production',
         MONGODB_URI: 'mongodb://example.com/passport',
         CREDENTIAL_ENCRYPTION_KEY: 'abcdefghijklmnopqrstuvwxyz123456',
+        PLATFORM_NATIVE_CLIENT_BINDING_SECRET: 'phase-15c2-security-binding-secret-32-bytes',
       },
       encoding: 'utf8',
     },

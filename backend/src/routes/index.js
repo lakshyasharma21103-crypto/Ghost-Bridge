@@ -31,6 +31,7 @@ const { stagingPilotRouter } = require('./stagingPilotRoutes');
 const { pilotAnalyticsRouter } = require('./pilotAnalyticsRoutes');
 const { commercialRouter, gaRouter } = require('./gaCommercialRoutes');
 const { discoveryHandler, nativeProtocolRouter } = require('./nativeProtocolRoutes');
+const { platformNativeClientRouter } = require('./platformNativeClientRoutes');
 
 const API_PREFIX = '/api/v1';
 const router = express.Router();
@@ -53,6 +54,7 @@ router.use('/ready', readinessRouter);
 router.use(`${API_PREFIX}/health`, healthRouter);
 router.use(`${API_PREFIX}/ready`, readinessRouter);
 router.use(`${API_PREFIX}/native`, nativeProtocolRouter);
+router.use(`${API_PREFIX}/platform-native`, platformNativeClientRouter);
 router.use(`${API_PREFIX}/passports`, passportRouter);
 router.use(`${API_PREFIX}/partner`, partnerRouter);
 router.use(`${API_PREFIX}/connections`, connectionRouter);
