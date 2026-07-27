@@ -16,9 +16,6 @@ function context(request) {
     traceId: request.traceId,
     observer: request.observer,
     fixtureOptIn: request.get(FIXTURE_OPT_IN_HEADER) === '1',
-    policyDecisionReference:
-      request.authorization?.decisionId ||
-      request.authorization?.policyDecisionReference,
   };
 }
 

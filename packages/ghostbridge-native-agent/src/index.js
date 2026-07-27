@@ -811,7 +811,14 @@ function createGhostBridgeAgent(options = {}) {
           if (approvalHandler) {
             await approvalHandler(structuredClone(challenge));
           }
-          const task = createTask(envelope, registered.contract, clock, 'waiting_for_approval');
+          const task = createTask(
+            envelope,
+            registered.contract,
+            connection,
+            passport,
+            clock,
+            'waiting_for_approval',
+          );
           const taskEnvelope = {
             ...envelope,
             approvalReference: challenge.challengeId,
@@ -832,7 +839,7 @@ function createGhostBridgeAgent(options = {}) {
         }
       }
 
-      const task = createTask(envelope, registered.contract, clock);
+      const task = createTask(envelope, registered.contract, connection, passport, clock);
       const receiptContext = createTaskReceiptContext({
         connection,
         envelope,
@@ -2133,11 +2140,21 @@ function connectionRevocation(connection, subjectReference, passport, clock) {
   };
 }
 
-function createTask(envelope, contract, clock, state = 'accepted') {
+function createTask(envelope, contract, connection, passport, clock, state = 'accepted') {
   const now = new Date(clock()).toISOString();
   const task = {
     taskId: `task_${crypto.randomUUID()}`,
     invocationId: envelope.invocationId,
+    organizationScope: envelope.organizationScope,
+    ...(envelope.workspaceScope ? { workspaceScope: envelope.workspaceScope } : {}),
+    connectionId: connection.connectionId,
+    agentId: passport.agentId,
+    passportVersion: passport.passportVersion,
+    capabilityKey: contract.capabilityKey,
+    capabilityVersion: contract.capabilityVersion,
+    ...(envelope.approvalReference
+      ? { approvalReference: envelope.approvalReference }
+      : {}),
     state,
     safeProgressCategory: state,
     createdAt: now,
@@ -2208,6 +2225,7 @@ function createTaskReceiptContext({
       inputContractReference: contract.inputContractReference,
       deadline: envelope.deadline,
       approvalReference: envelope.approvalReference,
+      policyDecisionReference: envelope.policyDecisionReference,
       requestFingerprint,
     },
     envelope: {
@@ -2221,6 +2239,7 @@ function createTaskReceiptContext({
       workspaceScope: envelope.workspaceScope,
       deadline: envelope.deadline,
       approvalReference: envelope.approvalReference,
+      policyDecisionReference: envelope.policyDecisionReference,
       requestFingerprint,
     },
     connection: {
@@ -2300,6 +2319,9 @@ async function defaultReceiptIssuer({
     completedAt: task.completedAt || new Date(clock()).toISOString(),
     attemptCount: 1,
     ...(envelope.approvalReference ? { approvalReference: envelope.approvalReference } : {}),
+    ...(envelope.policyDecisionReference
+      ? { policyDecisionReference: envelope.policyDecisionReference }
+      : {}),
     ...(envelope.delegationReference ? { delegationReference: envelope.delegationReference } : {}),
     ...((envelope.requestFingerprint || envelope.idempotencyKey)
       ? {
@@ -2358,6 +2380,7 @@ function assertReceiptBindings(receipt, context) {
     workspaceScope: context.connection.workspaceScope,
     outcome: context.outcome,
     approvalReference: context.envelope.approvalReference,
+    policyDecisionReference: context.envelope.policyDecisionReference,
     safeFailureCode: context.safeFailureCode,
   };
   for (const [field, value] of Object.entries(expected)) {

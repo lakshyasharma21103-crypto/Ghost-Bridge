@@ -353,12 +353,18 @@ class GhostBridgeClient {
       this.trust?.revocationSet ||
       (await this.request(metadata.revocationSetUri));
     const previous = this.revocationCache.get(metadata.issuerId)?.document;
+    const advancesSequence = previous && document.sequence > previous.sequence;
     const verification = validateRevocationSet(document, jwks, {
       ...(this.trust || {}),
       ...options,
       expectedIssuer: metadata.issuerId,
       minimumSequence: previous?.sequence,
-      previousSet: previous,
+      ...(advancesSequence ? { previousSet: previous } : {}),
+      ...(
+        previous && document.sequence === previous.sequence
+          ? { allowSignedCheckpoint: true }
+          : {}
+      ),
     });
     this.trustAntiRollback.observe(
       'revocation',

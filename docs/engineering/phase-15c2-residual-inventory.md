@@ -2,6 +2,18 @@
 
 Status date: 2026-07-27
 
+Repository state:
+
+- branch: `phase-15c2`;
+- starting base: `5bb5980ed4abfafe50373819f879b721fd60565d`;
+- committed and pushed branch state before corrections:
+  `60839a0d21364228f2a2894344b9a0a83a68bb38`;
+- corrections are uncommitted and unpushed;
+- no Phase 15C.2 pull-request CI has run;
+- independent review identified production authorization, cross-request
+  anti-rollback, and Task scope-binding blockers;
+- Phase 15C.2 remains **NOT PASS**.
+
 This inventory is intentionally broader than the new Native Client API. A
 remaining implementation is not considered migrated merely because production
 now rejects it.
@@ -17,7 +29,9 @@ now rejects it.
 | Platform-local Approval workflow | `approval.service.js`, Approval controllers/routes/models | Creates and records Platform governance approvals | **Production eligible only as Platform policy workflow.** It does not continue an Agent challenge by itself. | Agent exact-action continuation is exclusively exposed through `/platform-native/approvals/continue`, sealed binding, and durable replay consumption. |
 | Platform invocation/evidence records | `runtimeGateway.service.js`, `evidence.service.js`, invocation/evidence models | Stores local attempts, evidence, and historical receipts | **Production eligible only as Platform operational history.** It is not accepted by the Native Client adapter as Agent proof. | Native operations retrieve and verify signed Agent Receipts. |
 | Partner legacy Passport administration | `partnerService.js`, `passportValidator.js`, Partner and developer-sandbox routes | Validates `agent-passport.v1` JSON and stores Passport/capability metadata directly | **Production reachable management plane; not used by the Native Client operation path.** Developer sandbox remains development-scoped. | Retained for pre-existing Partner administration. It must not be presented as signed native Agent discovery or Trust proof. |
-| Platform Trust administration/cache | `ghostBridgeTrust.service.js` and Trust models/routes | Reads and writes Platform Trust policy, review, cache, and audit state | **Production reachable administration plane.** | The Native Client adapter still requires public cryptographic verification and fresh signed revocation evidence; stored rows alone do not authorize an Agent operation. |
+| Platform Trust administration/cache | `ghostBridgeTrust.service.js` and Trust models/routes | Reads and writes Platform Trust policy, review, cache, and audit state | **Production reachable administration plane.** | The Native Client adapter still requires public cryptographic verification and fresh signed revocation evidence; stored rows alone do not authorize an Agent operation. Shared Native Client anti-rollback/revocation stores and sealed sequence/digest continuity now span Platform requests. |
+| Platform Native Client authorization evidence | `platformNativeClient.service.js`, `authorization.service.js` | Makes operation-specific RBAC and active-policy decisions and seals their exact-action digest/reference | **Required for every production-eligible operation.** Authentication and tenant membership alone are insufficient; missing, malformed, development-only, or cross-action evidence fails closed. | Retained as the exclusive production capability-authorization boundary for the Platform Host client. |
+| Agent Task scope tuple | `packages/ghostbridge-native-agent`, `platformNativeClient.service.js` | Returns and validates organization, workspace, Connection, Agent, Passport version, invocation, capability/version, and applicable Approval reference | **Required for non-terminal and terminal Task responses.** | A missing or substituted field is rejected before the Task reaches a Platform caller. |
 | Platform native protocol server surface | `nativeProtocolRoutes.js`, `nativeProtocolMapping.service.js` | Implements the Platform acting as a protocol server | **Production eligible and not a Host-client shortcut.** | Retained; server responsibilities are distinct from the Platform Native Client adapter. |
 | Public Native Client Fetch transport | `packages/ghostbridge-native-client/src/index.js` | Generic browser-compatible transport exists beside the explicit Node pinned transport | **Not used by the Platform adapter.** Trust-required insecure Fetch is rejected by the package. | Retained as a public client feature. Platform always constructs the explicit Node security transport. |
 | Deterministic native Agent/provider fixtures | `protocol/examples/codeforge-agent-provider`, Platform Native Client tests | Runs a local signed Agent and loopback transport | **Prohibited outside development and requires request opt-in.** | Retained to prove the real public Client code path without external services. |
@@ -32,5 +46,5 @@ service-level guards provide separate enforcement.
 The production-reachable Partner, Trust, history, and protocol-server entries
 above are management/storage/server responsibilities, not substitutes for the
 Host Native Client operation path. This conclusion is locally tested but is
-not a Phase PASS claim: the mandatory GitHub Actions and MongoDB replica-set
-gates remain unobserved.
+not a Phase PASS claim: no Phase 15C.2 pull-request CI has run, and the
+mandatory GitHub Actions and MongoDB replica-set gates remain unobserved.

@@ -2,20 +2,69 @@
 
 ## Status
 
-**IMPLEMENTED; NOT YET PHASE PASS.**
+**INDEPENDENT-REVIEW CORRECTIONS IMPLEMENTED LOCALLY; NOT PASS.**
 
-All locally available non-database gates pass. The mandatory GitHub Actions
-Node 20/22 and MongoDB 7 replica-set matrix has not run on this uncommitted
-working tree, and no intentional local MongoDB replica set was available.
-Phase 15C.2 therefore remains review-ready rather than PASS.
+Independent review identified production-authorization,
+cross-request anti-rollback, and Task scope-binding blockers in commit
+`60839a0d21364228f2a2894344b9a0a83a68bb38`. Corrections are present in the
+current uncommitted working tree. No Phase 15C.2 pull-request CI has run, and
+no intentional local MongoDB replica set was available for the correction
+review. Phase 15C.2 remains **NOT PASS**.
 
 ## Repository baseline
 
 - Branch: `phase-15c2`
-- Starting and current commit: `5bb5980ed4abfafe50373819f879b721fd60565d`
+- Starting base: `5bb5980ed4abfafe50373819f879b721fd60565d`
+- Branch commit before independent-review corrections:
+  `60839a0d21364228f2a2894344b9a0a83a68bb38`
+- The branch and the pre-correction commit have been committed and pushed.
+- The independent-review corrections are intentionally uncommitted and
+  unpushed.
 - Baseline audit: `docs/engineering/phase-15c2-audit-baseline.md`
-- No commit, push, merge, publish, deployment, migration, external-provider
-  invocation, or performance suite was performed.
+- No new branch, pull request, correction commit, correction push, merge,
+  publish, deployment, migration, external-provider invocation, or
+  performance suite was performed during corrections.
+
+## Independent-review corrections
+
+### Production authorization
+
+Every discovery, installation, invocation, Approval continuation, Task
+status/result, cancellation, Receipt retrieval/verification, and revocation
+request now receives an operation-specific decision from the existing
+production authorization service. The adapter requires complete ALLOW
+evidence from RBAC and active-policy evaluation and binds it to a canonical
+digest covering the authenticated subject, organization, workspace, Agent,
+Passport, Connection, invocation, capability/version, input digest, and
+Approval reference where applicable.
+
+The resulting policy-decision reference is sealed with the invocation and
+Task binding and is included in the Agent-signed Receipt. Caller-supplied
+authorization references are ignored. Missing, malformed, denied,
+cross-action, or development-fixture evidence fails closed. Simplified
+authorization exists only for explicit development Native Client fixtures
+with both environment and request opt-ins.
+
+### Cross-request Trust continuity
+
+The Platform adapter owns shared `AntiRollbackStore`, `RevocationCache`, and
+`PlatformTrustContinuityStore` instances and injects them into every newly
+constructed public Native Client. Sealed Connection evidence additionally
+records issuer metadata sequence/digest and signed revocation
+sequence/digest/predecessor digest.
+
+Every later bound operation compares live cryptographically verified state
+with both the shared Platform state and sealed prior evidence. Lower
+sequences, same-sequence digest changes, non-contiguous revocation updates,
+bad predecessor digests, missing mandatory prior evidence, and stale or
+unknown state fail closed.
+
+### Complete Task binding
+
+Native Agent Task responses now carry organization, workspace, Connection,
+Agent, Passport version, invocation, capability key/version, and Approval
+reference where applicable. The Platform validates every field before
+returning either non-terminal or terminal Task state.
 
 ## Files changed
 
@@ -45,6 +94,10 @@ Phase 15C.2 therefore remains review-ready rather than PASS.
 - `package-lock.json`
 - `packages/ghostbridge-native-client/src/index.js`
 - `packages/ghostbridge-native-client/src/index.d.ts`
+- `packages/ghostbridge-native-agent/src/index.js`
+- `packages/ghostbridge-protocol-core/src/index.d.ts`
+- `protocol/schemas/0.1-draft/invocation.schema.json`
+- `protocol/schemas/0.1-draft/task.schema.json`
 - `protocol/examples/codeforge-agent-provider/src/index.js`
 
 ### Tests, verification, CI, and documentation
@@ -125,6 +178,13 @@ it is not silently treated as migrated code.
 ## Authentication and authority behavior
 
 - `authenticateHostPrincipal` establishes Platform user or Partner authority.
+- Authentication and organization/workspace membership do not constitute
+  capability authorization.
+- Operation-specific production permissions are `passport.read`,
+  `connection.create`, `connection.invoke`, `invocation.read`,
+  `invocation.cancel`, and `connection.read`.
+- The existing authorization service must return authoritative RBAC and
+  active-policy ALLOW evidence bound to the exact canonical action digest.
 - Platform user/Partner authentication remains separate from Agent protocol
   authentication.
 - Organization, workspace, user, Agent, capability, and Connection values in
@@ -143,11 +203,14 @@ it is not silently treated as migrated code.
   Native Client trust path and configured Trust policy.
 - Issuer audience, Trust category, Passport/Connection identity, and signed
   revocation state are checked on installation and every bound operation.
+- Shared Platform stores preserve issuer-metadata and signed-revocation
+  anti-rollback state across HTTP requests and Native Client instances.
+- Sealed prior Trust evidence provides an additional continuity boundary.
 - Unknown, stale, or revoked state fails closed.
 - Terminal Tasks require a signed Receipt.
 - Receipt verification binds Agent, Passport, Connection, Task, invocation,
   tenant scope, outcome, approval reference, audience, and execution
-  revocation state.
+  revocation state, plus the authoritative policy-decision reference.
 - Supplied output and evidence are checked against their signed digests.
 - Platform database rows are not accepted as Agent Task or Receipt proof.
 
@@ -176,27 +239,37 @@ public Native Client, explicit transport, and signed native Agent:
 - missing/malformed/cross-origin discovery data, unsupported version,
   oversized response, and timeout;
 - production fixture rejection and missing principal.
+- authenticated membership without permission, missing or malformed
+  production evidence, and simplified development evidence in production;
+- policy decisions substituted across Agent, capability, Connection,
+  organization, workspace, or input digest;
+- a higher signed revocation sequence followed by a lower sequence through a
+  newly constructed Native Client;
+- lower metadata/revocation sequences, same-sequence digest substitution,
+  missing continuity, and non-contiguous predecessor state;
+- non-terminal malicious Tasks substituting organization, workspace, Agent,
+  Connection, or invocation.
 
 `platformNativeClientAuthority.test.js` covers principal-derived scope,
 spoofing rejection, fixture eligibility, production direct-gateway rejection,
 and digest-only atomic MongoDB Approval replay behavior.
 
-## Local verifier results
+## Correction verifier results
 
-All of these completed successfully on 2026-07-27:
+All required non-database correction gates passed on 2026-07-27:
 
-- `npm ci`
 - `npm run typecheck`
 - `npm run lint`
 - `npm test`
 - `npm run build`
-- focused Platform Native Client tests: 12/12
 - `npm run verify:ghostbridge-phase-15c1`
 - `npm run verify:ghostbridge-phase-15c1a`
 - `npm run verify:ghostbridge-phase-15c1a-r1`
 - `npm run verify:ghostbridge-phase-15c2`
 
-The build retained the existing non-fatal frontend chunk-size warning.
+The focused Platform Native Client suite and Native Agent, Native Client, and
+Protocol Core package suites also pass. The build retained the existing
+non-fatal frontend chunk-size warning.
 
 ## Commands not run
 
@@ -204,16 +277,12 @@ The build retained the existing non-fatal frontend chunk-size warning.
 - `npm run verify:sandbox`
 - `npm run verify:enterprise-operations`
 - `npm run verify:durable-recovery`
-- the GitHub Actions Node 20/22 and MongoDB 7 matrix
+- the Phase 15C.2 GitHub Actions Node 20/22 and MongoDB 7 matrix
 
-The database commands were not run because no intentional local MongoDB
+Database commands were not run because no intentional local MongoDB
 replica set was running or configured. They were not redirected to an external
-database. The GitHub Actions workflow cannot observe an uncommitted local tree.
-`npm run verify:demo` was attempted in the user's local replica-set shell and
-exposed a policy-storage evaluation failure plus missing Phase 15C.2 fixture opt-ins.
-The verifier was corrected, but that database-backed command could not be
-rerun from the implementation environment because the user's shell-local
-MongoDB configuration was not available there.
+database, and MongoDB Atlas was not used. No external Agent provider was used.
+The GitHub Actions workflow cannot observe an uncommitted local tree.
 
 ## Environment variables
 
@@ -232,7 +301,7 @@ Host identity fixtures; it does not enable Native Client transport fixtures.
 
 ## Unresolved issues
 
-- Mandatory CI has not been observed.
+- No Phase 15C.2 pull-request CI has run.
 - MongoDB transaction and deterministic database fixture gates have not been
   observed locally.
 - Legacy protocol implementations remain for explicit development fixtures
@@ -241,6 +310,6 @@ Host identity fixtures; it does not enable Native Client transport fixtures.
 
 ## Final status
 
-**Implementation complete and local non-database verification green; Phase
-15C.2 is not labelled PASS until the mandatory CI and MongoDB gates are
-observed.**
+**The independent-review blockers are corrected and required local
+non-database verification is green, but Phase 15C.2 remains NOT PASS until
+mandatory CI and intentional MongoDB replica-set gates are observed.**

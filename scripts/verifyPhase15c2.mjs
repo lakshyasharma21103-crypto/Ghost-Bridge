@@ -41,6 +41,9 @@ function platformNativeClient() {
   const adapter = source('backend/src/services/platformNativeClient.service.js');
   const routes = source('backend/src/routes/platformNativeClientRoutes.js');
   const nativeClient = source('packages/ghostbridge-native-client/src/index.js');
+  const nativeAgent = source('packages/ghostbridge-native-agent/src/index.js');
+  const invocationSchema = source('protocol/schemas/0.1-draft/invocation.schema.json');
+  const taskSchema = source('protocol/schemas/0.1-draft/task.schema.json');
   const demoVerifier = source('backend/scripts/verifyDemo.js');
   const sandboxVerifier = source('backend/scripts/verifySandbox.js');
   for (const required of [
@@ -51,6 +54,17 @@ function platformNativeClient() {
     'authenticationMaterialProvider',
     '#verifyCurrentTrust',
     '#verifyReceipt',
+    '#authorizeOperation',
+    'productionAuthorizationProvider',
+    'AUTHORIZATION_PERMISSION_BY_OPERATION',
+    'actionDigest',
+    'PlatformTrustContinuityStore',
+    'trustAntiRollbackStore',
+    'revocationCache',
+    'metadataSequence',
+    'metadataDigest',
+    'revocationSequence',
+    'revocationDigest',
     "this.#seal('connection'",
     "this.#seal('task'",
     "this.#seal('approval'",
@@ -73,6 +87,39 @@ function platformNativeClient() {
     assert.ok(routes.includes(operation), `Platform Native Client route omitted: ${operation}`);
   }
   assert.match(nativeClient, /options\.maximumResponseBytes/);
+  assert.match(nativeClient, /document\.sequence === previous\.sequence/);
+  assert.doesNotMatch(adapter, /platform-native-client:host-principal-authorized/);
+  for (const binding of [
+    'organizationScope: envelope.organizationScope',
+    'workspaceScope: envelope.workspaceScope',
+    'connectionId: connection.connectionId',
+    'agentId: passport.agentId',
+    'passportVersion: passport.passportVersion',
+    'capabilityKey: contract.capabilityKey',
+    'capabilityVersion: contract.capabilityVersion',
+  ]) {
+    assert.ok(nativeAgent.includes(binding), `Native Agent Task omitted: ${binding}`);
+  }
+  for (const field of [
+    'organizationScope',
+    'workspaceScope',
+    'connectionId',
+    'agentId',
+    'passportVersion',
+    'capabilityKey',
+    'capabilityVersion',
+    'approvalReference',
+  ]) {
+    assert.ok(taskSchema.includes(`"${field}"`), `Task schema omitted: ${field}`);
+  }
+  assert.ok(
+    nativeAgent.includes('policyDecisionReference: envelope.policyDecisionReference'),
+    'Signed Receipt omitted the authoritative policy-decision reference',
+  );
+  assert.ok(
+    invocationSchema.includes('"policyDecisionReference"'),
+    'Invocation schema omitted the authoritative policy-decision reference',
+  );
   assert.doesNotMatch(adapter, /services\/adapters|runtimeGateway\.service/);
   for (const [name, verifier] of [
     ['demo', demoVerifier],
@@ -111,21 +158,21 @@ function invocation() {
 function taskReceipt() {
   nodeTest(
     [integrationTest],
-    'exact-action approval continuation|Receipt digest mismatches',
+    'exact-action approval continuation|Receipt digest mismatches|non-terminal Task',
   );
 }
 
 function trustRevocation() {
   nodeTest(
     [integrationTest],
-    'untrusted issuer|invalid Agent Passport signature',
+    'untrusted issuer|invalid Agent Passport signature|signed revocation rollback|Platform Trust continuity',
   );
 }
 
 function scope() {
   nodeTest(
     [integrationTest, authorityTest],
-    'cross-tenant|scope treats|production rejects fixture|legacy protocol routes|production runtime gateway',
+    'cross-tenant|scope treats|production rejects fixture|production authorization rejects|production policy evidence|legacy protocol routes|production runtime gateway',
   );
 }
 

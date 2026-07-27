@@ -9,13 +9,33 @@ const {
   validateApprovalDecision,
 } = require('@ghostbridge/protocol-core');
 const { createGhostBridgeClient } = require('@ghostbridge/native-client');
-const { createNodeSecurityTransport, digest } = require('@ghostbridge/trust');
+const {
+  AntiRollbackStore,
+  RevocationCache,
+  createNodeSecurityTransport,
+  digest,
+  withoutProof,
+} = require('@ghostbridge/trust');
 const { env } = require('../config/env');
 const NativeClientApprovalReplay = require('../models/NativeClientApprovalReplay');
 const { AppError } = require('../utils/AppError');
+const { assertAuthorized } = require('./authorization.service');
 
 const BINDING_VERSION = 'phase-15c2.v1';
+const AUTHORIZATION_EVIDENCE_VERSION = 'platform-native-authorization.v1';
+const TRUST_EVIDENCE_VERSION = 'platform-native-trust-continuity.v1';
 const FIXTURE_OPT_IN_HEADER = 'X-GhostBridge-Native-Client-Fixture';
+const AUTHORIZATION_PERMISSION_BY_OPERATION = Object.freeze({
+  discovery: 'passport.read',
+  installation: 'connection.create',
+  invocation: 'connection.invoke',
+  approval_continuation: 'connection.invoke',
+  task_status: 'invocation.read',
+  task_result: 'invocation.read',
+  cancellation: 'invocation.cancel',
+  receipt_retrieval: 'invocation.read',
+  revocation: 'connection.read',
+});
 const TERMINAL_TASK_STATES = new Set([
   'completed',
   'failed',
@@ -50,6 +70,7 @@ const ERROR_CONTRACT = Object.freeze({
   CONNECTION_NOT_ACTIVE: [409, 'CONNECTION_NOT_ACTIVE', 'The Agent Connection is not active.'],
   REVOCATION_SET_STALE: [503, 'REVOCATION_STATE_STALE', 'Current revocation state is required.'],
   REVOCATION_ROLLBACK: [503, 'REVOCATION_STATE_STALE', 'Current revocation state is required.'],
+  ISSUER_METADATA_ROLLBACK: [503, 'REVOCATION_STATE_STALE', 'Current trust continuity is required.'],
   NO_COMMON_PROTOCOL_VERSION: [409, 'PROTOCOL_UNSUPPORTED', 'The Agent protocol version is unsupported.'],
   UNSUPPORTED_PROTOCOL_VERSION: [409, 'PROTOCOL_UNSUPPORTED', 'The Agent protocol version is unsupported.'],
   CAPABILITY_NOT_FOUND: [404, 'CAPABILITY_NOT_FOUND', 'The Agent capability was not found.'],
@@ -147,6 +168,203 @@ function authenticatedScope(principal, input = {}) {
   });
 }
 
+function authorizationActor(principal, scope, context = {}) {
+  const subjectId = idOf(principal.subjectId || principal.userId);
+  const partnerId =
+    idOf(principal.partnerId) ||
+    (
+      principal.subjectType === 'service_account' && subjectId.startsWith('partner:')
+        ? subjectId.slice('partner:'.length)
+        : undefined
+    );
+  const type =
+    principal.subjectType === 'service_account' ? 'service_account' : 'user';
+  return removeUndefined({
+    type,
+    id: subjectId,
+    userId: idOf(principal.userId),
+    partnerId,
+    organizationId: scope.organizationScope,
+    workspaceId: scope.workspaceScope,
+    enterpriseUserId: principal.enterpriseUserId,
+    serviceAccountId: principal.serviceAccountId,
+    roleKeys: principal.roleKeys,
+    roles: principal.roles,
+    permissions: principal.permissions,
+    skipPersistentRoles: principal.skipPersistentRoles,
+    auditActorType: principal.auditActorType,
+    auditActorId: principal.auditActorId,
+    requestId: context.requestId,
+    traceId: context.traceId,
+  });
+}
+
+async function productionAuthorizationProvider(input) {
+  const { action, actionDigest, context, permission, principal, scope } = input;
+  const resourceId =
+    action.invocationId ||
+    action.connectionId ||
+    action.passportId ||
+    action.agentId ||
+    action.operation;
+  const decision = await assertAuthorized(
+    authorizationActor(principal, scope, context),
+    permission,
+    {
+      type: 'PlatformNativeClientOperation',
+      id: resourceId,
+      organizationId: scope.organizationScope,
+      workspaceId: scope.workspaceScope,
+      ownerUserId: scope.userId,
+    },
+    {
+      requestId: context.requestId,
+      traceId: context.traceId,
+      invocationId: action.invocationId,
+      organizationId: scope.organizationScope,
+      workspaceId: scope.workspaceScope,
+      trustedEnvironment: { name: context.environment },
+      trustedWorkspace: {
+        id: scope.workspaceScope,
+        environment: context.environment,
+      },
+      trustedPassport: action.passportId
+        ? {
+            id: action.passportId,
+            version: action.passportVersion,
+            agentId: action.agentId,
+          }
+        : undefined,
+      trustedConnection: action.connectionId
+        ? {
+            id: action.connectionId,
+            status: 'active',
+            organizationId: scope.organizationScope,
+            workspaceId: scope.workspaceScope,
+          }
+        : undefined,
+      trustedCapability: action.capabilityKey
+        ? {
+            id: `${action.capabilityKey}@${action.capabilityVersion || 'unspecified'}`,
+            key: action.capabilityKey,
+            version: action.capabilityVersion,
+            category: action.riskCategory || 'UNCLASSIFIED',
+            classification: action.riskCategory || 'UNCLASSIFIED',
+            sideEffect: action.sideEffectCategory || 'UNKNOWN',
+          }
+        : undefined,
+      platformNativeActionDigest: actionDigest,
+    },
+  );
+  const policyDecisionReference = `policy-decision:${digest({
+    actionDigest,
+    decision: decision.decision,
+    matchedPolicies: (decision.matchedPolicies || []).map((policy) => ({
+      stablePolicyId: policy.stablePolicyId,
+      version: policy.version,
+      effect: policy.effect,
+    })),
+    permission,
+    policySnapshotRevision: decision.policySnapshotRevision,
+    registryId: decision.registryId,
+    registryVersion: decision.registryVersion,
+  })}`;
+  return Object.freeze({
+    ...decision,
+    actionDigest,
+    authoritative: true,
+    evidenceSource: 'production_authorization_service',
+    evidenceVersion: AUTHORIZATION_EVIDENCE_VERSION,
+    policyDecisionReference,
+  });
+}
+
+class PlatformTrustContinuityStore {
+  constructor() {
+    this.records = new Map();
+  }
+
+  observe(current, prior) {
+    const issuerId = requireString(current?.issuerId, 'issuerId');
+    const existing = this.records.get(issuerId);
+    this.#assertComparable(existing, current);
+    this.#assertComparable(prior, current);
+    if (
+      existing &&
+      current.revocationSequence > existing.revocationSequence &&
+      (
+        current.revocationSequence !== existing.revocationSequence + 1 ||
+        current.previousRevocationDigest !== existing.revocationDigest
+      )
+    ) {
+      throw new AppError(
+        503,
+        'REVOCATION_STATE_STALE',
+        'Signed revocation continuity is incomplete.',
+      );
+    }
+    if (
+      !existing &&
+      prior &&
+      current.revocationSequence > prior.revocationSequence &&
+      (
+        current.revocationSequence !== prior.revocationSequence + 1 ||
+        current.previousRevocationDigest !== prior.revocationDigest
+      )
+    ) {
+      throw new AppError(
+        503,
+        'REVOCATION_STATE_STALE',
+        'Signed revocation continuity is incomplete.',
+      );
+    }
+    if (
+      !existing ||
+      current.metadataSequence > existing.metadataSequence ||
+      current.revocationSequence > existing.revocationSequence
+    ) {
+      this.records.set(issuerId, Object.freeze(structuredClone(current)));
+    }
+    return Object.freeze(structuredClone(this.records.get(issuerId) || current));
+  }
+
+  #assertComparable(previous, current) {
+    if (!previous) return;
+    if (
+      previous.evidenceVersion !== TRUST_EVIDENCE_VERSION ||
+      previous.issuerId !== current.issuerId ||
+      !Number.isSafeInteger(previous.metadataSequence) ||
+      !Number.isSafeInteger(previous.revocationSequence) ||
+      !previous.metadataDigest ||
+      !previous.revocationDigest
+    ) {
+      throw new AppError(
+        503,
+        'REVOCATION_STATE_STALE',
+        'Prior Trust continuity evidence is missing or malformed.',
+      );
+    }
+    if (
+      current.metadataSequence < previous.metadataSequence ||
+      current.revocationSequence < previous.revocationSequence ||
+      (
+        current.metadataSequence === previous.metadataSequence &&
+        current.metadataDigest !== previous.metadataDigest
+      ) ||
+      (
+        current.revocationSequence === previous.revocationSequence &&
+        current.revocationDigest !== previous.revocationDigest
+      )
+    ) {
+      throw new AppError(
+        503,
+        'REVOCATION_STATE_STALE',
+        'A signed Trust rollback was detected.',
+      );
+    }
+  }
+}
+
 class MemoryReplayStore {
   constructor() {
     this.records = new Map();
@@ -236,6 +454,15 @@ class PlatformNativeClientAdapter {
     this.trustProvider = options.trustProvider;
     this.authenticationMaterialProvider = options.authenticationMaterialProvider;
     this.authenticationHandler = options.authenticationHandler;
+    this.authorizationProvider =
+      options.authorizationProvider === undefined
+        ? productionAuthorizationProvider
+        : options.authorizationProvider;
+    this.trustAntiRollbackStore =
+      options.trustAntiRollbackStore || new AntiRollbackStore();
+    this.revocationCache = options.revocationCache || new RevocationCache();
+    this.trustContinuityStore =
+      options.trustContinuityStore || new PlatformTrustContinuityStore();
     this.replayStore = options.replayStore || new MemoryReplayStore();
     this.clock = options.clock || Date.now;
     this.allowDevelopmentFixtures =
@@ -250,6 +477,24 @@ class PlatformNativeClientAdapter {
       const passport = await session.client.getPassport();
       const trust = await this.#verifyCurrentTrust(session.client, passport);
       const capabilities = await session.client.listCapabilities();
+      const authorizationEvidence = await this.#authorizeOperation({
+        operation: 'discovery',
+        scope,
+        context,
+        fixtureMode: session.fixtureMode,
+        action: {
+          agentId: passport.agentId,
+          passportId: passport.passportId,
+          passportVersion: passport.passportVersion,
+          targetDigest: digest({
+            baseUrl: session.baseUrl,
+            capabilities: capabilities.map((capability) => ({
+              capabilityKey: capability.capabilityKey,
+              capabilityVersion: capability.capabilityVersion,
+            })),
+          }),
+        },
+      });
       const targetBinding = this.#seal('target', {
         baseUrl: session.baseUrl,
         organizationScope: scope.organizationScope,
@@ -262,6 +507,7 @@ class PlatformNativeClientAdapter {
         credentialReference: safeReference(input.credentialReference),
         fixtureMode: session.fixtureMode,
         trustEvidence: trust,
+        authorizationEvidence,
       });
       return Object.freeze({
         protocol: Object.freeze({
@@ -274,6 +520,7 @@ class PlatformNativeClientAdapter {
         agent: safePassport(passport),
         capabilities: Object.freeze(capabilities.map(safeCapability)),
         trust,
+        authorizationEvidence,
         targetBinding,
         nativeClientPath: true,
       });
@@ -307,22 +554,45 @@ class PlatformNativeClientAdapter {
           'Approved capabilities must be an explicit subset of the verified installation preview.',
         );
       }
+      const approvedCapabilities = (preview.capabilities || [])
+        .filter((capability) => approvedCapabilityKeys.includes(capability.capabilityKey))
+        .map((capability) => ({
+          capabilityKey: capability.capabilityKey,
+          capabilityVersion: capability.capabilityVersion,
+        }))
+        .sort((left, right) =>
+          `${left.capabilityKey}@${left.capabilityVersion}`.localeCompare(
+            `${right.capabilityKey}@${right.capabilityVersion}`,
+          ));
+      const authorizationEvidence = await this.#authorizeOperation({
+        operation: 'installation',
+        scope,
+        context,
+        fixtureMode: session.fixtureMode,
+        action: {
+          agentId: passport.agentId,
+          passportId: passport.passportId,
+          passportVersion: passport.passportVersion,
+          approvedCapabilities,
+          inputDigest: digest({
+            approvedCapabilities,
+            grantDigest: digest(input.grant),
+          }),
+        },
+      });
       const connection = await session.client.install({
         grant: input.grant,
         ...scope,
         approvedCapabilityKeys,
       });
-      const trust = Object.freeze({
-        category:
-          preview.trust?.category ||
-          (session.client.trust?.required === true
-            ? 'verified_and_trusted'
-            : 'explicit_development_fixture'),
-        issuerId: passport.issuer,
-        revocationFreshness:
-          session.client.trust?.required === true ? 'verified_during_install' : 'fixture_only',
-        verifiedAt: new Date(this.clock()).toISOString(),
-      });
+      const trust = await this.#verifyCurrentTrust(session.client, passport);
+      const connectionRevocation = await session.client.checkRevocation(
+        'connection',
+        connection.connectionId,
+      );
+      if (connectionRevocation.status !== 'active') {
+        throw new AppError(403, 'AGENT_REVOKED', 'The installed Connection is revoked.');
+      }
       const connectionBinding = this.#seal('connection', {
         baseUrl: session.baseUrl,
         protocolConnectionId: connection.connectionId,
@@ -337,6 +607,7 @@ class PlatformNativeClientAdapter {
         credentialReference: safeReference(input.credentialReference),
         fixtureMode: session.fixtureMode,
         trustEvidence: trust,
+        authorizationEvidence,
       });
       return Object.freeze({
         connection: Object.freeze({
@@ -350,6 +621,7 @@ class PlatformNativeClientAdapter {
           approvedCapabilityKeys: Object.freeze([...approvedCapabilityKeys]),
         }),
         trust,
+        authorizationEvidence,
         connectionBinding,
         nativeClientPath: true,
       });
@@ -386,7 +658,7 @@ class PlatformNativeClientAdapter {
       const invocationId =
         optionalIdentifier(input.invocationId) || `invocation_${crypto.randomUUID()}`;
       const inputValue = plainInput(input.input);
-      const envelope = Object.freeze({
+      const baseEnvelope = {
         protocolVersion: PROTOCOL_VERSION,
         invocationId,
         messageId: optionalIdentifier(input.messageId) || `message_${crypto.randomUUID()}`,
@@ -413,10 +685,34 @@ class PlatformNativeClientAdapter {
           true,
         ),
         requestedReceiptProfile: 'standard',
+      };
+      const inputDigest = digest(inputValue);
+      const authorizationEvidence = await this.#authorizeOperation({
+        operation: 'invocation',
+        scope,
+        context,
+        fixtureMode: session.fixtureMode,
+        action: {
+          organizationScope: scope.organizationScope,
+          workspaceScope: scope.workspaceScope,
+          connectionId: binding.protocolConnectionId,
+          agentId: binding.agentId,
+          passportId: binding.passportId,
+          passportVersion: binding.passportVersion,
+          invocationId,
+          capabilityKey: capability.capabilityKey,
+          capabilityVersion: capability.capabilityVersion,
+          inputContractReference: capability.inputContractReference,
+          inputDigest,
+          approvalReference: baseEnvelope.approvalReference,
+          riskCategory: capability.riskCategory,
+          sideEffectCategory: capability.sideEffectCategory,
+        },
       });
-      const policyDecisionReference =
-        safeReference(context.policyDecisionReference) ||
-        'platform-native-client:host-principal-authorized';
+      const envelope = Object.freeze({
+        ...baseEnvelope,
+        policyDecisionReference: authorizationEvidence.policyDecisionReference,
+      });
       const result = await session.client.invoke(binding.protocolConnectionId, envelope);
       return this.#verifiedInvocationResult({
         session,
@@ -425,9 +721,9 @@ class PlatformNativeClientAdapter {
         envelope,
         capability,
         result,
-        inputDigest: digest(inputValue),
+        inputDigest,
         trust,
-        policyDecisionReference,
+        authorizationEvidence,
       });
     });
   }
@@ -482,6 +778,29 @@ class PlatformNativeClientAdapter {
           'Only an approved exact action can be continued.',
         );
       }
+      const authorizationEvidence = await this.#authorizeOperation({
+        operation: 'approval_continuation',
+        scope,
+        context,
+        fixtureMode: binding.fixtureMode === true,
+        action: {
+          organizationScope: scope.organizationScope,
+          workspaceScope: scope.workspaceScope,
+          connectionId: binding.protocolConnectionId,
+          agentId: binding.agentId,
+          passportId: binding.passportId,
+          passportVersion: binding.passportVersion,
+          invocationId: approval.envelope.invocationId,
+          capabilityKey: approval.envelope.capabilityKey,
+          capabilityVersion: approval.envelope.capabilityVersion,
+          inputContractReference: approval.envelope.inputContractReference,
+          inputDigest: approval.inputDigest,
+          approvalReference: decision.decisionId,
+          approvalDecisionDigest: digest(decision),
+          riskCategory: approval.capability.riskCategory,
+          sideEffectCategory: approval.capability.sideEffectCategory,
+        },
+      });
       await this.replayStore.consume(
         `${decision.decisionId}:${approval.challenge.approvalActionDigest}`,
         approval.challenge.expiresAt,
@@ -492,6 +811,7 @@ class PlatformNativeClientAdapter {
       const envelope = Object.freeze({
         ...approval.envelope,
         approvalReference: decision.decisionId,
+        policyDecisionReference: authorizationEvidence.policyDecisionReference,
       });
       const result = await session.client.invoke(binding.protocolConnectionId, envelope);
       return this.#verifiedInvocationResult({
@@ -503,7 +823,7 @@ class PlatformNativeClientAdapter {
         result,
         inputDigest: approval.inputDigest,
         trust,
-        policyDecisionReference: approval.challenge.policyDecisionReference,
+        authorizationEvidence,
       });
     });
   }
@@ -531,6 +851,18 @@ class PlatformNativeClientAdapter {
       const taskBinding = this.#open('task', input.taskBinding);
       const connection = this.#open('connection', taskBinding.connectionBinding);
       const scope = this.#assertBindingScope(connection, input, context.principal);
+      await this.#authorizeOperation({
+        operation: 'receipt_retrieval',
+        scope,
+        context,
+        fixtureMode: connection.fixtureMode === true,
+        action: {
+          ...taskBinding.invocation,
+          taskId: taskBinding.taskId,
+          receiptReference:
+            input.receiptId || taskBinding.receiptReference,
+        },
+      });
       const session = await this.#session(connection.baseUrl, scope, connection, context);
       const { passport } = await this.#verifiedBoundPassport(session.client, connection);
       const receiptId = requireString(
@@ -563,12 +895,10 @@ class PlatformNativeClientAdapter {
     return this.#execute('revocation', context, async () => {
       const binding = this.#open('connection', input.connectionBinding);
       const scope = this.#assertBindingScope(binding, input, context.principal);
-      const session = await this.#session(binding.baseUrl, scope, binding, context);
-      const { passport } = await this.#verifiedBoundPassport(session.client, binding);
       const subjectType = String(input.subjectType || 'connection');
       const references = {
         connection: binding.protocolConnectionId,
-        passport: passport.passportId,
+        passport: binding.passportId,
       };
       if (!Object.hasOwn(references, subjectType)) {
         throw new AppError(
@@ -577,6 +907,25 @@ class PlatformNativeClientAdapter {
           'Only the bound Connection or Passport may be checked.',
         );
       }
+      await this.#authorizeOperation({
+        operation: 'revocation',
+        scope,
+        context,
+        fixtureMode: binding.fixtureMode === true,
+        action: {
+          organizationScope: binding.organizationScope,
+          workspaceScope: binding.workspaceScope,
+          connectionId: binding.protocolConnectionId,
+          agentId: binding.agentId,
+          passportId: binding.passportId,
+          passportVersion: binding.passportVersion,
+          subjectType,
+          subjectReference: references[subjectType],
+        },
+      });
+      const session = await this.#session(binding.baseUrl, scope, binding, context);
+      const { passport } = await this.#verifiedBoundPassport(session.client, binding);
+      references.passport = passport.passportId;
       const status = await session.client.checkRevocation(subjectType, references[subjectType]);
       if (status.status !== 'active') {
         throw new AppError(403, 'AGENT_REVOKED', 'The Agent or Connection is revoked.');
@@ -597,8 +946,18 @@ class PlatformNativeClientAdapter {
       const taskBinding = this.#open('task', input.taskBinding);
       const connection = this.#open('connection', taskBinding.connectionBinding);
       const scope = this.#assertBindingScope(connection, input, context.principal);
+      await this.#authorizeOperation({
+        operation: stage,
+        scope,
+        context,
+        fixtureMode: connection.fixtureMode === true,
+        action: {
+          ...taskBinding.invocation,
+          taskId: taskBinding.taskId,
+        },
+      });
       const session = await this.#session(connection.baseUrl, scope, connection, context);
-      const { passport } = await this.#verifiedBoundPassport(session.client, connection);
+      const { passport, trust } = await this.#verifiedBoundPassport(session.client, connection);
       const task = await operation(session, taskBinding);
       this.#assertTask(task, taskBinding.invocation, connection);
       if (
@@ -635,6 +994,10 @@ class PlatformNativeClientAdapter {
       }
       const nextTaskBinding = this.#seal('task', {
         ...taskBinding,
+        connectionBinding: this.#seal('connection', {
+          ...connection,
+          trustEvidence: trust,
+        }),
         receiptReference: task.receiptReference,
       });
       return Object.freeze({
@@ -643,6 +1006,129 @@ class PlatformNativeClientAdapter {
         taskBinding: nextTaskBinding,
         nativeClientPath: true,
       });
+    });
+  }
+
+  async #authorizeOperation({ operation, scope, context, fixtureMode, action }) {
+    const permission = AUTHORIZATION_PERMISSION_BY_OPERATION[operation];
+    if (!permission) {
+      throw new AppError(
+        403,
+        'AUTHORIZATION_DENIED',
+        'No authoritative permission is registered for this operation.',
+      );
+    }
+    if (
+      (action.organizationScope && action.organizationScope !== scope.organizationScope) ||
+      (action.workspaceScope && action.workspaceScope !== scope.workspaceScope)
+    ) {
+      throw new AppError(
+        403,
+        'AUTHORIZATION_DENIED',
+        'The authorization action does not match the authenticated scope.',
+      );
+    }
+    const exactAction = Object.freeze(removeUndefined({
+      operation,
+      permission,
+      organizationScope: scope.organizationScope,
+      workspaceScope: scope.workspaceScope,
+      initiatingSubject: scope.userId,
+      authenticatedSubject: scope.subjectId,
+      ...action,
+    }));
+    const actionDigest = digest(exactAction);
+    const explicitDevelopmentFixture =
+      this.environment === 'development' &&
+      fixtureMode === true &&
+      context.fixtureOptIn === true &&
+      this.allowDevelopmentFixtures === true;
+    if (explicitDevelopmentFixture) {
+      return Object.freeze({
+        evidenceVersion: AUTHORIZATION_EVIDENCE_VERSION,
+        evidenceSource: 'explicit_development_fixture',
+        authoritative: false,
+        developmentFixture: true,
+        permission,
+        decision: 'ALLOW',
+        rbacDecision: 'FIXTURE_ONLY',
+        policyDecision: 'FIXTURE_ONLY',
+        organizationId: scope.organizationScope,
+        workspaceId: scope.workspaceScope,
+        actionDigest,
+        policyDecisionReference: `development-policy-decision:${actionDigest}`,
+      });
+    }
+    if (typeof this.authorizationProvider !== 'function') {
+      throw new AppError(
+        403,
+        'AUTHORIZATION_DENIED',
+        'Authoritative production authorization evidence is required.',
+      );
+    }
+    const decision = await this.authorizationProvider({
+      action: exactAction,
+      actionDigest,
+      context: {
+        ...context,
+        environment: this.environment,
+      },
+      permission,
+      principal: context.principal,
+      scope,
+    });
+    const decisionPermission =
+      typeof decision?.permission === 'string'
+        ? decision.permission
+        : decision?.permission?.id;
+    let reference;
+    try {
+      reference = safeReference(decision?.policyDecisionReference);
+    } catch {
+      reference = undefined;
+    }
+    if (
+      !decision ||
+      decision.authoritative !== true ||
+      decision.developmentFixture === true ||
+      decision.evidenceVersion !== AUTHORIZATION_EVIDENCE_VERSION ||
+      decision.evidenceSource !== 'production_authorization_service' ||
+      decision.allowed !== true ||
+      decision.decision !== 'ALLOW' ||
+      decision.rbacDecision !== 'ALLOW' ||
+      decision.policyDecision !== 'ALLOW' ||
+      decisionPermission !== permission ||
+      decision.organizationId !== scope.organizationScope ||
+      decision.workspaceId !== scope.workspaceScope ||
+      decision.actionDigest !== actionDigest ||
+      !reference
+    ) {
+      throw new AppError(
+        403,
+        'AUTHORIZATION_DENIED',
+        'Authoritative production authorization evidence is missing, malformed, or not bound to the exact action.',
+      );
+    }
+    return Object.freeze({
+      evidenceVersion: AUTHORIZATION_EVIDENCE_VERSION,
+      evidenceSource: decision.evidenceSource,
+      authoritative: true,
+      permission,
+      decision: decision.decision,
+      rbacDecision: decision.rbacDecision,
+      policyDecision: decision.policyDecision,
+      organizationId: decision.organizationId,
+      workspaceId: decision.workspaceId,
+      actionDigest,
+      policyDecisionReference: reference,
+      registryId: decision.registryId,
+      registryVersion: decision.registryVersion,
+      policySnapshotRevision: decision.policySnapshotRevision,
+      matchedPolicyReferences: Object.freeze(
+        (decision.matchedPolicies || []).map((policy) =>
+          `${policy.stablePolicyId || 'policy'}:${policy.version || 'unknown'}`,
+        ),
+      ),
     });
   }
 
@@ -655,8 +1141,10 @@ class PlatformNativeClientAdapter {
     result,
     inputDigest,
     trust,
-    policyDecisionReference,
+    authorizationEvidence,
   }) {
+    const policyDecisionReference =
+      authorizationEvidence.policyDecisionReference;
     this.#assertTask(result.task, envelope, binding);
     let verification;
     if (result.receipt) {
@@ -677,7 +1165,10 @@ class PlatformNativeClientAdapter {
         'A terminal Agent Task requires a signed Receipt.',
       );
     }
-    const connectionBinding = this.#seal('connection', binding);
+    const connectionBinding = this.#seal('connection', {
+      ...binding,
+      trustEvidence: trust,
+    });
     const taskBinding = this.#seal('task', {
       connectionBinding,
       taskId: result.task.taskId,
@@ -696,6 +1187,7 @@ class PlatformNativeClientAdapter {
         approvalReference: envelope.approvalReference,
         trustEvidence: trust,
         policyDecisionReference,
+        authorizationEvidence,
       },
     });
     let approvalBinding;
@@ -719,6 +1211,7 @@ class PlatformNativeClientAdapter {
         inputDigest,
         challenge: result.approvalChallenge,
         trustEvidence: trust,
+        authorizationEvidence,
       });
     }
     return Object.freeze({
@@ -740,6 +1233,7 @@ class PlatformNativeClientAdapter {
         receiptReference: result.receipt?.receiptId,
         trustEvidence: trust,
         policyDecisionReference,
+        authorizationEvidence,
       }),
       task: result.task,
       ...(result.output !== undefined ? { output: result.output } : {}),
@@ -782,6 +1276,27 @@ class PlatformNativeClientAdapter {
         verifiedAt: new Date(this.clock()).toISOString(),
       });
     }
+    const priorTrust = binding.protocolConnectionId
+      ? binding.trustEvidence
+      : undefined;
+    if (
+      binding.protocolConnectionId &&
+      (
+        !priorTrust ||
+        priorTrust.evidenceVersion !== TRUST_EVIDENCE_VERSION ||
+        priorTrust.issuerId !== passport.issuer ||
+        !Number.isSafeInteger(priorTrust.metadataSequence) ||
+        !Number.isSafeInteger(priorTrust.revocationSequence) ||
+        !priorTrust.metadataDigest ||
+        !priorTrust.revocationDigest
+      )
+    ) {
+      throw new AppError(
+        503,
+        'REVOCATION_STATE_STALE',
+        'Prior Trust continuity evidence is required for this Connection.',
+      );
+    }
     const passportTrust = await client.verifyPassport(passport, {
       organizationPolicy: client.trust?.organizationPolicy,
       workspacePolicy: client.trust?.workspacePolicy,
@@ -820,38 +1335,61 @@ class PlatformNativeClientAdapter {
         throw new AppError(403, 'AGENT_REVOKED', 'The Agent or Connection is revoked.');
       }
     }
-    return Object.freeze({
+    const trustEvidence = Object.freeze({
+      evidenceVersion: TRUST_EVIDENCE_VERSION,
       category: passportTrust.policy.category,
       issuerId: passport.issuer,
       verifiedKeyId: passportTrust.proof?.kid,
       trustProfileVersion: passport.trustProfileVersion,
+      metadataSequence: passportTrust.metadata.metadataSequence,
+      metadataDigest: digest(withoutProof(passportTrust.metadata)),
       revocationFreshness: revocation.verification.freshness,
       revocationSequence: revocation.document.sequence,
+      revocationDigest: revocation.verification.digest,
+      previousRevocationDigest: revocation.document.previousSetDigest,
       verifiedAt: new Date(this.clock()).toISOString(),
     });
+    this.trustContinuityStore.observe(trustEvidence, priorTrust);
+    return trustEvidence;
   }
 
   async #verifyReceipt(client, passport, binding, input) {
     const { receipt, task, invocation } = input;
-    if (
-      !receipt ||
-      receipt.connectionId !== binding.protocolConnectionId ||
-      receipt.organizationScope !== binding.organizationScope ||
-      receipt.workspaceScope !== binding.workspaceScope ||
-      receipt.agentId !== binding.agentId ||
-      receipt.passportVersion !== binding.passportVersion ||
-      (task?.taskId && receipt.taskId !== task.taskId) ||
-      (invocation?.invocationId && receipt.invocationId !== invocation.invocationId) ||
-      (
-        invocation?.approvalReference &&
-        receipt.approvalReference !== invocation.approvalReference
-      ) ||
-      receipt.revocationStateAtExecution !== 'active'
-    ) {
+    const expectedBindings = {
+      connectionId: binding.protocolConnectionId,
+      organizationScope: binding.organizationScope,
+      workspaceScope: binding.workspaceScope,
+      agentId: binding.agentId,
+      passportId: binding.passportId,
+      passportVersion: binding.passportVersion,
+      capabilityKey: invocation?.capabilityKey,
+      capabilityVersion: invocation?.capabilityVersion,
+      taskId: task?.taskId,
+      invocationId: invocation?.invocationId,
+      approvalReference: invocation?.approvalReference,
+      policyDecisionReference: invocation?.policyDecisionReference,
+      revocationStateAtExecution: 'active',
+    };
+    const bindingMismatches = !receipt
+      ? ['receipt']
+      : Object.entries(expectedBindings)
+          .filter(
+            ([field, expected]) =>
+              expected !== undefined && receipt[field] !== expected,
+          )
+          .map(([field]) => field);
+    if (!invocation?.policyDecisionReference) {
+      bindingMismatches.push('policyDecisionReference');
+    }
+    if (bindingMismatches.length) {
       throw new AppError(
         422,
         'RECEIPT_INVALID',
-        'The Agent Receipt is not bound to the exact Task, scope, and Connection.',
+        `The Agent Receipt is not bound to the exact Task, scope, and Connection (${bindingMismatches.join(', ')}).`,
+        bindingMismatches.map((field) => ({
+          field,
+          message: 'Receipt binding mismatch.',
+        })),
       );
     }
     if (
@@ -874,7 +1412,7 @@ class PlatformNativeClientAdapter {
         ...(Object.hasOwn(input, 'evidence') ? { actualEvidence: input.evidence } : {}),
       });
     } catch (error) {
-      throw new AppError(422, 'RECEIPT_INVALID', 'The Agent Receipt signature or digest is invalid.', [], {
+      throw new AppError(422, 'RECEIPT_INVALID', `The Agent Receipt signature or digest is invalid (${String(error?.code || error?.errorCode || 'RECEIPT_PROOF_INVALID')}).`, [], {
         reasonCode: String(error?.code || error?.errorCode || 'RECEIPT_PROOF_INVALID').slice(0, 100),
       });
     }
@@ -896,15 +1434,32 @@ class PlatformNativeClientAdapter {
   }
 
   #assertTask(task, invocation, binding) {
+    const expected = {
+      invocationId: invocation.invocationId,
+      organizationScope: invocation.organizationScope,
+      workspaceScope: invocation.workspaceScope,
+      connectionId: binding.protocolConnectionId,
+      agentId: invocation.agentId || invocation.targetAgentId || binding.agentId,
+      passportVersion:
+        invocation.passportVersion ||
+        invocation.targetPassportVersion ||
+        binding.passportVersion,
+      capabilityKey: invocation.capabilityKey,
+      capabilityVersion: invocation.capabilityVersion,
+      approvalReference: invocation.approvalReference,
+    };
     if (
       !task ||
-      task.invocationId !== invocation.invocationId ||
-      (task.connectionId && task.connectionId !== binding.protocolConnectionId)
+      Object.entries(expected).some(
+        ([field, value]) =>
+          (task[field] === undefined ? undefined : task[field]) !==
+          (value === undefined ? undefined : value),
+      )
     ) {
       throw new AppError(
         422,
         'RECEIPT_INVALID',
-        'The Agent Task is not bound to the exact invocation and Connection.',
+        'The Agent Task is not bound to the exact invocation, scope, Agent, Passport, Connection, and capability.',
       );
     }
   }
@@ -1023,7 +1578,13 @@ class PlatformNativeClientAdapter {
       },
       requestIdFactory: () => context.requestId || `request_${crypto.randomUUID()}`,
       traceIdFactory: () => context.traceId || `trace_${crypto.randomUUID()}`,
-      trust,
+      trust: trust
+        ? {
+            ...trust,
+            antiRollbackStore: this.trustAntiRollbackStore,
+            revocationCache: this.revocationCache,
+          }
+        : trust,
     });
     return { client, baseUrl, fixtureMode };
   }
@@ -1312,7 +1873,9 @@ module.exports = {
   MemoryReplayStore,
   MongoReplayStore,
   PlatformNativeClientAdapter,
+  PlatformTrustContinuityStore,
   authenticatedScope,
   createPlatformNativeClientAdapter,
   getPlatformNativeClientAdapter,
+  productionAuthorizationProvider,
 };
