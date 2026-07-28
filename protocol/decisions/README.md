@@ -110,3 +110,4 @@ record `PROPOSED`.
 | --- | --- | --- |
 | [H-01](H-01-lifecycle-initialization-and-ordering.md) | Lifecycle initialization and ordering | `ACCEPTED` |
 | [H-02](H-02-roles-trust-boundaries-and-authorization-floor.md) | Roles, trust boundaries, and protocol authorization floor | `ACCEPTED` |
+| [H-03](H-03-protocol-version-identity-and-history.md) | Protocol version identity, ordering, compatibility, history, and anti-downgrade binding | `ACCEPTED` |
