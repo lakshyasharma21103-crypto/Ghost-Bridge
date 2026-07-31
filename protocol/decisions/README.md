@@ -113,3 +113,4 @@ record `PROPOSED`.
 | [H-03](H-03-protocol-version-identity-and-history.md) | Protocol version identity, ordering, compatibility, history, and anti-downgrade binding | `ACCEPTED` |
 | [H-04](H-04-capability-profile-and-optional-feature-negotiation.md) | Capability, profile, and optional-feature negotiation | `ACCEPTED` |
 | [H-05](H-05-authentication-profiles-and-credential-binding.md) | Authentication profiles and credential binding | `ACCEPTED` |
+| [H-06](H-06-install-grant-redemption-and-retry-semantics.md) | Install Grant redemption and retry semantics | `ACCEPTED` |
