@@ -115,3 +115,4 @@ record `PROPOSED`.
 | [H-05](H-05-authentication-profiles-and-credential-binding.md) | Authentication profiles and credential binding | `ACCEPTED` |
 | [H-06](H-06-install-grant-redemption-and-retry-semantics.md) | Install Grant redemption and retry semantics | `ACCEPTED` |
 | [H-07](H-07-connection-lifecycle-and-scoped-authority.md) | Connection lifecycle and scoped authority | `ACCEPTED` |
+| [H-08](H-08-exact-action-approval-lifecycle-and-consumption.md) | Exact-action Approval lifecycle and consumption | `ACCEPTED` |
