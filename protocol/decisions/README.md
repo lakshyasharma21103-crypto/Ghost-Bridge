@@ -116,3 +116,4 @@ record `PROPOSED`.
 | [H-06](H-06-install-grant-redemption-and-retry-semantics.md) | Install Grant redemption and retry semantics | `ACCEPTED` |
 | [H-07](H-07-connection-lifecycle-and-scoped-authority.md) | Connection lifecycle and scoped authority | `ACCEPTED` |
 | [H-08](H-08-exact-action-approval-lifecycle-and-consumption.md) | Exact-action Approval lifecycle and consumption | `ACCEPTED` |
+| [H-09](H-09-task-result-cancellation-and-retention-model.md) | Task, result, cancellation, and retention model | `ACCEPTED` |
