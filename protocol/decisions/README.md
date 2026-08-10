@@ -118,3 +118,4 @@ record `PROPOSED`.
 | [H-08](H-08-exact-action-approval-lifecycle-and-consumption.md) | Exact-action Approval lifecycle and consumption | `ACCEPTED` |
 | [H-09](H-09-task-result-cancellation-and-retention-model.md) | Task, result, cancellation, and retention model | `ACCEPTED` |
 | [H-10](H-10-canonical-bytes-digests-signatures-and-proof-profiles.md) | Canonical bytes, digests, signatures, and proof profiles | `ACCEPTED` |
+| [H-11](H-11-revocation-anti-rollback-and-historical-verification.md) | Revocation, anti-rollback, and historical verification | `ACCEPTED` |
