@@ -120,3 +120,4 @@ record `PROPOSED`.
 | [H-10](H-10-canonical-bytes-digests-signatures-and-proof-profiles.md) | Canonical bytes, digests, signatures, and proof profiles | `ACCEPTED` |
 | [H-11](H-11-revocation-anti-rollback-and-historical-verification.md) | Revocation, anti-rollback, and historical verification | `ACCEPTED` |
 | [H-12](H-12-transport-errors-limits-and-observability.md) | Transport, errors, limits, and observability | `ACCEPTED` |
+| [H-13](H-13-schema-openness-extensions-and-evolution.md) | Schema openness, extensions, and evolution | `ACCEPTED` |
