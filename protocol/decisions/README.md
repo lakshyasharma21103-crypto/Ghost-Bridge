@@ -121,3 +121,4 @@ record `PROPOSED`.
 | [H-11](H-11-revocation-anti-rollback-and-historical-verification.md) | Revocation, anti-rollback, and historical verification | `ACCEPTED` |
 | [H-12](H-12-transport-errors-limits-and-observability.md) | Transport, errors, limits, and observability | `ACCEPTED` |
 | [H-13](H-13-schema-openness-extensions-and-evolution.md) | Schema openness, extensions, and evolution | `ACCEPTED` |
+| [H-14](H-14-release-support-review-and-1-0-graduation-authority.md) | Release, support, review, and 1.0 graduation authority | `ACCEPTED` |
