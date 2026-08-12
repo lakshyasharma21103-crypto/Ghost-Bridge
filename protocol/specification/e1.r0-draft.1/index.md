@@ -24,11 +24,13 @@ draft is corrected through review.
 ## Requirement-ID and traceability convention
 
 Requirement IDs use `REQ-<CHAPTER>-NNNN`, where `<CHAPTER>` is `IDX`, `TERM`,
-`ROLE`, `LIFE`, `DISC`, `VERS`, `COMP`, or `EXT`, and `NNNN` is a zero-padded
-chapter-local sequence. IDs are unique and permanent once reviewed. A later
-insertion allocates a new number in its own chapter; it does not renumber or
-reuse another ID. The syntax is an editorial locator only and encodes no
-protocol semantics.
+`ROLE`, `LIFE`, `DISC`, `VERS`, `COMP`, `EXT`, `AUTH` (authentication), `AUTHZ`
+(authorization), `INST` (installation), `CONN` (Connections), or `INV`
+(Invocation, correlation, deadline, cancellation, and idempotency admission),
+and `NNNN` is a zero-padded chapter-local sequence. IDs are unique and permanent
+once reviewed. A later insertion allocates a new number in its own chapter; it
+does not renumber or reuse another ID. The syntax is an editorial locator only
+and encodes no protocol semantics.
 
 Every requirement records its accepted `H-*` sources and the applicable audited
 `GB-*` gaps. Those citations establish derivation and planning traceability; they
@@ -160,16 +162,21 @@ release, profile, role, artifact, and evidence scope.
 - [Versioning and capabilities](./versioning-and-capabilities.md)
 - [Compatibility](./compatibility.md)
 - [Extensions](./extensions.md)
+- [Authentication](./authentication.md)
+- [Authorization](./authorization.md)
+- [Installation](./installation.md)
+- [Connections](./connections.md)
+- [Invocation](./invocation.md)
 
-The first three chapters are the reviewed D1-01 slice. The final four are the
-D1-02 candidate. Together they do not make the overall draft complete.
+The first three chapters are the reviewed D1-01 slice. Discovery through
+Extensions are the reviewed D1-02 slice. The final five are the D1-03 candidate.
+Together they do not make the overall draft complete.
 
 ## Planned later chapters and assets
 
-Later D1-03 through D1-07 work is expected to cover authentication,
-authorization, installation, Connections, and Invocation; Approvals; Tasks;
-Receipts and Trust/revocation; and transport, errors, security, privacy, and
-observability. Those chapters are not created by D1-02.
+Later D1-04 through D1-07 work is expected to cover Approvals; Tasks; Receipts
+and Trust/revocation; and transport, errors, security, privacy, and
+observability. Those chapters are not created by D1-03.
 
 Later D2 work is expected to create canonical wire schemas, explicit
 machine-readable state machines, deterministic fixtures and cryptographic
@@ -301,3 +308,53 @@ later asset class, not an existing artifact. No listed gap is closed here.
 | REQ-EXT-0013 | H-01, H-04, H-07, H-13 | GB-006, GB-042, GB-046 | Extensions | D2-04 experiment opt-in/isolation fixtures |
 | REQ-EXT-0014 | H-03, H-04, H-07, H-10, H-13, H-14 | GB-043, GB-044, GB-046 | Extensions | D2-04 graduation/migration/proof-reuse fixtures |
 | REQ-EXT-0015 | H-03, H-07, H-11, H-13, H-14 | GB-043, GB-044, GB-046 | Extensions | D2-04 extension lifecycle/support-state matrix |
+| REQ-AUTH-0001 | H-01, H-02, H-05, H-07 | GB-007, GB-008, GB-011, GB-013 | Authentication | D2-05 authentication/authority-confusion cases |
+| REQ-AUTH-0002 | H-01, H-04, H-05, H-07, H-13 | GB-007, GB-009, GB-011 | Authentication | D2-01 profile identity; D2-04 selection/downgrade fixtures |
+| REQ-AUTH-0003 | H-04, H-05, H-12, H-14 | GB-007, GB-009, GB-013 | Authentication | D2-01 concrete profile registry; D2-04 local/remote/none cases |
+| REQ-AUTH-0004 | H-01, H-04-H-07, H-10, H-11 | GB-007, GB-009, GB-010, GB-011 | Authentication | D2-01 authentication-context/binding schema; D2-04 persistence cases |
+| REQ-AUTH-0005 | H-02, H-05-H-08, H-12 | GB-007, GB-008, GB-009, GB-012, GB-013, GB-016 | Authentication | D2-04 principal/audience/purpose substitution fixtures |
+| REQ-AUTH-0006 | H-05-H-09, H-12 | GB-007, GB-009, GB-010, GB-011, GB-013 | Authentication | D2-04 secret-leak/reference-as-proof fixtures |
+| REQ-AUTH-0007 | H-02, H-05, H-07, H-10-H-12 | GB-007, GB-013, GB-016, GB-017 | Authentication | D2-01 request-proof schema; D2-03 proof vectors; D2-04 replay cases |
+| REQ-AUTH-0008 | H-05, H-07, H-09, H-11, H-12 | GB-007, GB-011, GB-015 | Authentication | D2-02 auth-loss transitions; D2-04 reauthentication/rotation fixtures |
+| REQ-AUTH-0009 | H-02, H-05-H-07, H-11, H-12 | GB-007, GB-009, GB-011, GB-013, GB-015, GB-016 | Authentication | D2-04 authentication failure/downgrade corpus |
+| REQ-AUTHZ-0001 | H-01, H-02, H-05, H-07, H-08 | GB-007, GB-008, GB-013 | Authorization | D2-05 authentication/authorization/Approval separation cases |
+| REQ-AUTHZ-0002 | H-02, H-05, H-07, H-10-H-12 | GB-008, GB-012, GB-013 | Authorization | D2-01 authorization-input schema; D2-04 provenance cases |
+| REQ-AUTHZ-0003 | H-02, H-07, H-10, H-12, H-13 | GB-008, GB-012, GB-013 | Authorization | D2-01 authorization-evidence schema; D2-04 binding matrix |
+| REQ-AUTHZ-0004 | H-02, H-07-H-09, H-11, H-12 | GB-008, GB-013 | Authorization | D2-05 final-Agent enforcement/recheck cases |
+| REQ-AUTHZ-0005 | H-02, H-04, H-07, H-08, H-11 | GB-008, GB-011, GB-012, GB-013 | Authorization | D2-04 non-transferability/non-widening fixtures |
+| REQ-AUTHZ-0006 | H-02, H-05, H-07, H-11, H-12 | GB-008, GB-013, GB-015 | Authorization | D2-04 deny/stale/unavailable/timeout cases |
+| REQ-AUTHZ-0007 | H-02, H-07, H-08, H-12, H-14 | GB-008, GB-013 | Authorization | D2-05 Platform-policy delta and Approval-boundary cases |
+| REQ-INST-0001 | H-01, H-05-H-07, H-10, H-12 | GB-009, GB-010, GB-017 | Installation | D2-01 Install Grant object-class schemas; D2-04 confusion cases |
+| REQ-INST-0002 | H-01, H-02, H-05-H-07 | GB-009, GB-010, GB-012 | Installation | D2-01 grant issuance schema; D2-04 issuer/scope cases |
+| REQ-INST-0003 | H-01, H-05, H-06, H-12 | GB-009, GB-010 | Installation | D2-01 resolution/tombstone schema; D2-04 disclosure cases |
+| REQ-INST-0004 | H-01, H-04-H-06, H-10 | GB-009, GB-010 | Installation | D2-01 preview/consent schema; D2-04 mutation/secret fixtures |
+| REQ-INST-0005 | H-01, H-03-H-06, H-10, H-13 | GB-009, GB-010, GB-011, GB-012 | Installation | D2-01 redemption-intent schema; D2-04 semantic-equality cases |
+| REQ-INST-0006 | H-05-H-07, H-10, H-12 | GB-009, GB-012, GB-017 | Installation | D2-04 exact replay/conflict/disclosure fixtures |
+| REQ-INST-0007 | H-01, H-02, H-04-H-07, H-11, H-12 | GB-009, GB-010, GB-011 | Installation | D2-02 H-06 transaction machine; D2-04 atomicity cases |
+| REQ-INST-0008 | H-06, H-07, H-10-H-12 | GB-009, GB-011, GB-017 | Installation | D2-04 concurrency/crash/lost-response fixtures |
+| REQ-INST-0009 | H-06, H-07, H-11, H-12 | GB-009, GB-011, GB-015 | Installation | D2-02 grant state machine; D2-04 expiry/revocation races |
+| REQ-INST-0010 | H-05-H-07, H-10-H-12, H-14 | GB-009, GB-010, GB-011, GB-017 | Installation | D2-01 replay/tombstone evidence; D2-04 restart/retention cases |
+| REQ-CONN-0001 | H-01, H-06, H-07, H-09, H-11, H-12 | GB-009, GB-011, GB-013 | Connections | D2-01 Connection state schema; D2-02 H-07 state machine |
+| REQ-CONN-0002 | H-01, H-03-H-07, H-10, H-11, H-13, H-14 | GB-011, GB-012 | Connections | D2-01 Connection authority-bundle schema; D2-04 binding cases |
+| REQ-CONN-0003 | H-02, H-05-H-10, H-12 | GB-008, GB-011, GB-012, GB-013, GB-016 | Connections | D2-01 reusable tenant-scope schema; D2-04 substitution matrix |
+| REQ-CONN-0004 | H-01, H-02, H-04, H-05, H-07-H-09, H-11, H-12 | GB-007, GB-008, GB-011, GB-012, GB-013, GB-015, GB-017 | Connections | D2-05 effective-authority intersection cases |
+| REQ-CONN-0005 | H-05, H-07, H-11, H-12 | GB-007, GB-011, GB-015 | Connections | D2-02 suspension/resumption machine; D2-04 cause cases |
+| REQ-CONN-0006 | H-07, H-09-H-12 | GB-011, GB-015 | Connections | D2-02 terminal transitions; D2-04 equality/race fixtures |
+| REQ-CONN-0007 | H-05, H-07, H-09, H-11, H-12 | GB-007, GB-011, GB-015 | Connections | D2-02 revocation transition; D2-04 source/scope fixtures |
+| REQ-CONN-0008 | H-04-H-07, H-11 | GB-009, GB-011, GB-012 | Connections | D2-02 replacement coordinator; D2-04 no-overlap/recovery cases |
+| REQ-CONN-0009 | H-01, H-03, H-06, H-07, H-09-H-11, H-14 | GB-011, GB-017 | Connections | D2-04 restart/rollback/corruption/split-brain fixtures |
+| REQ-CONN-0010 | H-07, H-09-H-12, H-14 | GB-011, GB-012, GB-013, GB-017 | Connections | D2-01 historical-read/tombstone schemas; D2-04 disclosure cases |
+| REQ-INV-0001 | H-02, H-05, H-07-H-09, H-12, H-13 | GB-013, GB-014, GB-015, GB-017 | Invocation | D2-01 Invocation schema; D2-04 untrusted-claim fixtures |
+| REQ-INV-0002 | H-01, H-02, H-04, H-05, H-07, H-12 | GB-011, GB-012, GB-013 | Invocation | D2-04 one-Connection/binding substitution cases |
+| REQ-INV-0003 | H-02, H-05, H-07-H-09, H-11, H-12 | GB-007, GB-008, GB-011, GB-012, GB-013, GB-015, GB-017 | Invocation | D2-02 admission machine; D2-04 final-recheck race fixtures |
+| REQ-INV-0004 | H-07-H-09, H-11, H-12 | GB-013, GB-016, GB-017 | Invocation | D2-02 Task-birth/Approval atomicity; D2-04 partial-state cases |
+| REQ-INV-0005 | H-07-H-09, H-12 | GB-013, GB-015, GB-016 | Invocation | D2-04 pre-Task rejection/workflow-placeholder cases |
+| REQ-INV-0006 | H-02, H-06-H-09, H-12 | GB-014, GB-017 | Invocation | D2-01 correlation schema; D2-04 collision/mismatch/parentage cases |
+| REQ-INV-0007 | H-07-H-10, H-12 | GB-013, GB-015, GB-017 | Invocation | D2-01 idempotency identity schema; D2-03 digest vectors |
+| REQ-INV-0008 | H-07-H-09, H-11, H-12 | GB-013, GB-015, GB-017 | Invocation | D2-04 exact/concurrent/restart convergence fixtures |
+| REQ-INV-0009 | H-07-H-10, H-12 | GB-012, GB-013, GB-017 | Invocation | D2-04 conflict/non-disclosure fixtures |
+| REQ-INV-0010 | H-06-H-09, H-12 | GB-013, GB-015, GB-017 | Invocation | D2-04 ambiguous-commit/recovery fixtures |
+| REQ-INV-0011 | H-07-H-10, H-12 | GB-013, GB-015, GB-017 | Invocation | D2-04 admission-deadline equality/clock cases |
+| REQ-INV-0012 | H-02, H-05, H-07, H-09, H-11, H-12 | GB-012, GB-013, GB-014, GB-015, GB-016, GB-017 | Invocation | D2-01 cancellation-request schema; D2-04 admission/retry cases |
+| REQ-INV-0013 | H-07-H-09, H-12 | GB-013, GB-015, GB-016, GB-017 | Invocation | D2-05 response/read boundary cases |
+| REQ-INV-0014 | H-02, H-05, H-07-H-09, H-11, H-12 | GB-008, GB-012, GB-013, GB-014, GB-015, GB-016, GB-017 | Invocation | D2-04 multi-fault/privacy-order fixtures; D2-05 conformance |
