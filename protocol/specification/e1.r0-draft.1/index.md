@@ -24,10 +24,11 @@ draft is corrected through review.
 ## Requirement-ID and traceability convention
 
 Requirement IDs use `REQ-<CHAPTER>-NNNN`, where `<CHAPTER>` is `IDX`, `TERM`,
-`ROLE`, or `LIFE`, and `NNNN` is a zero-padded chapter-local sequence. IDs are
-unique and permanent once reviewed. A later insertion allocates a new number in
-its own chapter; it does not renumber or reuse another ID. The syntax is an
-editorial locator only and encodes no protocol semantics.
+`ROLE`, `LIFE`, `DISC`, `VERS`, `COMP`, or `EXT`, and `NNNN` is a zero-padded
+chapter-local sequence. IDs are unique and permanent once reviewed. A later
+insertion allocates a new number in its own chapter; it does not renumber or
+reuse another ID. The syntax is an editorial locator only and encodes no
+protocol semantics.
 
 Every requirement records its accepted `H-*` sources and the applicable audited
 `GB-*` gaps. Those citations establish derivation and planning traceability; they
@@ -150,21 +151,25 @@ release, profile, role, artifact, and evidence scope.
 
 **Sources:** H-03, H-10, H-13, H-14. **Gaps:** GB-001.
 
-## Chapters in this D1-01 slice
+## Chapters in the current D1 draft
 
 - [Terminology](./terminology.md)
 - [Roles and trust boundaries](./roles-and-trust-boundaries.md)
 - [Lifecycle](./lifecycle.md)
+- [Discovery](./discovery.md)
+- [Versioning and capabilities](./versioning-and-capabilities.md)
+- [Compatibility](./compatibility.md)
+- [Extensions](./extensions.md)
 
-These chapters establish the D1-01 candidate only. They do not make the overall
-draft complete.
+The first three chapters are the reviewed D1-01 slice. The final four are the
+D1-02 candidate. Together they do not make the overall draft complete.
 
 ## Planned later chapters and assets
 
-Later D1 work is expected to cover discovery/version/capability negotiation;
-authentication, authorization, installation, Connections, and Invocation;
-Approvals; Tasks; Receipts and Trust/revocation; and transport, errors, security,
-privacy, and observability. Those chapters are not created by D1-01.
+Later D1-03 through D1-07 work is expected to cover authentication,
+authorization, installation, Connections, and Invocation; Approvals; Tasks;
+Receipts and Trust/revocation; and transport, errors, security, privacy, and
+observability. Those chapters are not created by D1-02.
 
 Later D2 work is expected to create canonical wire schemas, explicit
 machine-readable state machines, deterministic fixtures and cryptographic
@@ -172,7 +177,7 @@ vectors, malicious/failure/compatibility corpora, and implementation-neutral
 black-box conformance. None of those assets exists by virtue of this index, and
 this draft assigns no future asset ID or digest.
 
-## D1-01 traceability table
+## D1 traceability table
 
 This table is non-normative planning traceability. "Expected asset" means a
 later asset class, not an existing artifact. No listed gap is closed here.
@@ -241,3 +246,58 @@ later asset class, not an existing artifact. No listed gap is closed here.
 | REQ-LIFE-0028 | H-01, H-07, H-09, H-11, H-12 | GB-003, GB-015, GB-016 | Lifecycle | D2-04 transport-ambiguity fixtures; D2-05 cases |
 | REQ-LIFE-0029 | H-01-H-12 | GB-001, GB-002, GB-003, GB-014, GB-015, GB-016 | Lifecycle | D2-04 illegal-order fixtures; D2-05 conformance |
 | REQ-LIFE-0030 | H-01, H-06-H-09, H-11, H-12 | GB-003, GB-014, GB-015, GB-016 | Lifecycle | D2-02 durability invariants; D2-04 restart fixtures |
+| REQ-DISC-0001 | H-01, H-12 | GB-004 | Discovery | D2-01 discovery schemas; D2-05 authority-boundary cases |
+| REQ-DISC-0002 | H-01, H-03, H-12 | GB-004, GB-005 | Discovery | D2-01 bootstrap schema; D2-04 route/origin cases |
+| REQ-DISC-0003 | H-01, H-03, H-04, H-10, H-13 | GB-004, GB-005, GB-006, GB-042 | Discovery | D2-01 release-record schema; D2-04 missing-artifact cases |
+| REQ-DISC-0004 | H-01, H-04, H-07 | GB-004, GB-006 | Discovery | D2-04 Passport/discovery/Offer intersection fixtures |
+| REQ-DISC-0005 | H-03, H-04 | GB-004, GB-005, GB-006 | Discovery | D2-04 duplicate/conflict/permutation fixtures |
+| REQ-DISC-0006 | H-01, H-03, H-04, H-11, H-12 | GB-004, GB-005, GB-006 | Discovery | D2-04 cache/freshness/revalidation fixtures |
+| REQ-DISC-0007 | H-01, H-03, H-04, H-06, H-10 | GB-004, GB-005, GB-006 | Discovery | D2-04 preview/consent mutation fixtures |
+| REQ-DISC-0008 | H-01, H-03, H-04, H-07, H-11, H-14 | GB-004, GB-005, GB-006, GB-044 | Discovery | D2-04 active-Connection rediscovery/restart fixtures |
+| REQ-DISC-0009 | H-01, H-05, H-07, H-11, H-12 | GB-004, GB-045 | Discovery | D2-04 origin/redirect/credential-forwarding fixtures |
+| REQ-DISC-0010 | H-01, H-04, H-13 | GB-004, GB-042, GB-045 | Discovery | D2-04 unknown-field/extension-advertisement fixtures |
+| REQ-DISC-0011 | H-01, H-03, H-04, H-06, H-12, H-13 | GB-004, GB-005, GB-006, GB-042, GB-045 | Discovery | D2-04 discovery semantic-failure corpus |
+| REQ-VERS-0001 | H-03, H-13 | GB-005, GB-043, GB-044, GB-045 | Versioning and capabilities | D2-01 release-identity schema; D2-04 grammar corpus |
+| REQ-VERS-0002 | H-03 | GB-005, GB-044 | Versioning and capabilities | D2-04 ordering and language-portability matrix |
+| REQ-VERS-0003 | H-03, H-10, H-13, H-14 | GB-005, GB-043, GB-044 | Versioning and capabilities | D2-04 identity-confusion and legacy fixtures |
+| REQ-VERS-0004 | H-01, H-03, H-04, H-10, H-13 | GB-005, GB-006, GB-042, GB-045 | Versioning and capabilities | D2-01 negotiation-input schemas; D2-04 metadata corpus |
+| REQ-VERS-0005 | H-03 | GB-005 | Versioning and capabilities | D2-04 preferredVersion consistency matrix |
+| REQ-VERS-0006 | H-03, H-04 | GB-005, GB-044, GB-045 | Versioning and capabilities | D2-04 intersection/unknown/unsupported matrix |
+| REQ-VERS-0007 | H-03, H-04, H-10, H-13 | GB-005, GB-006, GB-043, GB-044, GB-045 | Versioning and capabilities | D2-04 cross-release evidence-isolation fixtures |
+| REQ-VERS-0008 | H-03, H-11, H-14 | GB-005, GB-044 | Versioning and capabilities | D2-04 status/security/withdrawal matrix |
+| REQ-VERS-0009 | H-04 | GB-006, GB-044 | Versioning and capabilities | D2-04 role/facet Cartesian fixtures |
+| REQ-VERS-0010 | H-01, H-04, H-07 | GB-006, GB-042, GB-045 | Versioning and capabilities | D2-04 source-ownership/absence fixtures |
+| REQ-VERS-0011 | H-04 | GB-006 | Versioning and capabilities | D2-04 profile/feature/capability Cartesian fixtures |
+| REQ-VERS-0012 | H-04, H-05, H-13 | GB-006, GB-042, GB-046 | Versioning and capabilities | D2-04 authentication/extension/experiment fixtures |
+| REQ-VERS-0013 | H-04, H-07, H-13 | GB-006, GB-042, GB-045 | Versioning and capabilities | D2-04 failure-granularity and isolation matrix |
+| REQ-VERS-0014 | H-01, H-03, H-04, H-06, H-13 | GB-005, GB-006, GB-042, GB-044, GB-045, GB-046 | Versioning and capabilities | D2-04 permutation/downgrade/selection matrix |
+| REQ-VERS-0015 | H-01, H-03, H-04, H-06, H-07 | GB-005, GB-006 | Versioning and capabilities | D2-04 post-selection narrowing/no-reorder fixtures |
+| REQ-VERS-0016 | H-01, H-03, H-04, H-05, H-07, H-10, H-13 | GB-005, GB-006, GB-042, GB-044, GB-045, GB-046 | Versioning and capabilities | D2-01 negotiated-result schema; D2-04 binding fixtures |
+| REQ-VERS-0017 | H-01, H-03, H-04, H-06, H-07, H-10 | GB-005, GB-006, GB-044 | Versioning and capabilities | D2-02 atomic binding; D2-04 mixed-version fixtures |
+| REQ-VERS-0018 | H-01, H-03, H-04, H-05, H-07, H-11, H-14 | GB-005, GB-006, GB-043, GB-044, GB-046 | Versioning and capabilities | D2-04 restart/default/replacement fixtures |
+| REQ-COMP-0001 | H-03, H-13, H-14 | GB-005, GB-043, GB-044, GB-045 | Compatibility | D2-04 version-class confusion matrix |
+| REQ-COMP-0002 | H-03, H-10, H-13 | GB-005, GB-043, GB-044, GB-045 | Compatibility | D2-04 directed/non-transitive compatibility matrix |
+| REQ-COMP-0003 | H-03, H-04, H-12 | GB-005, GB-044, GB-045 | Compatibility | D2-04 candidate-versus-fallback fixtures |
+| REQ-COMP-0004 | H-03, H-07, H-09, H-10, H-11, H-13, H-14 | GB-043, GB-044 | Compatibility | D2-04 stored-object backward-compatibility matrix |
+| REQ-COMP-0005 | H-03, H-04, H-10, H-13 | GB-042, GB-045 | Compatibility | D2-04 forward-compatibility safe-mode fixtures |
+| REQ-COMP-0006 | H-09, H-11, H-12, H-13 | GB-042, GB-045 | Compatibility | D2-04 unknown-enum/message/discriminator corpus |
+| REQ-COMP-0007 | H-03, H-10, H-13 | GB-005, GB-043, GB-044 | Compatibility | D2-01 schema-bundle manifest; D2-04 substitution cases |
+| REQ-COMP-0008 | H-03, H-07, H-10, H-12, H-13 | GB-043, GB-044, GB-045 | Compatibility | D2-04 schema-evolution compatibility matrix |
+| REQ-COMP-0009 | H-03, H-07, H-09, H-10, H-11, H-13 | GB-043, GB-044 | Compatibility | D2-01 version-bound object schemas; D2-04 storage fixtures |
+| REQ-COMP-0010 | H-03, H-07, H-11, H-14 | GB-005, GB-044 | Compatibility | D2-04 support/deprecation/withdrawal matrix |
+| REQ-COMP-0011 | H-03, H-04, H-05, H-07, H-10, H-11, H-13, H-14 | GB-043, GB-044 | Compatibility | D2-04 immutable legacy/history fixtures |
+| REQ-EXT-0001 | H-03, H-10, H-13 | GB-042, GB-043, GB-045 | Extensions | D2-01 closed-Core schemas; D2-04 unknown-field corpus |
+| REQ-EXT-0002 | H-03-H-13 | GB-042, GB-043, GB-045 | Extensions | D2-01 per-object openness schemas; D2-04 registry matrix |
+| REQ-EXT-0003 | H-09, H-11-H-13 | GB-042, GB-045 | Extensions | D2-04 unknown-value/dispatch fixtures |
+| REQ-EXT-0004 | H-03, H-13, H-14 | GB-042, GB-043, GB-046 | Extensions | D2-01 extension-identity schema; D2-04 identity corpus |
+| REQ-EXT-0005 | H-03-H-05, H-12, H-13 | GB-042, GB-043, GB-045 | Extensions | D2-04 location/channel-confusion fixtures |
+| REQ-EXT-0006 | H-04, H-07, H-13 | GB-006, GB-042, GB-045 | Extensions | D2-04 required/optional/selection occurrence matrix |
+| REQ-EXT-0007 | H-02, H-04, H-07, H-10, H-13 | GB-006, GB-042, GB-045 | Extensions | D2-04 authority-widening/criticality fixtures |
+| REQ-EXT-0008 | H-03, H-04, H-13 | GB-005, GB-006, GB-042, GB-046 | Extensions | D2-04 dependency/conflict/cycle fixtures |
+| REQ-EXT-0009 | H-10, H-13 | GB-042, GB-043, GB-045 | Extensions | D2-03 protected-extension vectors; D2-04 claim cases |
+| REQ-EXT-0010 | H-03, H-10, H-13 | GB-042, GB-043, GB-044, GB-045 | Extensions | D2-04 lossless round-trip/mutation fixtures |
+| REQ-EXT-0011 | H-05, H-10, H-12, H-13 | GB-042, GB-045 | Extensions | D2-04 context-forwarding/privacy fixtures |
+| REQ-EXT-0012 | H-03, H-04, H-07, H-10, H-13 | GB-043, GB-044, GB-045, GB-046 | Extensions | D2-04 extension-evolution compatibility matrix |
+| REQ-EXT-0013 | H-01, H-04, H-07, H-13 | GB-006, GB-042, GB-046 | Extensions | D2-04 experiment opt-in/isolation fixtures |
+| REQ-EXT-0014 | H-03, H-04, H-07, H-10, H-13, H-14 | GB-043, GB-044, GB-046 | Extensions | D2-04 graduation/migration/proof-reuse fixtures |
+| REQ-EXT-0015 | H-03, H-07, H-11, H-13, H-14 | GB-043, GB-044, GB-046 | Extensions | D2-04 extension lifecycle/support-state matrix |
