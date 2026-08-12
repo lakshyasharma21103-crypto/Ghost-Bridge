@@ -27,10 +27,11 @@ Requirement IDs use `REQ-<CHAPTER>-NNNN`, where `<CHAPTER>` is `IDX`, `TERM`,
 `ROLE`, `LIFE`, `DISC`, `VERS`, `COMP`, `EXT`, `AUTH` (authentication), `AUTHZ`
 (authorization), `INST` (installation), `CONN` (Connections), or `INV`
 (Invocation, correlation, deadline, cancellation, and idempotency admission),
-and `NNNN` is a zero-padded chapter-local sequence. IDs are unique and permanent
-once reviewed. A later insertion allocates a new number in its own chapter; it
-does not renumber or reuse another ID. The syntax is an editorial locator only
-and encodes no protocol semantics.
+or `APPR` (Approval Challenge, Decision, exact-action authority, lifecycle,
+consumption, replay, and recovery), and `NNNN` is a zero-padded chapter-local
+sequence. IDs are unique and permanent once reviewed. A later insertion
+allocates a new number in its own chapter; it does not renumber or reuse another
+ID. The syntax is an editorial locator only and encodes no protocol semantics.
 
 Every requirement records its accepted `H-*` sources and the applicable audited
 `GB-*` gaps. Those citations establish derivation and planning traceability; they
@@ -167,16 +168,18 @@ release, profile, role, artifact, and evidence scope.
 - [Installation](./installation.md)
 - [Connections](./connections.md)
 - [Invocation](./invocation.md)
+- [Approvals](./approvals.md)
 
 The first three chapters are the reviewed D1-01 slice. Discovery through
-Extensions are the reviewed D1-02 slice. The final five are the D1-03 candidate.
-Together they do not make the overall draft complete.
+Extensions are the reviewed D1-02 slice. Authentication through Invocation are
+the reviewed D1-03 slice. Approvals is the D1-04 candidate. Together they do
+not make the overall draft complete.
 
 ## Planned later chapters and assets
 
-Later D1-04 through D1-07 work is expected to cover Approvals; Tasks; Receipts
-and Trust/revocation; and transport, errors, security, privacy, and
-observability. Those chapters are not created by D1-03.
+Later D1-05 through D1-07 work is expected to cover Tasks; Receipts and
+Trust/revocation; and transport, errors, security, privacy, and observability.
+Those chapters are not created by D1-04.
 
 Later D2 work is expected to create canonical wire schemas, explicit
 machine-readable state machines, deterministic fixtures and cryptographic
@@ -358,3 +361,43 @@ later asset class, not an existing artifact. No listed gap is closed here.
 | REQ-INV-0012 | H-02, H-05, H-07, H-09, H-11, H-12 | GB-012, GB-013, GB-014, GB-015, GB-016, GB-017 | Invocation | D2-01 cancellation-request schema; D2-04 admission/retry cases |
 | REQ-INV-0013 | H-07-H-09, H-12 | GB-013, GB-015, GB-016, GB-017 | Invocation | D2-05 response/read boundary cases |
 | REQ-INV-0014 | H-02, H-05, H-07-H-09, H-11, H-12 | GB-008, GB-012, GB-013, GB-014, GB-015, GB-016, GB-017 | Invocation | D2-04 multi-fault/privacy-order fixtures; D2-05 conformance |
+| REQ-APPR-0001 | H-01, H-02, H-07, H-08, H-09 | GB-018, GB-019 | Approvals | D2-02 lifecycle boundaries; D2-05 authority-confusion cases |
+| REQ-APPR-0002 | H-01, H-02, H-04, H-05, H-07, H-08, H-11, H-12 | GB-018, GB-019 | Approvals | D2-01 Challenge schema; D2-04 issuance/retry cases |
+| REQ-APPR-0003 | H-03, H-08, H-11 | GB-018, GB-019 | Approvals | D2-02 Challenge state machine; D2-04 legacy-state cases |
+| REQ-APPR-0004 | H-01, H-03, H-04, H-08, H-11 | GB-018, GB-019 | Approvals | D2-02 supersession ordering; D2-04 mutation cases |
+| REQ-APPR-0005 | H-02, H-08, H-11 | GB-018, GB-019 | Approvals | D2-01 Decision schema; D2-04 outcome cases |
+| REQ-APPR-0006 | H-03, H-05, H-08, H-11, H-12 | GB-018, GB-019 | Approvals | D2-04 duplicate/conflicting Decision cases |
+| REQ-APPR-0007 | H-02, H-05, H-08, H-10, H-11, H-12 | GB-018, GB-019 | Approvals | D2-03 Approval-proof vectors; D2-04 identity-substitution cases |
+| REQ-APPR-0008 | H-02, H-05, H-08, H-11 | GB-018, GB-019 | Approvals | D2-04 eligibility/self-approval/delegation matrix |
+| REQ-APPR-0009 | H-03, H-04, H-08, H-10, H-13 | GB-018, GB-019 | Approvals | D2-01 action projection; D2-03 presence vectors |
+| REQ-APPR-0010 | H-01, H-03, H-04, H-07, H-08, H-10, H-11 | GB-018, GB-019 | Approvals | D2-03 context vectors; D2-04 authority-substitution cases |
+| REQ-APPR-0011 | H-02, H-03, H-05, H-07, H-08, H-11, H-12 | GB-018, GB-019 | Approvals | D2-04 actor/beneficiary/policy mutation cases |
+| REQ-APPR-0012 | H-03, H-04, H-07, H-08, H-09, H-10 | GB-018, GB-019 | Approvals | D2-03 action vectors; D2-04 target/capability mutation cases |
+| REQ-APPR-0013 | H-04, H-05, H-07, H-08, H-10, H-11 | GB-018, GB-019 | Approvals | D2-03 numeric/unit vectors; D2-04 limit/time cases |
+| REQ-APPR-0014 | H-03, H-07, H-08, H-09, H-10, H-11, H-14 | GB-018, GB-019 | Approvals | D2-01 authority/recovery schema; D2-04 linkage cases |
+| REQ-APPR-0015 | H-03, H-07, H-08, H-10, H-11, H-14 | GB-018, GB-019 | Approvals | D2-04 historical-reference substitution cases |
+| REQ-APPR-0016 | H-08, H-10, H-12 | GB-018, GB-019 | Approvals | D2-03 presentation digests; D2-04 mismatch cases |
+| REQ-APPR-0017 | H-08, H-10, H-11 | GB-018, GB-019 | Approvals | D2-03 cross-language Approval vectors |
+| REQ-APPR-0018 | H-03, H-08, H-10, H-13 | GB-018, GB-019 | Approvals | D2-01 semantic projections; D2-03 context/signer vectors |
+| REQ-APPR-0019 | H-02, H-03, H-05, H-08, H-10, H-11 | GB-018, GB-019 | Approvals | D2-03 wrong-domain/profile vectors; D2-04 downgrade cases |
+| REQ-APPR-0020 | H-03, H-04, H-08, H-10, H-12 | GB-018, GB-019 | Approvals | D2-03 one-field mutations; D2-04 equality cases |
+| REQ-APPR-0021 | H-01, H-02, H-04, H-07, H-08 | GB-018, GB-019 | Approvals | D2-04 nested-limit/intersection cases |
+| REQ-APPR-0022 | H-02, H-08, H-11 | GB-018, GB-019 | Approvals | D2-02 Approval-authority state machine |
+| REQ-APPR-0023 | H-07, H-08, H-11 | GB-019 | Approvals | D2-02 internal-coordination recovery; D2-04 crash cases |
+| REQ-APPR-0024 | H-05, H-07, H-08, H-11 | GB-018, GB-019 | Approvals | D2-02 expiry ordering; D2-04 equality/clock cases |
+| REQ-APPR-0025 | H-02, H-04, H-05, H-07, H-08, H-11, H-12, H-13 | GB-018, GB-019 | Approvals | D2-04 current-gate withdrawal/intersection cases |
+| REQ-APPR-0026 | H-07, H-08, H-09, H-11, H-12 | GB-018, GB-019 | Approvals | D2-02 atomic consumption machine; D2-04 partial-commit cases |
+| REQ-APPR-0027 | H-02, H-07, H-08, H-09, H-12 | GB-019 | Approvals | D2-04 non-consumption event corpus |
+| REQ-APPR-0028 | H-07, H-08, H-09, H-11, H-12 | GB-019 | Approvals | D2-04 precommit/postcommit failure cases |
+| REQ-APPR-0029 | H-05, H-07, H-08, H-09, H-11, H-12 | GB-018, GB-019 | Approvals | D2-04 exact retry/lost-response convergence cases |
+| REQ-APPR-0030 | H-04, H-07, H-08, H-10, H-12 | GB-018, GB-019 | Approvals | D2-04 conflict/privacy mutation corpus |
+| REQ-APPR-0031 | H-05, H-07, H-08, H-11, H-12 | GB-019 | Approvals | D2-02 race machine; D2-04 concurrency/failover cases |
+| REQ-APPR-0032 | H-02, H-05, H-08, H-11, H-12 | GB-018, GB-019 | Approvals | D2-02 revocation ordering; D2-04 source/race cases |
+| REQ-APPR-0033 | H-02, H-05, H-08, H-09, H-12 | GB-018, GB-019 | Approvals | D2-02 cancellation race; D2-04 scope cases |
+| REQ-APPR-0034 | H-03, H-08, H-10, H-11, H-12, H-14 | GB-018, GB-019 | Approvals | D2-01 durable evidence/tombstone schemas; D2-04 restart cases |
+| REQ-APPR-0035 | H-03, H-08, H-09, H-11, H-14 | GB-018, GB-019 | Approvals | D2-04 rollback/split-brain/retention cases |
+| REQ-APPR-0036 | H-07, H-08, H-11, H-12 | GB-019 | Approvals | D2-04 ambiguous-commit/reconciliation cases |
+| REQ-APPR-0037 | H-03, H-08, H-10, H-11, H-13, H-14 | GB-018, GB-019 | Approvals | D2-04 immutable-history/legacy cases |
+| REQ-APPR-0038 | H-02, H-07, H-08, H-09, H-10, H-11 | GB-018, GB-019 | Approvals | D2-05 Task/Receipt authority-boundary cases |
+| REQ-APPR-0039 | H-02, H-05, H-08, H-10, H-11, H-12 | GB-018, GB-019 | Approvals | D2-04 failure/disclosure cases; D2-05 conformance |
+| REQ-APPR-0040 | H-03, H-04, H-08, H-10, H-13 | GB-018, GB-019 | Approvals | D2-01 closed-Core schemas; D2-04 extension cases |
