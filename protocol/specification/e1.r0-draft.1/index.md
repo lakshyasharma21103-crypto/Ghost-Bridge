@@ -28,10 +28,13 @@ Requirement IDs use `REQ-<CHAPTER>-NNNN`, where `<CHAPTER>` is `IDX`, `TERM`,
 (authorization), `INST` (installation), `CONN` (Connections), or `INV`
 (Invocation, correlation, deadline, cancellation, and idempotency admission),
 or `APPR` (Approval Challenge, Decision, exact-action authority, lifecycle,
-consumption, replay, and recovery), and `NNNN` is a zero-padded chapter-local
-sequence. IDs are unique and permanent once reviewed. A later insertion
-allocates a new number in its own chapter; it does not renumber or reuse another
-ID. The syntax is an editorial locator only and encodes no protocol semantics.
+consumption, replay, and recovery), or `TASK` (Task acceptance, lifecycle,
+attempts, progress, cancellation, deadlines, Result, polling, retention,
+recovery, and terminal Receipt coupling), and `NNNN` is a zero-padded
+chapter-local sequence. IDs are unique and permanent once reviewed. A later
+insertion allocates a new number in its own chapter; it does not renumber or
+reuse another ID. The syntax is an editorial locator only and encodes no
+protocol semantics.
 
 Every requirement records its accepted `H-*` sources and the applicable audited
 `GB-*` gaps. Those citations establish derivation and planning traceability; they
@@ -169,17 +172,19 @@ release, profile, role, artifact, and evidence scope.
 - [Connections](./connections.md)
 - [Invocation](./invocation.md)
 - [Approvals](./approvals.md)
+- [Tasks](./tasks.md)
 
 The first three chapters are the reviewed D1-01 slice. Discovery through
 Extensions are the reviewed D1-02 slice. Authentication through Invocation are
-the reviewed D1-03 slice. Approvals is the D1-04 candidate. Together they do
-not make the overall draft complete.
+the reviewed D1-03 slice. Approvals is the reviewed and integrated D1-04 slice.
+Tasks is the D1-05 candidate. Together they do not make the overall draft
+complete.
 
 ## Planned later chapters and assets
 
-Later D1-05 through D1-07 work is expected to cover Tasks; Receipts and
-Trust/revocation; and transport, errors, security, privacy, and observability.
-Those chapters are not created by D1-04.
+Later D1-06 and D1-07 work is expected to cover Receipts and Trust/revocation;
+and transport, errors, security, privacy, and observability. Those chapters are
+not created by D1-05.
 
 Later D2 work is expected to create canonical wire schemas, explicit
 machine-readable state machines, deterministic fixtures and cryptographic
@@ -401,3 +406,43 @@ later asset class, not an existing artifact. No listed gap is closed here.
 | REQ-APPR-0038 | H-02, H-07, H-08, H-09, H-10, H-11 | GB-018, GB-019 | Approvals | D2-05 Task/Receipt authority-boundary cases |
 | REQ-APPR-0039 | H-02, H-05, H-08, H-10, H-11, H-12 | GB-018, GB-019 | Approvals | D2-04 failure/disclosure cases; D2-05 conformance |
 | REQ-APPR-0040 | H-03, H-04, H-08, H-10, H-13 | GB-018, GB-019 | Approvals | D2-01 closed-Core schemas; D2-04 extension cases |
+| REQ-TASK-0001 | H-01, H-02, H-06, H-07, H-08, H-09, H-11 | GB-020, GB-021 | Tasks | D2-02 atomic Task-birth machine; D2-04 partial-commit cases |
+| REQ-TASK-0002 | H-02, H-03, H-04, H-07, H-08, H-09, H-10, H-11, H-13 | GB-020, GB-021, GB-023 | Tasks | D2-01 Task acceptance schema; D2-04 identity-substitution cases |
+| REQ-TASK-0003 | H-05, H-07, H-08, H-09, H-11, H-12 | GB-020, GB-021 | Tasks | D2-02 idempotent birth model; D2-04 rejection/retry cases |
+| REQ-TASK-0004 | H-03, H-09, H-11, H-13 | GB-021 | Tasks | D2-02 closed state inventory and terminal-no-exit assertions |
+| REQ-TASK-0005 | H-01, H-02, H-07, H-08, H-09, H-11 | GB-020, GB-021 | Tasks | D2-02 legal/illegal transition corpus; D2-04 guard cases |
+| REQ-TASK-0006 | H-03, H-09, H-11, H-13 | GB-020, GB-021, GB-024 | Tasks | D2-01 non-lifecycle classifications; D2-04 legacy cases |
+| REQ-TASK-0007 | H-02, H-09, H-11 | GB-021 | Tasks | D2-02 attempt/fence model; D2-04 stale-writer cases |
+| REQ-TASK-0008 | H-02, H-07, H-09, H-11 | GB-020, GB-021 | Tasks | D2-02 queue/start model; D2-04 duplicate-delivery cases |
+| REQ-TASK-0009 | H-09, H-12 | GB-021, GB-022 | Tasks | D2-01 progress representation; D2-04 stale/privacy cases |
+| REQ-TASK-0010 | H-02, H-07, H-09, H-11 | GB-021 | Tasks | D2-02 effect-checkpoint model; D2-04 ambiguous-effect cases |
+| REQ-TASK-0011 | H-07, H-08, H-09, H-11 | GB-020, GB-021 | Tasks | D2-02 fenced internal-retry machine; D2-04 worker-loss cases |
+| REQ-TASK-0012 | H-03, H-09, H-12 | GB-021, GB-022 | Tasks | D2-01 cancellation-support representation; D2-04 unsupported cases |
+| REQ-TASK-0013 | H-02, H-05, H-07, H-09, H-11, H-12 | GB-021, GB-022 | Tasks | D2-01 cancellation intent/request schemas; D2-04 equality/privacy cases |
+| REQ-TASK-0014 | H-07, H-08, H-09, H-11 | GB-021, GB-023 | Tasks | D2-02 cancellation/effect-checkpoint machine; D2-04 partial-effect cases |
+| REQ-TASK-0015 | H-01, H-09, H-11, H-12 | GB-021 | Tasks | D2-02 cancellation race machine; D2-04 winner cases |
+| REQ-TASK-0016 | H-03, H-07, H-09, H-11 | GB-021, GB-023, GB-024 | Tasks | D2-02 authority-withdrawal stop model; D2-04 Connection-event cases |
+| REQ-TASK-0017 | H-03, H-07, H-09, H-10, H-11, H-12 | GB-021, GB-024 | Tasks | D2-02 deadline machine; D2-04 immutable-clock cases |
+| REQ-TASK-0018 | H-01, H-07, H-09, H-11, H-12 | GB-021, GB-023 | Tasks | D2-02 timeout terminalization; D2-04 equality/effect cases |
+| REQ-TASK-0019 | H-01, H-09, H-11 | GB-021, GB-023 | Tasks | D2-02 terminal compare-and-commit; D2-04 race/crash cases |
+| REQ-TASK-0020 | H-02, H-03, H-09, H-10, H-11, H-12 | GB-021, GB-023 | Tasks | D2-01 Result identity/schema; D2-04 substitution cases |
+| REQ-TASK-0021 | H-03, H-07, H-08, H-09, H-10, H-11, H-12, H-14 | GB-021, GB-023, GB-024 | Tasks | D2-01 Result schema; D2-04 semantic inventory cases |
+| REQ-TASK-0022 | H-03, H-09, H-11, H-14 | GB-021, GB-023, GB-024 | Tasks | D2-01 effect classification; D2-04 terminal/effect matrix |
+| REQ-TASK-0023 | H-01, H-03, H-09, H-10, H-11 | GB-021, GB-023, GB-025 | Tasks | D2-02 atomic terminal Task/Result model; D2-04 partial-write cases |
+| REQ-TASK-0024 | H-03, H-07, H-09, H-10, H-13 | GB-020, GB-023, GB-025 | Tasks | D2-01 semantic projections; D2-03 commitment vectors |
+| REQ-TASK-0025 | H-02, H-03, H-09, H-10, H-11 | GB-021, GB-023, GB-025 | Tasks | D2-01 Receipt linkage representation; D2-04 coupling cases |
+| REQ-TASK-0026 | H-03, H-09, H-10, H-11, H-12, H-14 | GB-023, GB-025 | Tasks | D2-04 Receipt outage/mismatch cases; D1-06 proof semantics |
+| REQ-TASK-0027 | H-02, H-05, H-09, H-11, H-12 | GB-022, GB-023 | Tasks | D2-01 polling representation; D2-04 read-only cases |
+| REQ-TASK-0028 | H-05, H-09, H-12, H-14 | GB-022, GB-024 | Tasks | D2-01 hint representation; D2-04 deadline/retention cases |
+| REQ-TASK-0029 | H-02, H-05, H-07, H-09, H-11, H-12 | GB-022, GB-023, GB-024 | Tasks | D2-04 cross-scope retrieval corpus; D2-05 disclosure cases |
+| REQ-TASK-0030 | H-02, H-03, H-07, H-09, H-11, H-12 | GB-023, GB-024, GB-025 | Tasks | D2-04 historical Connection/read cases; D1-06 offline verification |
+| REQ-TASK-0031 | H-03, H-09, H-11, H-12, H-14 | GB-023, GB-024 | Tasks | D2-01 expired-content projection; D2-04 expiry cases |
+| REQ-TASK-0032 | H-03, H-09, H-10, H-11, H-12, H-14 | GB-023, GB-024, GB-025 | Tasks | D2-01 retention classes; D2-04 dependency-horizon cases |
+| REQ-TASK-0033 | H-03, H-05, H-09, H-10, H-11, H-12, H-14 | GB-023, GB-024, GB-025 | Tasks | D2-01 tombstone schema; D2-04 replay/privacy cases |
+| REQ-TASK-0034 | H-01, H-03, H-07, H-08, H-09, H-11, H-14 | GB-020, GB-021, GB-024 | Tasks | D2-02 restart invariants; D2-04 restart-from-every-state cases |
+| REQ-TASK-0035 | H-01, H-07, H-08, H-09, H-11, H-12 | GB-020, GB-021, GB-023, GB-024 | Tasks | D2-02 recovery model; D2-04 ambiguous-commit cases |
+| REQ-TASK-0036 | H-01, H-03, H-09, H-11, H-14 | GB-020, GB-021, GB-023, GB-024 | Tasks | D2-02 fencing/terminal invariants; D2-04 rollback/split-brain cases |
+| REQ-TASK-0037 | H-03, H-09, H-10, H-11, H-13, H-14 | GB-020, GB-021, GB-023, GB-024, GB-025 | Tasks | D2-04 immutable-history and legacy-classification cases |
+| REQ-TASK-0038 | H-02, H-03, H-07, H-08, H-09, H-12 | GB-021, GB-023, GB-024 | Tasks | D2-04 compensation-separation cases; D2-05 authority cases |
+| REQ-TASK-0039 | H-02, H-05, H-09, H-11, H-12 | GB-020, GB-021, GB-022, GB-023, GB-024, GB-025 | Tasks | D2-04 semantic failure corpus; D2-05 public-boundary conformance |
+| REQ-TASK-0040 | H-03, H-04, H-09, H-10, H-13 | GB-020, GB-021, GB-023, GB-024, GB-025 | Tasks | D2-01 closed-Core schemas; D2-04 extension/downgrade cases |
