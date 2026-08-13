@@ -30,11 +30,14 @@ Requirement IDs use `REQ-<CHAPTER>-NNNN`, where `<CHAPTER>` is `IDX`, `TERM`,
 or `APPR` (Approval Challenge, Decision, exact-action authority, lifecycle,
 consumption, replay, and recovery), or `TASK` (Task acceptance, lifecycle,
 attempts, progress, cancellation, deadlines, Result, polling, retention,
-recovery, and terminal Receipt coupling), and `NNNN` is a zero-padded
-chapter-local sequence. IDs are unique and permanent once reviewed. A later
-insertion allocates a new number in its own chapter; it does not renumber or
-reuse another ID. The syntax is an editorial locator only and encodes no
-protocol semantics.
+recovery, and terminal Receipt coupling), or `RCPT` (Receipt semantic identity,
+terminal binding, evidence commitment, proof/materialization, verification, and
+historical evidence), or `TRUST` (Trust continuity, bootstrap, metadata, key
+lifecycle, revocation, freshness, durable floors, anti-rollback, recovery, and
+historical verification), and `NNNN` is a zero-padded chapter-local sequence.
+IDs are unique and permanent once reviewed. A later insertion allocates a new
+number in its own chapter; it does not renumber or reuse another ID. The syntax
+is an editorial locator only and encodes no protocol semantics.
 
 Every requirement records its accepted `H-*` sources and the applicable audited
 `GB-*` gaps. Those citations establish derivation and planning traceability; they
@@ -173,18 +176,19 @@ release, profile, role, artifact, and evidence scope.
 - [Invocation](./invocation.md)
 - [Approvals](./approvals.md)
 - [Tasks](./tasks.md)
+- [Receipts](./receipts.md)
+- [Trust and revocation](./trust-and-revocation.md)
 
 The first three chapters are the reviewed D1-01 slice. Discovery through
 Extensions are the reviewed D1-02 slice. Authentication through Invocation are
 the reviewed D1-03 slice. Approvals is the reviewed and integrated D1-04 slice.
-Tasks is the D1-05 candidate. Together they do not make the overall draft
-complete.
+Tasks is the reviewed and integrated D1-05 slice. Receipts and Trust/revocation
+are the D1-06 candidate. Together they do not make the overall draft complete.
 
 ## Planned later chapters and assets
 
-Later D1-06 and D1-07 work is expected to cover Receipts and Trust/revocation;
-and transport, errors, security, privacy, and observability. Those chapters are
-not created by D1-05.
+Later D1-07 work is expected to cover transport, errors, consolidated security,
+privacy, and observability. Those chapters are not created by D1-06.
 
 Later D2 work is expected to create canonical wire schemas, explicit
 machine-readable state machines, deterministic fixtures and cryptographic
@@ -446,3 +450,43 @@ later asset class, not an existing artifact. No listed gap is closed here.
 | REQ-TASK-0038 | H-02, H-03, H-07, H-08, H-09, H-12 | GB-021, GB-023, GB-024 | Tasks | D2-04 compensation-separation cases; D2-05 authority cases |
 | REQ-TASK-0039 | H-02, H-05, H-09, H-11, H-12 | GB-020, GB-021, GB-022, GB-023, GB-024, GB-025 | Tasks | D2-04 semantic failure corpus; D2-05 public-boundary conformance |
 | REQ-TASK-0040 | H-03, H-04, H-09, H-10, H-13 | GB-020, GB-021, GB-023, GB-024, GB-025 | Tasks | D2-01 closed-Core schemas; D2-04 extension/downgrade cases |
+| REQ-RCPT-0001 | H-01, H-02, H-07, H-08, H-09, H-11 | GB-025, GB-028 | Receipts | D2-04 authority-boundary and pre-Task rejection cases |
+| REQ-RCPT-0002 | H-03, H-04, H-09, H-10, H-11 | GB-025, GB-026 | Receipts | D2-01 Receipt linkage; D2-04 materialization retry cases |
+| REQ-RCPT-0003 | H-02, H-03, H-04, H-07, H-08, H-09, H-10, H-11, H-13 | GB-025, GB-027, GB-028 | Receipts | D2-01 semantic projection; D2-04 binding mutations |
+| REQ-RCPT-0004 | H-03, H-04, H-09, H-10, H-11 | GB-026, GB-027, GB-028 | Receipts | D2-03 Receipt domain/profile vectors; D2-04 downgrade cases |
+| REQ-RCPT-0005 | H-02, H-03, H-04, H-07, H-09, H-10, H-11 | GB-025, GB-026, GB-027 | Receipts | D2-03 context/signer vectors; D2-04 substitution cases |
+| REQ-RCPT-0006 | H-02, H-05, H-09, H-10, H-11, H-12, H-14 | GB-025, GB-027, GB-028 | Receipts | D2-01 bounded evidence projection; D2-04 effect-mutation cases |
+| REQ-RCPT-0007 | H-03, H-05, H-07, H-08, H-09, H-10, H-11 | GB-026, GB-028, GB-030, GB-031 | Receipts | D2-02 key lifecycle; D2-04 signer/rotation cases |
+| REQ-RCPT-0008 | H-02, H-03, H-04, H-05, H-07, H-09, H-10, H-11, H-12, H-13, H-14 | GB-025, GB-026, GB-027, GB-028 | Receipts | D2-03 mutation vectors; D2-04 ordered-verification corpus |
+| REQ-RCPT-0009 | H-03, H-07, H-09, H-10, H-11 | GB-026, GB-028, GB-030, GB-031 | Receipts | D2-01 time-evidence result; D2-04 interval cases |
+| REQ-RCPT-0010 | H-02, H-03, H-05, H-07, H-09, H-11, H-12, H-14 | GB-025, GB-028 | Receipts | D2-04 offline/history/disclosure cases; D2-05 read boundary |
+| REQ-TRUST-0001 | H-01, H-02, H-03, H-05, H-07, H-08, H-09, H-10, H-11 | GB-028, GB-029, GB-031 | Trust and revocation | D2-05 current-vs-historical authority cases |
+| REQ-TRUST-0002 | H-03, H-04, H-10, H-11, H-13, H-14 | GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-01 continuity transition; D2-04 reset cases |
+| REQ-TRUST-0003 | H-01, H-02, H-03, H-10, H-11 | GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-01 enrollment representation; D2-04 bootstrap cases |
+| REQ-TRUST-0004 | H-02, H-05, H-07, H-08, H-10, H-11 | GB-029, GB-031, GB-032, GB-033 | Trust and revocation | D2-01 snapshot/coverage schema; D2-04 omission cases |
+| REQ-TRUST-0005 | H-02, H-10, H-11 | GB-031, GB-033 | Trust and revocation | D2-01 point status; D2-04 projection-conflict cases |
+| REQ-TRUST-0006 | H-03, H-04, H-10, H-11 | GB-029, GB-031, GB-033 | Trust and revocation | D2-03 status/snapshot/checkpoint vectors |
+| REQ-TRUST-0007 | H-03, H-10, H-11 | GB-031, GB-033 | Trust and revocation | D2-02 snapshot chain; D2-04 rollback/fork cases |
+| REQ-TRUST-0008 | H-03, H-05, H-10, H-11 | GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-02 cross-bound chains; D2-04 head-race cases |
+| REQ-TRUST-0009 | H-03, H-05, H-10, H-11 | GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-01 key history; D2-04 identity-substitution cases |
+| REQ-TRUST-0010 | H-03, H-05, H-07, H-10, H-11, H-14 | GB-030, GB-031, GB-032, GB-033 | Trust and revocation | D2-02 rotation lifecycle; D2-04 cutover cases |
+| REQ-TRUST-0011 | H-05, H-07, H-10, H-11 | GB-030, GB-031, GB-033 | Trust and revocation | D2-02 emergency rotation; D2-04 recovery cases |
+| REQ-TRUST-0012 | H-01, H-03, H-05, H-07, H-09, H-10, H-11, H-14 | GB-029, GB-030, GB-031, GB-032, GB-033 | Trust and revocation | D2-01 durable floor; D2-04 backup/restore cases |
+| REQ-TRUST-0013 | H-01, H-02, H-05, H-07, H-10, H-11 | GB-029, GB-031, GB-032, GB-033 | Trust and revocation | D2-02 atomic floor model; D2-04 partial-commit cases |
+| REQ-TRUST-0014 | H-01, H-02, H-07, H-11 | GB-031, GB-033 | Trust and revocation | D2-02 multi-node model; D2-04 concurrency cases |
+| REQ-TRUST-0015 | H-01, H-03, H-07, H-10, H-11 | GB-029, GB-031, GB-033 | Trust and revocation | D2-04 crash/restart/restore corpus |
+| REQ-TRUST-0016 | H-05, H-07, H-10, H-11 | GB-032, GB-033 | Trust and revocation | D2-02 freshness model; D2-04 equality/clock cases |
+| REQ-TRUST-0017 | H-02, H-05, H-07, H-10, H-11 | GB-031, GB-032, GB-033 | Trust and revocation | D2-02 pending activation; D2-04 future-time cases |
+| REQ-TRUST-0018 | H-03, H-05, H-07, H-08, H-10, H-11 | GB-031, GB-032, GB-033 | Trust and revocation | D2-02 subject-effect model; D2-04 boundary cases |
+| REQ-TRUST-0019 | H-02, H-05, H-06, H-07, H-08, H-09, H-10, H-11 | GB-030, GB-031, GB-033 | Trust and revocation | D2-01 subject effects; D2-04 consequence cases |
+| REQ-TRUST-0020 | H-02, H-03, H-05, H-09, H-10, H-11 | GB-026, GB-028, GB-030, GB-031 | Trust and revocation | D2-02 key-use model; D2-04 operation-separation cases |
+| REQ-TRUST-0021 | H-01, H-05, H-07, H-08, H-09, H-11 | GB-031, GB-033 | Trust and revocation | D2-02 shared authority epoch; D2-04 race cases |
+| REQ-TRUST-0022 | H-03, H-05, H-07, H-09, H-10, H-11 | GB-028, GB-030, GB-031 | Trust and revocation | D2-01 compromise evidence; D2-04 interval cases |
+| REQ-TRUST-0023 | H-02, H-03, H-09, H-10, H-11, H-12, H-14 | GB-028 | Trust and revocation | D2-01 historical-result representation; D2-04 axis cases |
+| REQ-TRUST-0024 | H-03, H-09, H-10, H-11, H-14 | GB-028 | Trust and revocation | D2-01 classification representation; D2-05 vocabulary cases |
+| REQ-TRUST-0025 | H-02, H-03, H-09, H-10, H-11, H-14 | GB-028, GB-031, GB-033 | Trust and revocation | D2-04 historical Receipt corpus |
+| REQ-TRUST-0026 | H-01, H-03, H-05, H-07, H-08, H-09, H-10, H-11 | GB-028, GB-029, GB-030, GB-031, GB-032, GB-033 | Trust and revocation | D2-02 recovery model; D2-04 recovery/rollback cases |
+| REQ-TRUST-0027 | H-02, H-03, H-05, H-07, H-09, H-10, H-11, H-12 | GB-028, GB-029, GB-030, GB-031, GB-032, GB-033 | Trust and revocation | D2-04 failure corpus; D2-05 public-boundary conformance |
+| REQ-TRUST-0028 | H-03, H-05, H-08, H-09, H-10, H-11, H-12, H-14 | GB-028, GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-01 history references; D2-04 retention/privacy cases |
+| REQ-TRUST-0029 | H-03, H-04, H-10, H-11, H-13 | GB-025, GB-028, GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-01 closed-Core schemas; D2-04 extension cases |
+| REQ-TRUST-0030 | H-03, H-04, H-09, H-10, H-11, H-13, H-14 | GB-028, GB-029, GB-030, GB-031, GB-032, GB-033 | Trust and revocation | D2-04 immutable legacy/history cases |
