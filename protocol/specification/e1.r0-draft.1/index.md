@@ -34,7 +34,9 @@ recovery, and terminal Receipt coupling), or `RCPT` (Receipt semantic identity,
 terminal binding, evidence commitment, proof/materialization, verification, and
 historical evidence), or `TRUST` (Trust continuity, bootstrap, metadata, key
 lifecycle, revocation, freshness, durable floors, anti-rollback, recovery, and
-historical verification), and `NNNN` is a zero-padded chapter-local sequence.
+historical verification), or `TRAN` (transport-independent and HTTP binding),
+`ERR` (errors and status mapping), `SEC` (cross-cutting security), or `PRIV`
+(privacy and safe observability), and `NNNN` is a zero-padded chapter-local sequence.
 IDs are unique and permanent once reviewed. A later insertion allocates a new
 number in its own chapter; it does not renumber or reuse another ID. The syntax
 is an editorial locator only and encodes no protocol semantics.
@@ -178,17 +180,22 @@ release, profile, role, artifact, and evidence scope.
 - [Tasks](./tasks.md)
 - [Receipts](./receipts.md)
 - [Trust and revocation](./trust-and-revocation.md)
+- [Transport](./transport.md)
+- [Errors](./errors.md)
+- [Security considerations](./security-considerations.md)
+- [Privacy considerations and safe observability](./privacy-considerations.md)
 
-The first three chapters are the reviewed D1-01 slice. Discovery through
-Extensions are the reviewed D1-02 slice. Authentication through Invocation are
-the reviewed D1-03 slice. Approvals is the reviewed and integrated D1-04 slice.
-Tasks is the reviewed and integrated D1-05 slice. Receipts and Trust/revocation
-are the D1-06 candidate. Together they do not make the overall draft complete.
+The first three chapters are the reviewed and integrated D1-01 slice. Discovery
+through Extensions are the reviewed and integrated D1-02 slice. Authentication
+through Invocation are the reviewed and integrated D1-03 slice. Approvals is
+the reviewed and integrated D1-04 slice. Tasks is the reviewed and integrated
+D1-05 slice. Receipts and Trust/revocation are the reviewed and integrated
+D1-06 slice. Transport, Errors, Security considerations, and Privacy
+considerations are the D1-07 candidate. The overall draft remains incomplete
+until D1-07 passes independent review and integration; drafting this candidate
+does not complete Phase 15D.1.
 
-## Planned later chapters and assets
-
-Later D1-07 work is expected to cover transport, errors, consolidated security,
-privacy, and observability. Those chapters are not created by D1-06.
+## Planned later assets
 
 Later D2 work is expected to create canonical wire schemas, explicit
 machine-readable state machines, deterministic fixtures and cryptographic
@@ -490,3 +497,48 @@ later asset class, not an existing artifact. No listed gap is closed here.
 | REQ-TRUST-0028 | H-03, H-05, H-08, H-09, H-10, H-11, H-12, H-14 | GB-028, GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-01 history references; D2-04 retention/privacy cases |
 | REQ-TRUST-0029 | H-03, H-04, H-10, H-11, H-13 | GB-025, GB-028, GB-029, GB-030, GB-031, GB-033 | Trust and revocation | D2-01 closed-Core schemas; D2-04 extension cases |
 | REQ-TRUST-0030 | H-03, H-04, H-09, H-10, H-11, H-13, H-14 | GB-028, GB-029, GB-030, GB-031, GB-032, GB-033 | Trust and revocation | D2-04 immutable legacy/history cases |
+
+### D1-07 candidate traceability
+
+This table is non-normative planning traceability for the D1-07 candidate. It
+creates no later asset and closes no listed gap.
+
+| Requirement ID | Accepted H-* source                      | Applicable GB-* gap                                                                    | Chapter                 | Expected later D2 asset class                                   |
+| -------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------- |
+| REQ-TRAN-0001  | H-01, H-02, H-05, H-07, H-09-H-12        | GB-037, GB-038                                                                         | Transport               | D2-04 semantic non-equivalence cases; D2-05 adapter equivalence |
+| REQ-TRAN-0002  | H-01, H-03, H-05, H-07, H-12             | GB-004, GB-005, GB-037-GB-039                                                          | Transport               | D2-01 release binding; D2-04 origin/path cases                  |
+| REQ-TRAN-0003  | H-03, H-10, H-12, H-13                   | GB-038, GB-040-GB-042                                                                  | Transport               | D2-01 resource-ID representation; D2-04 raw-target corpus       |
+| REQ-TRAN-0004  | H-01, H-05-H-12                          | GB-004, GB-009, GB-013, GB-018, GB-020, GB-022, GB-023, GB-025, GB-029, GB-031, GB-038 | Transport               | D2-01 operation representations; D2-05 raw HTTP matrix          |
+| REQ-TRAN-0005  | H-03, H-10, H-12, H-13                   | GB-038, GB-040, GB-041                                                                 | Transport               | D2-01 media-bound schemas; D2-04 media/UTF-8 cases              |
+| REQ-TRAN-0006  | H-02, H-05, H-07, H-09, H-12             | GB-007, GB-013, GB-014, GB-036, GB-038                                                 | Transport               | D2-01 header carriers; D2-04 singleton/challenge cases          |
+| REQ-TRAN-0007  | H-01, H-05, H-07, H-11, H-12             | GB-004, GB-037, GB-039                                                                 | Transport               | D2-04 redirect and credential-leakage corpus                    |
+| REQ-TRAN-0008  | H-05, H-07, H-12, H-14                   | GB-007, GB-037, GB-038, GB-047                                                         | Transport               | D2-04 TLS chain/host/time/status cases                          |
+| REQ-TRAN-0009  | H-02, H-05, H-07, H-11, H-12             | GB-004, GB-037, GB-038, GB-047                                                         | Transport               | D2-04 DNS/NET-B/proxy/coalescing corpus                         |
+| REQ-TRAN-0010  | H-03, H-05, H-07, H-12                   | GB-037-GB-039                                                                          | Transport               | D2-04 HTTP version/fallback cases; D2-05 equivalence            |
+| REQ-TRAN-0011  | H-06-H-09, H-11, H-12                    | GB-014, GB-015, GB-017, GB-037, GB-038                                                 | Transport               | D2-01 retry metadata; D2-04 ambiguity/retry corpus              |
+| REQ-TRAN-0012  | H-07-H-09, H-11, H-12, H-14              | GB-015, GB-022, GB-037, GB-038                                                         | Transport               | D2-04 timeout boundary corpus                                   |
+| REQ-TRAN-0013  | H-04, H-10, H-12, H-14                   | GB-038, GB-040, GB-041, GB-047                                                         | Transport               | D2-04 size/parser boundary corpus                               |
+| REQ-TRAN-0014  | H-01, H-02, H-05, H-07, H-11, H-12       | GB-004, GB-022, GB-037-GB-039, GB-047                                                  | Transport               | D2-04 cache/proxy/browser cases                                 |
+| REQ-TRAN-0015  | H-05, H-10, H-12, H-13                   | GB-036, GB-038, GB-040, GB-041, GB-047                                                 | Transport               | D2-04 malformed HTTP/smuggling corpus                           |
+| REQ-ERR-0001   | H-02, H-07, H-09, H-11, H-12             | GB-021, GB-028, GB-034, GB-035, GB-037                                                 | Errors                  | D2-01 resource/error separation; D2-05 equivalence              |
+| REQ-ERR-0002   | H-06-H-09, H-11, H-12                    | GB-020, GB-022, GB-034, GB-035, GB-038                                                 | Errors                  | D2-04 status matrix; D2-05 raw mapping                          |
+| REQ-ERR-0003   | H-05-H-09, H-11-H-13                     | GB-034-GB-036, GB-042                                                                  | Errors                  | D2-01 error/detail schemas; D2-04 complete registry             |
+| REQ-ERR-0004   | H-02, H-05, H-11-H-13                    | GB-034, GB-036, GB-041, GB-048, GB-049                                                 | Errors                  | D2-01 error envelope/details; D2-04 leakage cases               |
+| REQ-ERR-0005   | H-02, H-05, H-07-H-09, H-11, H-12        | GB-008, GB-012, GB-013, GB-034-GB-036                                                  | Errors                  | D2-04 multi-fault precedence corpus                             |
+| REQ-ERR-0006   | H-02, H-05, H-07, H-09, H-11-H-13        | GB-012, GB-034, GB-036, GB-042, GB-048                                                 | Errors                  | D2-04 privacy-collapse/unknown-error cases                      |
+| REQ-SEC-0001   | H-01, H-02, H-05, H-07-H-09, H-11, H-12  | GB-002, GB-003, GB-007, GB-008, GB-011, GB-013, GB-015, GB-016, GB-047                 | Security considerations | D2-04 authority-confusion corpus; D2-05 security floor          |
+| REQ-SEC-0002   | H-03-H-05, H-07, H-08, H-10-H-12         | GB-005-GB-007, GB-009, GB-013, GB-026, GB-027, GB-047                                  | Security considerations | D2-03 binding vectors; D2-04 fallback cases                     |
+| REQ-SEC-0003   | H-01, H-05, H-07, H-11, H-12             | GB-004, GB-029, GB-037-GB-039, GB-047                                                  | Security considerations | D2-04 network/TLS/SSRF/proxy corpus                             |
+| REQ-SEC-0004   | H-05, H-10, H-12, H-13                   | GB-036, GB-038, GB-040-GB-042, GB-047, GB-049                                          | Security considerations | D2-04 parser/resource/telemetry attack corpus                   |
+| REQ-SEC-0005   | H-06-H-09, H-11, H-12                    | GB-014, GB-017, GB-019-GB-021, GB-037, GB-047                                          | Security considerations | D2-04 retry/cancellation/effect cases                           |
+| REQ-SEC-0006   | H-02, H-05, H-07, H-09, H-11, H-12, H-14 | GB-012, GB-022, GB-028, GB-032, GB-047-GB-049                                          | Security considerations | D2-04 cache/browser/disclosure/telemetry cases                  |
+| REQ-SEC-0007   | H-05, H-07-H-12                          | GB-015, GB-019, GB-021, GB-028, GB-030, GB-031, GB-033, GB-047, GB-049                 | Security considerations | D2-04 incident/history/audit cases                              |
+| REQ-SEC-0008   | H-02-H-05, H-10, H-12-H-14               | GB-002, GB-003, GB-007, GB-037, GB-040-GB-042, GB-047, GB-055                          | Security considerations | D2-04 dependency/extension cases; D2-05 claim checks            |
+| REQ-PRIV-0001  | H-02, H-05, H-07, H-09-H-12, H-14        | GB-024, GB-028, GB-036, GB-048, GB-049                                                 | Privacy considerations  | D2-01 bounded representations; D2-05 minimization               |
+| REQ-PRIV-0002  | H-02, H-05, H-07, H-09, H-11, H-12       | GB-012, GB-022, GB-023, GB-028, GB-036, GB-048                                         | Privacy considerations  | D2-04 cross-tenant disclosure corpus                            |
+| REQ-PRIV-0003  | H-05, H-08-H-12                          | GB-010, GB-018, GB-025, GB-028, GB-036, GB-048, GB-049                                 | Privacy considerations  | D2-04 telemetry secret-injection corpus                         |
+| REQ-PRIV-0004  | H-05, H-12, H-13                         | GB-036, GB-042, GB-048, GB-049                                                         | Privacy considerations  | D2-04 recursive redaction/log-injection cases                   |
+| REQ-PRIV-0005  | H-02, H-05, H-12, H-14                   | GB-014, GB-036, GB-048, GB-049                                                         | Privacy considerations  | D2-04 metric cardinality/linkability cases                      |
+| REQ-PRIV-0006  | H-02, H-05, H-09, H-12                   | GB-014, GB-048, GB-049                                                                 | Privacy considerations  | D2-04 trace boundary/baggage cases                              |
+| REQ-PRIV-0007  | H-02, H-05, H-07-H-09, H-11, H-12, H-14  | GB-018, GB-021, GB-028, GB-048, GB-049                                                 | Privacy considerations  | D2-01 audit references; D2-04 audit/commit cases                |
+| REQ-PRIV-0008  | H-03, H-09-H-14                          | GB-024, GB-028, GB-036, GB-042, GB-048, GB-049, GB-057                                 | Privacy considerations  | D2-04 retention/extension cases; D2-05 privacy boundary         |
