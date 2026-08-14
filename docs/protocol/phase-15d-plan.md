@@ -239,6 +239,14 @@ The Human Protocol Decision Register is authoritative for unresolved choices. Ch
 
 ## Current status
 
-**AUDIT COMPLETE — READY FOR INDEPENDENT REVIEW**
+**PHASE 15D.1 EXIT CRITERIA SATISFIED — PHASE 15D.2 NOT STARTED**
 
-This status applies only to Phase 15D.0 audit and planning. No future work item above is complete by virtue of this plan.
+Phase 15D.0 audit and planning are complete. Human decisions H-01 through H-14
+are accepted, and D1-01 through D1-07 are reviewed and integrated. The completed
+Phase 15D.1 final reconciliation established `EXIT_CRITERIA_SATISFIED`; its
+non-normative evidence is recorded in the
+[Phase 15D.1 exit-gate evidence record](./phase-15d1-exit-gate-evidence.md).
+
+Phase 15D.2 has not started. All `GB-*` gaps remain `PENDING` until their
+existing downstream evidence owners close them through this plan. This status
+creates no D2 asset, completes no later phase, and makes no Protocol 1.0 claim.

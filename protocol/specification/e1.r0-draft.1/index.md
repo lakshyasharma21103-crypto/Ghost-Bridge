@@ -7,6 +7,9 @@ This directory is the normative-writing candidate for
 been published as a final protocol release, is not independently conformant, and
 is not Protocol 1.0.
 
+Downstream D2, conformance, interoperability, and release work remains
+outstanding.
+
 ## Normative boundary
 
 Only text explicitly labeled with a `REQ-*` identifier is a normative
@@ -194,14 +197,12 @@ D1-06 slice. Transport, Errors, Security considerations, and Privacy
 considerations are the reviewed and integrated D1-07 slice. All D1-01 through
 D1-07 normative-writing work items have therefore been reviewed and integrated.
 
-This status does not by itself satisfy the Phase 15D.1 exit criteria. Phase
-15D.1 is currently `READY_FOR_REQUIRED_INDEPENDENT_REVIEWS`, not complete. The
-independent Go implementation-design review, independent Python implementation-
-design review, and independent security/privacy authority-path and protected-
-value-flow review remain required. Findings from those reviews may require
-governed corrections before the Phase 15D.1 exit gate can pass. This status
-update authorizes no D2 work, closes no `GB-*` gap, and does not change this
-draft's prerelease status or make it Protocol 1.0.
+The Phase 15D.1 normative-writing exit criteria are satisfied. This
+non-normative result is recorded in the
+[Phase 15D.1 exit-gate evidence record](../../../docs/protocol/phase-15d1-exit-gate-evidence.md).
+It does not imply D2 completion, gap closure, conformance, interoperability,
+production readiness, publication, or Protocol 1.0, and it does not change this
+candidate's draft/prerelease status.
 
 ## Planned later assets
 
