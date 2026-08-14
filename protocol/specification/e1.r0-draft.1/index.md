@@ -191,9 +191,17 @@ through Invocation are the reviewed and integrated D1-03 slice. Approvals is
 the reviewed and integrated D1-04 slice. Tasks is the reviewed and integrated
 D1-05 slice. Receipts and Trust/revocation are the reviewed and integrated
 D1-06 slice. Transport, Errors, Security considerations, and Privacy
-considerations are the D1-07 candidate. The overall draft remains incomplete
-until D1-07 passes independent review and integration; drafting this candidate
-does not complete Phase 15D.1.
+considerations are the reviewed and integrated D1-07 slice. All D1-01 through
+D1-07 normative-writing work items have therefore been reviewed and integrated.
+
+This status does not by itself satisfy the Phase 15D.1 exit criteria. Phase
+15D.1 is currently `READY_FOR_REQUIRED_INDEPENDENT_REVIEWS`, not complete. The
+independent Go implementation-design review, independent Python implementation-
+design review, and independent security/privacy authority-path and protected-
+value-flow review remain required. Findings from those reviews may require
+governed corrections before the Phase 15D.1 exit gate can pass. This status
+update authorizes no D2 work, closes no `GB-*` gap, and does not change this
+draft's prerelease status or make it Protocol 1.0.
 
 ## Planned later assets
 
