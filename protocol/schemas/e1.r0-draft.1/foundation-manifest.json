@@ -1,0 +1,452 @@
+{
+  "manifestSchema": "urn:uuid:df95689a-85f7-4f17-b306-a05af10d8cb0",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "bundleId": "urn:uuid:dd80a69d-321a-4517-b484-c75afe114b21",
+  "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "status": "draft-prerelease",
+  "completeness": "foundation-partial",
+  "pathBase": "repository-relative",
+  "schemas": [
+    {
+      "logicalName": "FoundationManifest",
+      "schemaId": "urn:uuid:df95689a-85f7-4f17-b306-a05af10d8cb0",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/machinery/foundation-manifest.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-13", "H-14"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"],
+        "d2r": ["D2R-030"]
+      }
+    },
+    {
+      "logicalName": "SemanticConstraintInventory",
+      "schemaId": "urn:uuid:7d66052a-8a55-4641-bd8d-8990c5db9940",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/machinery/semantic-constraint-inventory.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-01", "H-02", "H-03", "H-04", "H-05", "H-06", "H-07", "H-08", "H-09", "H-10", "H-11", "H-12", "H-13", "H-14"],
+        "req": ["REQ-VERS-0016", "REQ-AUTH-0004", "REQ-CONN-0003", "REQ-INV-0007", "REQ-APPR-0014", "REQ-APPR-0018", "REQ-RCPT-0003", "REQ-TRUST-0012", "REQ-ERR-0004"],
+        "d2r": ["D2R-032"]
+      }
+    },
+    {
+      "logicalName": "ReleaseRegistry",
+      "schemaId": "urn:uuid:927bbd7a-e229-440d-95f1-6ff0ebefe716",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/machinery/release-registry.schema.json",
+      "dependencies": [
+        "urn:uuid:d213d7c9-15da-41f2-b51b-286944581a74",
+        "urn:uuid:735bbcfb-bdd0-4c80-8c40-351ce5e5c93e"
+      ],
+      "provenance": {
+        "h": ["H-04", "H-05", "H-07", "H-11", "H-13"],
+        "req": ["REQ-VERS-0009", "REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0016", "REQ-AUTH-0002", "REQ-AUTH-0003", "REQ-AUTH-0007", "REQ-AUTH-0008", "REQ-AUTH-0009"],
+        "d2r": ["D2R-007", "D2R-026", "D2R-027"]
+      }
+    },
+    {
+      "logicalName": "FoundationFixtureCorpus",
+      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/machinery/foundation-fixture-corpus.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-13", "H-14"],
+        "req": ["REQ-COMP-0007", "REQ-EXT-0001", "REQ-EXT-0002"],
+        "d2r": ["D2R-001", "D2R-032"]
+      }
+    },
+    {
+      "logicalName": "OrganizationId",
+      "schemaId": "urn:uuid:3358b7cb-f988-4bf6-b812-970a3f3dcb13",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/organization-id.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-02", "H-07", "H-10"],
+        "req": ["REQ-CONN-0003", "REQ-INV-0001", "REQ-APPR-0014"],
+        "d2r": ["D2R-006", "D2R-006G"]
+      }
+    },
+    {
+      "logicalName": "WorkspaceId",
+      "schemaId": "urn:uuid:a393228c-9b9d-4070-98ee-25e36ac34acb",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/workspace-id.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-02", "H-07", "H-10"],
+        "req": ["REQ-CONN-0003", "REQ-INV-0001", "REQ-APPR-0014"],
+        "d2r": ["D2R-006", "D2R-006G"]
+      }
+    },
+    {
+      "logicalName": "WorkspaceScope",
+      "schemaId": "urn:uuid:e157539f-0e4d-4193-af4b-021fa58881ea",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/workspace-scope.schema.json",
+      "dependencies": ["urn:uuid:a393228c-9b9d-4070-98ee-25e36ac34acb"],
+      "provenance": {
+        "h": ["H-07", "H-10"],
+        "req": ["REQ-CONN-0003", "REQ-APPR-0014"],
+        "d2r": ["D2R-010"]
+      }
+    },
+    {
+      "logicalName": "CanonicalBase64url16Octets",
+      "schemaId": "urn:uuid:49bd1792-0f82-43d2-a218-27503453622a",
+      "assetClass": "representation-helper",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/canonical-base64url-16-octets.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-01", "H-06", "H-07", "H-08", "H-09", "H-11"],
+        "req": ["REQ-IDX-0005", "REQ-CONN-0001", "REQ-INV-0007", "REQ-TASK-0002", "REQ-RCPT-0002"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "CanonicalBase64url1To64Octets",
+      "schemaId": "urn:uuid:b360f786-e930-4969-820b-003efadbac6d",
+      "assetClass": "representation-helper",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/canonical-base64url-1-to-64-octets.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-02", "H-06", "H-07", "H-12"],
+        "req": ["REQ-INV-0006", "REQ-INV-0007", "REQ-PRIV-0007"],
+        "d2r": ["D2R-008", "D2R-009"]
+      }
+    },
+    {
+      "logicalName": "CanonicalBase64url1To128Octets",
+      "schemaId": "urn:uuid:677407e9-d334-43e2-ae04-b196848eea99",
+      "assetClass": "representation-helper",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/canonical-base64url-1-to-128-octets.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-06", "H-07", "H-12"],
+        "req": ["REQ-INST-0005", "REQ-INST-0010", "REQ-INV-0007", "REQ-INV-0009"],
+        "d2r": ["D2R-009"]
+      }
+    },
+    {
+      "logicalName": "ConnectionId",
+      "schemaId": "urn:uuid:5e0d2101-1c30-4f40-8320-9a6b2e64319e",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/connection-id.schema.json",
+      "dependencies": ["urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"],
+      "provenance": {
+        "h": ["H-01", "H-06", "H-07"],
+        "req": ["REQ-CONN-0001", "REQ-INST-0002", "REQ-INST-0003"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "InvocationId",
+      "schemaId": "urn:uuid:1752eea0-b836-4d22-aa5b-ff9bd704f2b9",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/invocation-id.schema.json",
+      "dependencies": ["urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"],
+      "provenance": {
+        "h": ["H-07", "H-08", "H-09"],
+        "req": ["REQ-INV-0001", "REQ-INV-0007"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "TaskId",
+      "schemaId": "urn:uuid:d1d4490a-e652-40dc-8f01-c3b7af62f821",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/task-id.schema.json",
+      "dependencies": ["urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"],
+      "provenance": {
+        "h": ["H-09"],
+        "req": ["REQ-TASK-0002"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "ResultId",
+      "schemaId": "urn:uuid:3a9255e0-dd70-4a71-848d-8cc3855d1ceb",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/result-id.schema.json",
+      "dependencies": ["urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"],
+      "provenance": {
+        "h": ["H-09"],
+        "req": ["REQ-TASK-0020"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "ReceiptId",
+      "schemaId": "urn:uuid:daa8d590-3b33-4f46-a63a-7e7d87500e44",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/receipt-id.schema.json",
+      "dependencies": ["urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"],
+      "provenance": {
+        "h": ["H-09", "H-10", "H-11"],
+        "req": ["REQ-RCPT-0002"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "ApprovalChallengeId",
+      "schemaId": "urn:uuid:e27e6244-aabf-4d75-a79c-ea2b43cc8073",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/approval-challenge-id.schema.json",
+      "dependencies": ["urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"],
+      "provenance": {
+        "h": ["H-08"],
+        "req": ["REQ-APPR-0002"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "ApprovalDecisionId",
+      "schemaId": "urn:uuid:64cf1eb9-4c44-485d-88dd-14c86bf922a1",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/approval-decision-id.schema.json",
+      "dependencies": ["urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"],
+      "provenance": {
+        "h": ["H-08"],
+        "req": ["REQ-APPR-0005"],
+        "d2r": ["D2R-005"]
+      }
+    },
+    {
+      "logicalName": "ParticipantCorrelationBytes",
+      "schemaId": "urn:uuid:fcb537b3-67fc-4621-b25d-adf3fbbe81b5",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/participant-correlation-bytes.schema.json",
+      "dependencies": ["urn:uuid:b360f786-e930-4969-820b-003efadbac6d"],
+      "provenance": {
+        "h": ["H-02", "H-06", "H-07", "H-12"],
+        "req": ["REQ-INV-0006", "REQ-PRIV-0007"],
+        "d2r": ["D2R-008"]
+      }
+    },
+    {
+      "logicalName": "IdempotencyNamespace",
+      "schemaId": "urn:uuid:aa90be25-0d0c-403d-847e-a3b8295e0aed",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/idempotency-namespace.schema.json",
+      "dependencies": ["urn:uuid:b360f786-e930-4969-820b-003efadbac6d"],
+      "provenance": {
+        "h": ["H-06", "H-07", "H-12"],
+        "req": ["REQ-INST-0005", "REQ-INST-0010", "REQ-INV-0007", "REQ-INV-0009"],
+        "d2r": ["D2R-009"]
+      }
+    },
+    {
+      "logicalName": "IdempotencyKey",
+      "schemaId": "urn:uuid:3868e676-6b8a-4692-b7d4-4e47ff5e88f4",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/idempotency-key.schema.json",
+      "dependencies": ["urn:uuid:677407e9-d334-43e2-ae04-b196848eea99"],
+      "provenance": {
+        "h": ["H-06", "H-07", "H-12"],
+        "req": ["REQ-INST-0005", "REQ-INST-0010", "REQ-INV-0007", "REQ-INV-0009"],
+        "d2r": ["D2R-009"]
+      }
+    },
+    {
+      "logicalName": "InvocationIdempotency",
+      "schemaId": "urn:uuid:273a2223-ef07-4750-87a5-b81a34c66b97",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/invocation-idempotency.schema.json",
+      "dependencies": [
+        "urn:uuid:aa90be25-0d0c-403d-847e-a3b8295e0aed",
+        "urn:uuid:3868e676-6b8a-4692-b7d4-4e47ff5e88f4"
+      ],
+      "provenance": {
+        "h": ["H-06", "H-07", "H-12"],
+        "req": ["REQ-INST-0005", "REQ-INST-0010", "REQ-INV-0007", "REQ-INV-0009"],
+        "d2r": ["D2R-009"]
+      }
+    },
+    {
+      "logicalName": "CanonicalTimestamp",
+      "schemaId": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/canonical-timestamp.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-01", "H-05", "H-06", "H-07", "H-08", "H-09", "H-10", "H-11", "H-12"],
+        "req": ["REQ-AUTH-0004", "REQ-AUTH-0007", "REQ-INST-0002", "REQ-CONN-0001", "REQ-TASK-0031", "REQ-RCPT-0009", "REQ-TRUST-0004", "REQ-TRUST-0005", "REQ-TRUST-0022", "REQ-TRAN-0011"],
+        "d2r": ["D2R-011"]
+      }
+    },
+    {
+      "logicalName": "TimeEvidence",
+      "schemaId": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/time-evidence.schema.json",
+      "dependencies": ["urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4"],
+      "provenance": {
+        "h": ["H-09", "H-11"],
+        "req": ["REQ-RCPT-0009", "REQ-TRUST-0022", "REQ-TRUST-0023"],
+        "d2r": ["D2R-012"]
+      }
+    },
+    {
+      "logicalName": "TrustSequence",
+      "schemaId": "urn:uuid:d2b355cb-7e39-423a-9a5c-7cbc9926ffa7",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/trust-sequence.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-11"],
+        "req": ["REQ-TRUST-0002", "REQ-TRUST-0004", "REQ-TRUST-0005", "REQ-TRUST-0007", "REQ-TRUST-0012"],
+        "d2r": ["D2R-015"]
+      }
+    },
+    {
+      "logicalName": "RetryAfterSeconds",
+      "schemaId": "urn:uuid:be60b3f6-6a58-4946-8aad-860edaf89495",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/retry-after-seconds.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0011"],
+        "d2r": ["D2R-013"]
+      }
+    },
+    {
+      "logicalName": "ReleaseRegistryToken",
+      "schemaId": "urn:uuid:d213d7c9-15da-41f2-b51b-286944581a74",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/release-registry-token.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-04", "H-05", "H-13"],
+        "req": ["REQ-VERS-0009", "REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0016", "REQ-AUTH-0002"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "ReleaseRegistryRevision",
+      "schemaId": "urn:uuid:735bbcfb-bdd0-4c80-8c40-351ce5e5c93e",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/release-registry-revision.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-04", "H-05", "H-13"],
+        "req": ["REQ-VERS-0009", "REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0016", "REQ-AUTH-0002"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "ExtensionIdentity",
+      "schemaId": "urn:uuid:ac23dacd-18f3-4920-aa45-15aa695f1234",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/extension-identity.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-13"],
+        "req": ["REQ-EXT-0004"],
+        "d2r": ["D2R-020"]
+      }
+    },
+    {
+      "logicalName": "ArtifactByteIntegrityRef",
+      "schemaId": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/artifact-byte-integrity-ref.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-13", "H-14"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"],
+        "d2r": ["D2R-004B"]
+      }
+    },
+    {
+      "logicalName": "Ed25519PublicJwk",
+      "schemaId": "urn:uuid:803b84c2-c480-40b7-ae73-21ee38e7c3d0",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/ed25519-public-jwk.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-10", "H-11"],
+        "req": ["REQ-RCPT-0005", "REQ-RCPT-0007", "REQ-RCPT-0008", "REQ-TRUST-0006", "REQ-TRUST-0009"],
+        "d2r": ["D2R-019"]
+      }
+    }
+  ],
+  "registries": [
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-registry.json",
+      "schemaId": "urn:uuid:927bbd7a-e229-440d-95f1-6ff0ebefe716"
+    }
+  ],
+  "semanticConstraintInventory": {
+    "path": "protocol/schemas/e1.r0-draft.1/semantic-constraint-inventory.json",
+    "schemaId": "urn:uuid:7d66052a-8a55-4641-bd8d-8990c5db9940"
+  },
+  "fixtures": [
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/structural-positive.json",
+      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/structural-negative.json",
+      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/semantic-positive.json",
+      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/semantic-negative.json",
+      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/boundary.json",
+      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
+    }
+  ],
+  "deferred": [
+    {
+      "logicalName": "SemanticCommitmentRef",
+      "reason": "The owning schema must supply the exact permitted H-10 profile and domain; a generic reusable schema would incorrectly admit arbitrary strings.",
+      "downstreamOwner": "D2-01",
+      "provenance": {
+        "h": ["H-10", "H-13"],
+        "req": ["REQ-RCPT-0003", "REQ-RCPT-0004", "REQ-RCPT-0005", "REQ-TRUST-0004", "REQ-TRUST-0006", "REQ-TRUST-0028"],
+        "d2r": ["D2R-004A", "D2R-018"]
+      }
+    },
+    {
+      "logicalName": "Origin",
+      "reason": "A reusable schema would be only a partial oracle: IDNA2008, canonical IP spelling, loopback-only HTTP context, and H-12 network-target checks require owning-context semantic validation.",
+      "downstreamOwner": "D2-01",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
+        "d2r": ["D2R-017"]
+      }
+    },
+    {
+      "logicalName": "KeyThumbprintReference",
+      "reason": "The bounded immutable key-ID representation and exact owning key-purpose enum are object-specific and not fixed for one safe generic carrier.",
+      "downstreamOwner": "D2-01",
+      "provenance": {
+        "h": ["H-10", "H-11"],
+        "req": ["REQ-RCPT-0005", "REQ-RCPT-0007", "REQ-RCPT-0008", "REQ-TRUST-0006", "REQ-TRUST-0009"],
+        "d2r": ["D2R-019"]
+      }
+    }
+  ],
+  "machineryFieldNamesAreWireSemantics": false,
+  "nonClaims": {
+    "releaseSigning": false,
+    "publicationAuthorization": false,
+    "releaseGraduation": false,
+    "productionSupport": false,
+    "conformance": false,
+    "interoperability": false,
+    "externalSecurityReview": false,
+    "protocol1_0": false
+  }
+}

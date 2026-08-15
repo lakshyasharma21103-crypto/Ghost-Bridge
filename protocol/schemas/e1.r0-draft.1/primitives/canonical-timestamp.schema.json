@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4",
+  "title": "CanonicalTimestamp",
+  "description": "Canonical UTC millisecond timestamp. Calendar validity and leap-second rejection also require semantic validation.",
+  "type": "string",
+  "minLength": 24,
+  "maxLength": 24,
+  "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}Z$"
+}

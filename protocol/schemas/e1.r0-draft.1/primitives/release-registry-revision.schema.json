@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:735bbcfb-bdd0-4c80-8c40-351ce5e5c93e",
+  "title": "ReleaseRegistryRevision",
+  "description": "A release-owned registry revision integer.",
+  "type": "integer",
+  "minimum": 1,
+  "maximum": 2147483647
+}

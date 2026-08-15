@@ -1,0 +1,332 @@
+{
+  "inventorySchema": "urn:uuid:7d66052a-8a55-4641-bd8d-8990c5db9940",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "status": "foundation-partial",
+  "structuralValidationDefinition": "Draft 2020-12 JSON Schema validation of parsed JSON structure and values, without coercion or format-assertion authority.",
+  "rawSemanticValidationDefinition": "Lossless raw-input and implementation-neutral semantic checks required by accepted H, REQ, and D2R authority where structural JSON Schema is incomplete.",
+  "notSecondSpecification": true,
+  "constraints": [
+    {
+      "id": "FND-BASE64URL-CANONICAL",
+      "validationLayer": "SEMANTIC",
+      "affected": ["CanonicalBase64url16Octets", "CanonicalBase64url1To64Octets", "CanonicalBase64url1To128Octets", "ArtifactByteIntegrityRef.value", "Ed25519PublicJwk.x"],
+      "predicate": "Decode exactly once as unpadded base64url, re-encode the same bytes without padding, and require exact textual equality.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-02", "H-06", "H-07", "H-10", "H-12"],
+        "req": ["REQ-INV-0006", "REQ-INV-0007", "REQ-TRAN-0003", "REQ-COMP-0007"],
+        "d2r": ["D2R-004B", "D2R-005", "D2R-008", "D2R-009", "D2R-016", "D2R-019"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01A"
+    },
+    {
+      "id": "FND-BASE64URL-DECODED-LENGTH",
+      "validationLayer": "SEMANTIC",
+      "affected": ["operational identifiers", "ParticipantCorrelationBytes", "IdempotencyNamespace", "IdempotencyKey", "ArtifactByteIntegrityRef.value", "Ed25519PublicJwk.x"],
+      "predicate": "Enforce the exact decoded-octet bound assigned to the semantic type after canonical decoding.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-02", "H-06", "H-07", "H-08", "H-09", "H-10", "H-11", "H-12"],
+        "req": ["REQ-IDX-0005", "REQ-INV-0006", "REQ-INV-0007", "REQ-TASK-0002", "REQ-RCPT-0002"],
+        "d2r": ["D2R-004B", "D2R-005", "D2R-008", "D2R-009", "D2R-019"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01A"
+    },
+    {
+      "id": "FND-DUPLICATE-RAW-JSON-MEMBERS",
+      "validationLayer": "RAW",
+      "affected": ["all JSON objects"],
+      "predicate": "Reject duplicate raw JSON member names before or during lossless parsing; first-wins and last-wins behavior are prohibited.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-10", "H-12", "H-13"],
+        "req": ["REQ-APPR-0018", "REQ-TRAN-0013", "REQ-EXT-0001"],
+        "d2r": ["D2R-021", "D2R-024", "D2R-029", "D2R-032"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-STRICT-UTF8-AND-RAW-BYTE-LIMITS",
+      "validationLayer": "RAW",
+      "affected": ["all JSON inputs", "object-specific strings and bodies"],
+      "predicate": "Decode strict UTF-8 and enforce applicable raw-octet and complete-message limits before lossy parsing or normalization.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-10", "H-12"],
+        "req": ["REQ-APPR-0018", "REQ-TRAN-0013", "REQ-ERR-0004"],
+        "d2r": ["D2R-024", "D2R-028", "D2R-029"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "MESSAGE_TOO_LARGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-TIMESTAMP-CALENDAR-VALIDITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["CanonicalTimestamp"],
+      "predicate": "After exact lexical parsing, require an existing proleptic-Gregorian calendar date.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-01", "H-05", "H-06", "H-07", "H-08", "H-09", "H-10", "H-11", "H-12"],
+        "req": ["REQ-AUTH-0004", "REQ-RCPT-0009", "REQ-TRUST-0022", "REQ-TRAN-0011"],
+        "d2r": ["D2R-011"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01A"
+    },
+    {
+      "id": "FND-TIMESTAMP-YEAR-RANGE",
+      "validationLayer": "SEMANTIC",
+      "affected": ["CanonicalTimestamp"],
+      "predicate": "Require a calendar year from 0001 through 9999; year 0000 is invalid.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-01", "H-10", "H-11"],
+        "req": ["REQ-RCPT-0009", "REQ-TRUST-0022"],
+        "d2r": ["D2R-011"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01A"
+    },
+    {
+      "id": "FND-TIMESTAMP-NO-LEAP-SECOND",
+      "validationLayer": "SEMANTIC",
+      "affected": ["CanonicalTimestamp"],
+      "predicate": "Reject leap-second input; the seconds component is limited to 00 through 59.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-10", "H-11", "H-12"],
+        "req": ["REQ-RCPT-0009", "REQ-TRUST-0022", "REQ-TRAN-0011"],
+        "d2r": ["D2R-011"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01A"
+    },
+    {
+      "id": "FND-SAFE-SOURCE-TOKEN-NUMBERS",
+      "validationLayer": "RAW_AND_SEMANTIC",
+      "affected": ["TrustSequence", "RetryAfterSeconds", "ReleaseRegistryRevision", "ArtifactByteIntegrityRef.byteLength", "future numeric fields"],
+      "predicate": "Validate the original JSON number token for the accepted finite-binary64 and safe-exact-integer rules without coercion, rounding, clamping, or lossy reparsing.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-10"],
+        "req": ["REQ-APPR-0018"],
+        "d2r": ["D2R-014", "D2R-024", "D2R-032"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-NEGATIVE-ZERO-REJECTION",
+      "validationLayer": "RAW",
+      "affected": ["all numeric fields including ArtifactByteIntegrityRef.byteLength"],
+      "predicate": "Reject a source token that represents negative zero before a parser erases the distinction.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-10"],
+        "req": ["REQ-APPR-0018"],
+        "d2r": ["D2R-014", "D2R-024"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-PATH-DECODE-REENCODE-EQUALITY",
+      "validationLayer": "RAW_AND_SEMANTIC",
+      "affected": ["future authority-bearing resource path segments"],
+      "predicate": "Validate the raw route, decode an eligible identifier segment exactly once, validate its owning identifier type, canonically re-encode, and require exact raw textual equality.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0003", "REQ-TRAN-0004"],
+        "d2r": ["D2R-016"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["MALFORMED_HTTP", "INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-TENANT-EXACT-EQUALITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["OrganizationId", "WorkspaceId"],
+      "predicate": "Compare exact code units case-sensitively with no trimming, case folding, Unicode normalization, aliases, coercion, truthiness, or punctuation interpretation.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-02", "H-07", "H-10"],
+        "req": ["REQ-CONN-0003", "REQ-INV-0001", "REQ-APPR-0014"],
+        "d2r": ["D2R-006", "D2R-006G"]
+      },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-CONN-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-TENANT-TYPE-NONINTERCHANGEABILITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["OrganizationId", "WorkspaceId"],
+      "predicate": "Keep Organization and Workspace as separate semantic types; equal underlying strings never authorize conversion or substitution between them.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-02", "H-07", "H-10"],
+        "req": ["REQ-CONN-0003", "REQ-INV-0001", "REQ-APPR-0014"],
+        "d2r": ["D2R-006", "D2R-006G"]
+      },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-CONN-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-INTERVAL-ORDERING",
+      "validationLayer": "SEMANTIC",
+      "affected": ["TimeEvidence interval lower and upper"],
+      "predicate": "Require lower time to be no later than upper time after canonical timestamp parsing.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-09", "H-11"],
+        "req": ["REQ-RCPT-0009", "REQ-TRUST-0022", "REQ-TRUST-0023"],
+        "d2r": ["D2R-012"]
+      },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-RCPT-0009"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-INTERVAL-NONEMPTY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["TimeEvidence interval edges"],
+      "predicate": "Require a represented interval to be nonempty; equal endpoints are valid only when both edges are inclusive.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-09", "H-11"],
+        "req": ["REQ-RCPT-0009", "REQ-TRUST-0022", "REQ-TRUST-0023"],
+        "d2r": ["D2R-012"]
+      },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-RCPT-0009"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-IDNA2008-VALIDATION",
+      "validationLayer": "SEMANTIC",
+      "affected": ["future Origin DNS host"],
+      "predicate": "Accept only validated lowercase IDNA2008 A-label form with the accepted label bounds and round-trip behavior; raw U-label input is invalid.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
+        "d2r": ["D2R-017"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-CANONICAL-IPV4",
+      "validationLayer": "SEMANTIC",
+      "affected": ["future Origin IPv4 host"],
+      "predicate": "Require exactly four decimal octets from 0 through 255 with no leading zero except the literal 0.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
+        "d2r": ["D2R-017"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-CANONICAL-RFC5952-IPV6",
+      "validationLayer": "SEMANTIC",
+      "affected": ["future Origin IPv6 host"],
+      "predicate": "Require canonical lowercase RFC-5952-style text without brackets or a zone identifier.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
+        "d2r": ["D2R-017"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-IPV4-MAPPED-IPV6-REJECTION",
+      "validationLayer": "SEMANTIC",
+      "affected": ["future Origin IPv6 host"],
+      "predicate": "Reject IPv4-mapped IPv6 textual origin representations so they cannot alias the IPv4 branch.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
+        "d2r": ["D2R-017"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-HTTP-LOOPBACK-CONTEXT",
+      "validationLayer": "SEMANTIC",
+      "affected": ["future Origin scheme and host"],
+      "predicate": "Permit plain HTTP only in an explicitly enabled test or development context when the configured hostname and every resolved and connected address are loopback; it creates no production or Governed authority.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-05", "H-07", "H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-AUTH-0003"],
+        "d2r": ["D2R-017"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-NETB-DNS-REDIRECT-REBINDING",
+      "validationLayer": "RAW_AND_SEMANTIC",
+      "affected": ["future Origin resolution and transport use"],
+      "predicate": "Apply the accepted H-12 NET-B DNS, address, redirect, rebinding, proxy, and connected-target checks after canonical parsing and before authority use.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
+        "d2r": ["D2R-017"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "UPSTREAM_FAILURE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-ARTIFACT-EXACT-BYTE-HASH",
+      "validationLayer": "SEMANTIC",
+      "affected": ["ArtifactByteIntegrityRef"],
+      "predicate": "Compute SHA-256 over the exact artifact byte stream, compare the canonical digest and exact byte length, and do not parse, normalize, or substitute an H-10 semantic commitment.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-03", "H-13", "H-14"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"],
+        "d2r": ["D2R-004B"]
+      },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-EXTENSION-IDENTITY-BOUNDARIES",
+      "validationLayer": "SEMANTIC",
+      "affected": ["ExtensionIdentity"],
+      "predicate": "Compare exact code units without normalization or aliases; treat owner and name punctuation as opaque identity content, enforce duplicate rejection, and never infer support, selection, authority, or DNS structure from the extension-name dots.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-03", "H-13", "H-14"],
+        "req": ["REQ-EXT-0004", "REQ-EXT-0005", "REQ-EXT-0006"],
+        "d2r": ["D2R-020", "D2R-021"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-SCHEMA-OFFLINE-NETWORK-PROHIBITION",
+      "validationLayer": "SEMANTIC",
+      "affected": ["foundation manifest", "all canonical schema $ref values", "offline schema resolver"],
+      "predicate": "Resolve every Ghost Bridge schema reference only through the immutable manifest-preloaded UUID mapping; prohibit network retrieval and HTTP or HTTPS Ghost Bridge schema identities.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-03", "H-13", "H-14"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0003", "REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"],
+        "d2r": ["D2R-001", "D2R-002", "D2R-003", "D2R-030", "D2R-032"]
+      },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
+      "downstreamOwner": "D2-01A"
+    }
+  ]
+}

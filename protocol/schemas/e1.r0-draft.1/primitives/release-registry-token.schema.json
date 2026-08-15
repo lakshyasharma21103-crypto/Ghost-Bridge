@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:d213d7c9-15da-41f2-b51b-286944581a74",
+  "title": "ReleaseRegistryToken",
+  "description": "A token only for release-owned registry classes assigned to D2R-007. It is not a capability or tenant grammar.",
+  "type": "string",
+  "minLength": 1,
+  "maxLength": 128,
+  "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+}

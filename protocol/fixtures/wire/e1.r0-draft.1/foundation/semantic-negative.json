@@ -1,0 +1,13 @@
+{
+  "fixtureSchema": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "semantic-negative",
+  "cases": [
+    { "id": "FX-TIMESTAMP-INVALID-CALENDAR-DAY", "kind": "value", "targetSchema": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4", "value": "2026-02-30T00:00:00.000Z", "structuralExpected": "pass", "semanticExpected": "fail", "semanticCheck": "canonical-timestamp" },
+    { "id": "FX-TIMESTAMP-YEAR-ZERO", "kind": "value", "targetSchema": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4", "value": "0000-01-01T00:00:00.000Z", "structuralExpected": "pass", "semanticExpected": "fail", "semanticCheck": "canonical-timestamp" },
+    { "id": "FX-TIMESTAMP-NONLEAP-CENTURY", "kind": "value", "targetSchema": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4", "value": "1900-02-29T00:00:00.000Z", "structuralExpected": "pass", "semanticExpected": "fail", "semanticCheck": "canonical-timestamp" },
+    { "id": "FX-INTERVAL-REVERSED", "kind": "value", "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964", "value": { "kind": "interval", "lower": { "at": "2026-08-16T00:00:00.000Z", "inclusive": true }, "upper": { "at": "2026-08-15T00:00:00.000Z", "inclusive": true } }, "structuralExpected": "pass", "semanticExpected": "fail", "semanticCheck": "time-evidence" },
+    { "id": "FX-INTERVAL-EQUAL-OPEN-LOWER", "kind": "value", "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964", "value": { "kind": "interval", "lower": { "at": "2026-08-15T00:00:00.000Z", "inclusive": false }, "upper": { "at": "2026-08-15T00:00:00.000Z", "inclusive": true } }, "structuralExpected": "pass", "semanticExpected": "fail", "semanticCheck": "time-evidence" },
+    { "id": "FX-INTERVAL-EQUAL-OPEN-UPPER", "kind": "value", "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964", "value": { "kind": "interval", "lower": { "at": "2026-08-15T00:00:00.000Z", "inclusive": true }, "upper": { "at": "2026-08-15T00:00:00.000Z", "inclusive": false } }, "structuralExpected": "pass", "semanticExpected": "fail", "semanticCheck": "time-evidence" }
+  ]
+}

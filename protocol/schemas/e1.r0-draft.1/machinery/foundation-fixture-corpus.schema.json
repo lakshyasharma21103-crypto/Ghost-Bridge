@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0",
+  "title": "D2-01A Foundation Fixture Corpus",
+  "description": "Closed D2 validation-fixture machinery. These are foundation cases, not conformance fixtures or cryptographic golden vectors.",
+  "type": "object",
+  "required": ["fixtureSchema", "protocolRelease", "classification", "cases"],
+  "properties": {
+    "fixtureSchema": { "const": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "classification": {
+      "enum": [
+        "structural-positive",
+        "structural-negative",
+        "semantic-positive",
+        "semantic-negative",
+        "boundary"
+      ]
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "uuidUrn": {
+      "type": "string",
+      "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "valueCase": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "targetSchema",
+        "value",
+        "structuralExpected",
+        "semanticExpected",
+        "semanticCheck"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^FX-[A-Z0-9-]+$" },
+        "kind": { "const": "value" },
+        "targetSchema": { "$ref": "#/$defs/uuidUrn" },
+        "value": true,
+        "structuralExpected": { "enum": ["pass", "fail"] },
+        "semanticExpected": { "enum": ["pass", "fail", "not-applicable"] },
+        "semanticCheck": {
+          "enum": [
+            "none",
+            "tenant-id",
+            "canonical-base64url",
+            "canonical-timestamp",
+            "time-evidence",
+            "artifact-byte-integrity",
+            "extension-identity"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "equalityCase": {
+      "type": "object",
+      "required": ["id", "kind", "targetSchema", "values", "equalExpected", "semanticCheck"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^FX-[A-Z0-9-]+$" },
+        "kind": { "const": "equality" },
+        "targetSchema": { "$ref": "#/$defs/uuidUrn" },
+        "values": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "string" }
+        },
+        "equalExpected": { "type": "boolean" },
+        "semanticCheck": { "const": "tenant-exact-equality" }
+      },
+      "additionalProperties": false
+    },
+    "case": {
+      "oneOf": [
+        { "$ref": "#/$defs/valueCase" },
+        { "$ref": "#/$defs/equalityCase" }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:ac23dacd-18f3-4920-aa45-15aa695f1234",
+  "title": "ExtensionIdentity",
+  "description": "An exact opaque lower-ASCII reverse-DNS owner and extension-name identity.",
+  "type": "string",
+  "minLength": 5,
+  "maxLength": 255,
+  "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?/[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$"
+}

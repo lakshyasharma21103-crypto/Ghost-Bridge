@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:be60b3f6-6a58-4946-8aad-860edaf89495",
+  "title": "RetryAfterSeconds",
+  "description": "Integral Retry-After delta-seconds; this value does not widen semantic retry eligibility.",
+  "type": "integer",
+  "minimum": 0,
+  "maximum": 3600
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964",
+  "title": "TimeEvidence",
+  "description": "Closed exact-or-interval time evidence. Interval ordering and non-emptiness require semantic validation.",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["kind", "at"],
+      "properties": {
+        "kind": { "const": "exact" },
+        "at": { "$ref": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["kind", "lower", "upper"],
+      "properties": {
+        "kind": { "const": "interval" },
+        "lower": { "$ref": "#/$defs/edge" },
+        "upper": { "$ref": "#/$defs/edge" }
+      }
+    }
+  ],
+  "$defs": {
+    "edge": {
+      "type": "object",
+      "required": ["at", "inclusive"],
+      "properties": {
+        "at": { "$ref": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4" },
+        "inclusive": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "unevaluatedProperties": false
+}

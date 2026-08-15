@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:49bd1792-0f82-43d2-a218-27503453622a",
+  "title": "CanonicalBase64url16Octets",
+  "description": "Shared representation helper for exactly 16 decoded octets in canonical unpadded base64url. It is not a public semantic identity union.",
+  "type": "string",
+  "minLength": 22,
+  "maxLength": 22,
+  "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$"
+}

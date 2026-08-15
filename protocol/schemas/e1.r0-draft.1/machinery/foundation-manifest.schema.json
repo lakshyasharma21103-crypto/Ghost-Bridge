@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:df95689a-85f7-4f17-b306-a05af10d8cb0",
+  "title": "D2-01A Foundation Manifest",
+  "description": "Closed D2 machinery schema. Its field names are not Ghost Bridge wire-protocol semantics.",
+  "type": "object",
+  "required": [
+    "manifestSchema",
+    "protocolRelease",
+    "bundleId",
+    "schemaDialect",
+    "status",
+    "completeness",
+    "pathBase",
+    "schemas",
+    "registries",
+    "semanticConstraintInventory",
+    "fixtures",
+    "deferred",
+    "machineryFieldNamesAreWireSemantics",
+    "nonClaims"
+  ],
+  "properties": {
+    "manifestSchema": {
+      "const": "urn:uuid:df95689a-85f7-4f17-b306-a05af10d8cb0"
+    },
+    "protocolRelease": {
+      "const": "ghostbridge/e1.r0-draft.1"
+    },
+    "bundleId": {
+      "$ref": "#/$defs/uuidUrn"
+    },
+    "schemaDialect": {
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "status": {
+      "const": "draft-prerelease"
+    },
+    "completeness": {
+      "const": "foundation-partial"
+    },
+    "pathBase": {
+      "const": "repository-relative"
+    },
+    "schemas": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/schemaEntry"
+      }
+    },
+    "registries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/assetEntry"
+      }
+    },
+    "semanticConstraintInventory": {
+      "$ref": "#/$defs/assetEntry"
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/assetEntry"
+      }
+    },
+    "deferred": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/deferredEntry"
+      }
+    },
+    "machineryFieldNamesAreWireSemantics": {
+      "const": false
+    },
+    "nonClaims": {
+      "type": "object",
+      "required": [
+        "releaseSigning",
+        "publicationAuthorization",
+        "releaseGraduation",
+        "productionSupport",
+        "conformance",
+        "interoperability",
+        "externalSecurityReview",
+        "protocol1_0"
+      ],
+      "properties": {
+        "releaseSigning": { "const": false },
+        "publicationAuthorization": { "const": false },
+        "releaseGraduation": { "const": false },
+        "productionSupport": { "const": false },
+        "conformance": { "const": false },
+        "interoperability": { "const": false },
+        "externalSecurityReview": { "const": false },
+        "protocol1_0": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "uuidUrn": {
+      "type": "string",
+      "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._/-]*$"
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["h", "req", "d2r"],
+      "properties": {
+        "h": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^H-(0[1-9]|1[0-4])$" }
+        },
+        "req": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^REQ-[A-Z]+-[0-9]{4}$" }
+        },
+        "d2r": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^D2R-[0-9]{3}[A-Z]?$" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "schemaEntry": {
+      "type": "object",
+      "required": [
+        "logicalName",
+        "schemaId",
+        "assetClass",
+        "path",
+        "dependencies",
+        "provenance"
+      ],
+      "properties": {
+        "logicalName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*$" },
+        "schemaId": { "$ref": "#/$defs/uuidUrn" },
+        "assetClass": {
+          "enum": [
+            "d2-machinery",
+            "representation-helper",
+            "wire-primitive",
+            "wire-foundation-object"
+          ]
+        },
+        "path": { "$ref": "#/$defs/path" },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/uuidUrn" }
+        },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      },
+      "additionalProperties": false
+    },
+    "assetEntry": {
+      "type": "object",
+      "required": ["path", "schemaId"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "schemaId": { "$ref": "#/$defs/uuidUrn" }
+      },
+      "additionalProperties": false
+    },
+    "deferredEntry": {
+      "type": "object",
+      "required": ["logicalName", "reason", "downstreamOwner", "provenance"],
+      "properties": {
+        "logicalName": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]*$" },
+        "reason": { "type": "string", "minLength": 1 },
+        "downstreamOwner": { "type": "string", "pattern": "^D2-[0-9]{2}[A-Z]?$" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
