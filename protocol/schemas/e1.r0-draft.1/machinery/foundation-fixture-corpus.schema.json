@@ -44,6 +44,7 @@
         "kind": { "const": "value" },
         "targetSchema": { "$ref": "#/$defs/uuidUrn" },
         "value": true,
+        "semanticInput": { "$ref": "#/$defs/artifactSemanticInput" },
         "structuralExpected": { "enum": ["pass", "fail"] },
         "semanticExpected": { "enum": ["pass", "fail", "not-applicable"] },
         "semanticCheck": {
@@ -57,6 +58,15 @@
             "extension-identity"
           ]
         }
+      },
+      "additionalProperties": false
+    },
+    "artifactSemanticInput": {
+      "description": "Closed non-wire input used only by deterministic semantic-validator evidence.",
+      "type": "object",
+      "required": ["artifactBytesHex"],
+      "properties": {
+        "artifactBytesHex": { "type": "string", "maxLength": 2097152 }
       },
       "additionalProperties": false
     },

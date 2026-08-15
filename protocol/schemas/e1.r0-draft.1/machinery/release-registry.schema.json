@@ -23,13 +23,26 @@
       "type": "array",
       "minItems": 5,
       "maxItems": 5,
-      "items": { "$ref": "#/$defs/facet" }
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/facet" },
+      "allOf": [
+        { "contains": { "$ref": "#/$defs/facetHostCore" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/facetAgentCore" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/facetTrustVerificationCore" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/facetHostGovernedExecution" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/facetAgentGovernedExecution" }, "minContains": 1, "maxContains": 1 }
+      ]
     },
     "authenticationProfiles": {
       "type": "array",
       "minItems": 2,
       "maxItems": 2,
-      "items": { "$ref": "#/$defs/authenticationProfile" }
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/authenticationProfile" },
+      "allOf": [
+        { "contains": { "$ref": "#/$defs/signedRequestPop" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/noneTestFixture" }, "minContains": 1, "maxContains": 1 }
+      ]
     },
     "capabilityRegistryCreated": { "const": false },
     "negotiationSemanticsOwnedByD1": { "const": true }
@@ -43,6 +56,56 @@
       "properties": {
         "id": { "$ref": "#/$defs/token" },
         "revision": { "$ref": "#/$defs/revision" },
+        "allocationStatus": { "const": "allocated" }
+      },
+      "additionalProperties": false
+    },
+    "facetHostCore": {
+      "type": "object",
+      "required": ["id", "revision", "allocationStatus"],
+      "properties": {
+        "id": { "const": "gb.facet.host.core" },
+        "revision": { "const": 1 },
+        "allocationStatus": { "const": "allocated" }
+      },
+      "additionalProperties": false
+    },
+    "facetAgentCore": {
+      "type": "object",
+      "required": ["id", "revision", "allocationStatus"],
+      "properties": {
+        "id": { "const": "gb.facet.agent.core" },
+        "revision": { "const": 1 },
+        "allocationStatus": { "const": "allocated" }
+      },
+      "additionalProperties": false
+    },
+    "facetTrustVerificationCore": {
+      "type": "object",
+      "required": ["id", "revision", "allocationStatus"],
+      "properties": {
+        "id": { "const": "gb.facet.trust-verification.core" },
+        "revision": { "const": 1 },
+        "allocationStatus": { "const": "allocated" }
+      },
+      "additionalProperties": false
+    },
+    "facetHostGovernedExecution": {
+      "type": "object",
+      "required": ["id", "revision", "allocationStatus"],
+      "properties": {
+        "id": { "const": "gb.facet.host.governed-execution" },
+        "revision": { "const": 1 },
+        "allocationStatus": { "const": "allocated" }
+      },
+      "additionalProperties": false
+    },
+    "facetAgentGovernedExecution": {
+      "type": "object",
+      "required": ["id", "revision", "allocationStatus"],
+      "properties": {
+        "id": { "const": "gb.facet.agent.governed-execution" },
+        "revision": { "const": 1 },
         "allocationStatus": { "const": "allocated" }
       },
       "additionalProperties": false
@@ -61,52 +124,54 @@
       },
       "additionalProperties": false
     },
+    "signedRequestPop": {
+      "type": "object",
+      "required": [
+        "id",
+        "revision",
+        "eligibility",
+        "eligible",
+        "productionDefault",
+        "productionFallback",
+        "securityBounds"
+      ],
+      "properties": {
+        "id": { "const": "gb.auth.signed-request-pop" },
+        "revision": { "const": 1 },
+        "eligibility": { "const": "pending-complete-profile-and-d2-evidence" },
+        "eligible": { "const": false },
+        "productionDefault": { "const": false },
+        "productionFallback": { "const": false },
+        "securityBounds": { "$ref": "#/$defs/securityBounds" }
+      },
+      "additionalProperties": false
+    },
+    "noneTestFixture": {
+      "type": "object",
+      "required": [
+        "id",
+        "revision",
+        "eligibility",
+        "eligible",
+        "productionDefault",
+        "productionFallback",
+        "productionConnectionAuthority"
+      ],
+      "properties": {
+        "id": { "const": "gb.auth.none-test-fixture" },
+        "revision": { "const": 1 },
+        "eligibility": { "const": "permanently-non-production-test-fixture" },
+        "eligible": { "const": false },
+        "productionDefault": { "const": false },
+        "productionFallback": { "const": false },
+        "productionConnectionAuthority": { "const": false }
+      },
+      "additionalProperties": false
+    },
     "authenticationProfile": {
       "oneOf": [
-        {
-          "type": "object",
-          "required": [
-            "id",
-            "revision",
-            "eligibility",
-            "eligible",
-            "productionDefault",
-            "productionFallback",
-            "securityBounds"
-          ],
-          "properties": {
-            "id": { "const": "gb.auth.signed-request-pop" },
-            "revision": { "const": 1 },
-            "eligibility": { "const": "pending-complete-profile-and-d2-evidence" },
-            "eligible": { "const": false },
-            "productionDefault": { "const": false },
-            "productionFallback": { "const": false },
-            "securityBounds": { "$ref": "#/$defs/securityBounds" }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "id",
-            "revision",
-            "eligibility",
-            "eligible",
-            "productionDefault",
-            "productionFallback",
-            "productionConnectionAuthority"
-          ],
-          "properties": {
-            "id": { "const": "gb.auth.none-test-fixture" },
-            "revision": { "const": 1 },
-            "eligibility": { "const": "permanently-non-production-test-fixture" },
-            "eligible": { "const": false },
-            "productionDefault": { "const": false },
-            "productionFallback": { "const": false },
-            "productionConnectionAuthority": { "const": false }
-          },
-          "additionalProperties": false
-        }
+        { "$ref": "#/$defs/signedRequestPop" },
+        { "$ref": "#/$defs/noneTestFixture" }
       ]
     }
   },
