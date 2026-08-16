@@ -240,7 +240,7 @@ The Human Protocol Decision Register is authoritative for unresolved choices. Ch
 ## Current status
 
 **PHASE 15D.1 EXIT CRITERIA SATISFIED — PHASE 15D.2 STARTED AND INCOMPLETE;
-D2-01A EXECUTABLE SCHEMA FOUNDATION INTEGRATED**
+D2-01A EXECUTABLE SCHEMA FOUNDATION INTEGRATED; D2-BG-01 REVISION 3 ACCEPTED**
 
 Phase 15D.0 audit and planning are complete. Human decisions H-01 through H-14
 are accepted, and D1-01 through D1-07 are reviewed and integrated. Phase 15D.1
@@ -249,6 +249,11 @@ remains `EXIT_CRITERIA_SATISFIED`; its non-normative evidence is recorded in the
 
 Phase 15D.2 remains `STARTED` and `INCOMPLETE`. D2-RP-01 Revision 3 remains the
 accepted representation authority.
+
+D2-BG-01 Revision 3 is human-approved and `ACCEPTED`. Its durable governance
+record is being integrated by this change. D2-BG-01 establishes downstream
+representation authority for the exact approved identity and capability
+decisions; it does not create executable D2-01B assets.
 
 The D2-01A executable schema foundation is now integrated into main. Evidence:
 
@@ -262,9 +267,10 @@ semantic-constraint inventory, and implementation-neutral validation tooling.
 D2-01A is a completed and integrated WORKFLOW SUB-SLICE only; it does not
 establish D2-01 completion.
 
-D2-01B is the next D2-01 implementation slice. D2-01B through D2-01F remain
-incomplete and not integrated. D2-02 through D2-05 remain incomplete. The final
-D2-01 requirement for evidence from two genuinely independent Draft 2020-12
+D2-BG-02 is next. Executable D2-01B remains not started and not integrated;
+D2-01 overall remains incomplete. D2-01B through D2-01F remain incomplete and
+not integrated. D2-02 through D2-05 remain incomplete. The final D2-01
+requirement for evidence from two genuinely independent Draft 2020-12
 validators remains `SECOND_VALIDATOR_EVIDENCE_PENDING`.
 
 All 60 `GB-*` gaps remain `PENDING`. The candidate remains
