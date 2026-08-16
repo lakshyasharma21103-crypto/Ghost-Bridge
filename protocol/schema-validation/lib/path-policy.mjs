@@ -1,3 +1,4 @@
+import { lstatSync } from "node:fs";
 import path from "node:path";
 
 import { fail } from "./errors.mjs";
@@ -39,4 +40,58 @@ export function resolveRepositoryPath(repositoryRoot, relativePath, label = "pat
     return resolvedPath;
   }
   fail(`${label} escapes repository root: ${relativePath}`);
+}
+
+export function assertRepositoryPathComponentChain(components, terminalKind, label = "path") {
+  if (!Array.isArray(components) || components.length === 0) fail(`${label} has no repository path components`);
+  if (terminalKind !== "file" && terminalKind !== "directory") {
+    fail(`${label} has an invalid terminal kind: ${String(terminalKind)}`);
+  }
+  for (const [index, component] of components.entries()) {
+    const terminal = index === components.length - 1;
+    if (component.kind === "symlink") {
+      fail(`Symbolic-link repository path component is prohibited: ${component.path}`);
+    }
+    if (!terminal && component.kind !== "directory") {
+      fail(`Repository path ancestor is not an ordinary directory: ${component.path}`);
+    }
+    if (terminal && component.kind !== terminalKind) {
+      fail(`Repository path terminal is not an ordinary ${terminalKind}: ${component.path}`);
+    }
+  }
+}
+
+function filesystemComponentKind(stat) {
+  if (stat.isSymbolicLink()) return "symlink";
+  if (stat.isDirectory()) return "directory";
+  if (stat.isFile()) return "file";
+  return "special";
+}
+
+export function resolveRepositoryFilesystemPath(repositoryRoot, relativePath, terminalKind, label = "path") {
+  const resolvedPath = resolveRepositoryPath(repositoryRoot, relativePath, label);
+  const resolvedRoot = path.resolve(repositoryRoot);
+  const segments = relativePath.split("/");
+  let currentPath = resolvedRoot;
+  const checkedComponents = [];
+  for (const [index, segment] of segments.entries()) {
+    currentPath = path.join(currentPath, segment);
+    let stat;
+    try {
+      stat = lstatSync(currentPath);
+    } catch (error) {
+      fail(`${label} component is unavailable: ${segments.slice(0, index + 1).join("/")}`, { cause: error });
+    }
+    const component = {
+      path: segments.slice(0, index + 1).join("/"),
+      kind: filesystemComponentKind(stat),
+    };
+    checkedComponents.push(component);
+    assertRepositoryPathComponentChain(
+      checkedComponents,
+      index === segments.length - 1 ? terminalKind : "directory",
+      label,
+    );
+  }
+  return resolvedPath;
 }

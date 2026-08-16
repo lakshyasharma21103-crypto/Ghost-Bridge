@@ -4,10 +4,13 @@ import path from "node:path";
 import { listRepositoryFiles } from "./bundle-loader.mjs";
 import { fail } from "./errors.mjs";
 import { decodeStrictUtf8 } from "./json-source.mjs";
-import { resolveRepositoryPath } from "./path-policy.mjs";
+import { resolveRepositoryFilesystemPath } from "./path-policy.mjs";
 
 function readRepositoryText(repositoryRoot, relativePath) {
-  return decodeStrictUtf8(readFileSync(resolveRepositoryPath(repositoryRoot, relativePath)), relativePath);
+  return decodeStrictUtf8(
+    readFileSync(resolveRepositoryFilesystemPath(repositoryRoot, relativePath, "file")),
+    relativePath,
+  );
 }
 
 export function loadAuthorityIndex({ repositoryRoot, specificationRoot, decisionsRoot, representationProfilePath }) {

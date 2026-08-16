@@ -6,6 +6,13 @@ function assertUniqueAllocations(items, label) {
   if (new Set(keys).size !== keys.length) fail(`Duplicate ${label} allocation`);
 }
 
+export function assertRecognizedAllocationRegistry({ entry, manifest }) {
+  const schemaEntry = manifest.schemas.find((candidate) => candidate.schemaId === entry.schemaId);
+  if (schemaEntry?.logicalName !== "ReleaseRegistry" || schemaEntry.assetClass !== "d2-machinery") {
+    fail(`Declared registry is not a recognized release-allocation registry: ${entry.path}`);
+  }
+}
+
 export function validateReleaseRegistry({ registry, validateRegistry, errorsText = () => "validation failed" }) {
   if (typeof validateRegistry !== "function") fail("Release registry schema validator is unavailable");
   if (!validateRegistry(registry)) fail(`Release registry validation failed: ${errorsText()}`);
