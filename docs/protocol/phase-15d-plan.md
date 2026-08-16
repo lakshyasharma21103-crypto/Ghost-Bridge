@@ -239,19 +239,38 @@ The Human Protocol Decision Register is authoritative for unresolved choices. Ch
 
 ## Current status
 
-**PHASE 15D.1 EXIT CRITERIA SATISFIED — PHASE 15D.2 STARTED;
-D2-01A EXECUTABLE IMPLEMENTATION NOT STARTED**
+**PHASE 15D.1 EXIT CRITERIA SATISFIED — PHASE 15D.2 STARTED AND INCOMPLETE;
+D2-01A EXECUTABLE SCHEMA FOUNDATION INTEGRATED**
 
 Phase 15D.0 audit and planning are complete. Human decisions H-01 through H-14
-are accepted, and D1-01 through D1-07 are reviewed and integrated. The completed
-Phase 15D.1 final reconciliation established `EXIT_CRITERIA_SATISFIED`; its
-non-normative evidence is recorded in the
+are accepted, and D1-01 through D1-07 are reviewed and integrated. Phase 15D.1
+remains `EXIT_CRITERIA_SATISFIED`; its non-normative evidence is recorded in the
 [Phase 15D.1 exit-gate evidence record](./phase-15d1-exit-gate-evidence.md).
 
-Phase 15D.2 governance and pre-implementation work is underway. D2-RP-01
-Revision 3 is the accepted representation authority once this change is
-integrated. Executable D2-01A schemas, registries, fixtures, and validators have
-not started. D2-01 is not complete, and D2-02 through D2-05 are not complete.
+Phase 15D.2 remains `STARTED` and `INCOMPLETE`. D2-RP-01 Revision 3 remains the
+accepted representation authority.
 
-All 60 `GB-*` gaps remain `PENDING`. No conformance, interoperability,
-production, release, publication, or Protocol 1.0 claim exists.
+The D2-01A executable schema foundation is now integrated into main. Evidence:
+
+- PR: #29 — Add D2-01A executable schema foundation
+- reviewed branch head: `b34c4c250f0d03b96b58e7a84bf48b00dc299611`
+- verified GitHub merge commit: `69e535b37ad50699fdca320dfbfb165a937dc778`
+
+D2-01A established the foundation-level executable schema infrastructure,
+including versioned schemas, registry foundation, foundation fixtures,
+semantic-constraint inventory, and implementation-neutral validation tooling.
+D2-01A is a completed and integrated WORKFLOW SUB-SLICE only; it does not
+establish D2-01 completion.
+
+D2-01B is the next D2-01 implementation slice. D2-01B through D2-01F remain
+incomplete and not integrated. D2-02 through D2-05 remain incomplete. The final
+D2-01 requirement for evidence from two genuinely independent Draft 2020-12
+validators remains `SECOND_VALIDATOR_EVIDENCE_PENDING`.
+
+All 60 `GB-*` gaps remain `PENDING`. The candidate remains
+`ghostbridge/e1.r0-draft.1` and remains draft/prerelease.
+
+No claim exists of D2-01 completion; D2-02 through D2-05 completion;
+conformance; an independent second implementation; interoperability; external
+security review; Phase 15E completion; production readiness; publication;
+release; or a Protocol 1.0 declaration.
