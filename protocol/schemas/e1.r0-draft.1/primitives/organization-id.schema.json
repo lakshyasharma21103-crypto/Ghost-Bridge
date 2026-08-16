@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:3358b7cb-f988-4bf6-b812-970a3f3dcb13",
+  "title": "OrganizationId",
+  "description": "A case-sensitive opaque Organization identity. It is semantically distinct from WorkspaceId.",
+  "type": "string",
+  "minLength": 1,
+  "maxLength": 128,
+  "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._:-]{0,126}[A-Za-z0-9])?$"
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:daa8d590-3b33-4f46-a63a-7e7d87500e44",
+  "title": "ReceiptId",
+  "description": "A distinct Receipt operational identity. Possession is not authority.",
+  "$ref": "urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"
+}

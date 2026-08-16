@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:3a9255e0-dd70-4a71-848d-8cc3855d1ceb",
+  "title": "ResultId",
+  "description": "A distinct Result operational identity. Possession is not authority.",
+  "$ref": "urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"
+}

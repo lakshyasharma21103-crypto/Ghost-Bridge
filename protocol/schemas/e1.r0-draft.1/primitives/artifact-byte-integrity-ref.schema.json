@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3",
+  "title": "ArtifactByteIntegrityRef",
+  "description": "SHA-256 integrity over exact artifact bytes. This is not an H-10 semantic commitment or release signature.",
+  "type": "object",
+  "required": ["algorithm", "value", "byteLength"],
+  "properties": {
+    "algorithm": { "const": "sha-256" },
+    "value": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    },
+    "byteLength": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "additionalProperties": false
+}

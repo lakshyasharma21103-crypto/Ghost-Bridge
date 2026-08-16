@@ -1,0 +1,59 @@
+{
+  "registrySchema": "urn:uuid:927bbd7a-e229-440d-95f1-6ff0ebefe716",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "status": "draft-prerelease",
+  "registryClass": "release-owned-allocations",
+  "facets": [
+    {
+      "id": "gb.facet.host.core",
+      "revision": 1,
+      "allocationStatus": "allocated"
+    },
+    {
+      "id": "gb.facet.agent.core",
+      "revision": 1,
+      "allocationStatus": "allocated"
+    },
+    {
+      "id": "gb.facet.trust-verification.core",
+      "revision": 1,
+      "allocationStatus": "allocated"
+    },
+    {
+      "id": "gb.facet.host.governed-execution",
+      "revision": 1,
+      "allocationStatus": "allocated"
+    },
+    {
+      "id": "gb.facet.agent.governed-execution",
+      "revision": 1,
+      "allocationStatus": "allocated"
+    }
+  ],
+  "authenticationProfiles": [
+    {
+      "id": "gb.auth.signed-request-pop",
+      "revision": 1,
+      "eligibility": "pending-complete-profile-and-d2-evidence",
+      "eligible": false,
+      "productionDefault": false,
+      "productionFallback": false,
+      "securityBounds": {
+        "credentialMaximumValiditySeconds": 86400,
+        "requestProofLifetimeSeconds": 60,
+        "requestProofMaximumAgeSeconds": 60
+      }
+    },
+    {
+      "id": "gb.auth.none-test-fixture",
+      "revision": 1,
+      "eligibility": "permanently-non-production-test-fixture",
+      "eligible": false,
+      "productionDefault": false,
+      "productionFallback": false,
+      "productionConnectionAuthority": false
+    }
+  ],
+  "capabilityRegistryCreated": false,
+  "negotiationSemanticsOwnedByD1": true
+}

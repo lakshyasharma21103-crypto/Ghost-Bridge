@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:fcb537b3-67fc-4621-b25d-adf3fbbe81b5",
+  "title": "ParticipantCorrelationBytes",
+  "description": "Participant-owned bounded opaque correlation bytes. This is not authority, idempotency, operational identity, or a global uniqueness claim.",
+  "$ref": "urn:uuid:b360f786-e930-4969-820b-003efadbac6d"
+}

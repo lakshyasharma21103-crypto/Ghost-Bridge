@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:273a2223-ef07-4750-87a5-b81a34c66b97",
+  "title": "InvocationIdempotency",
+  "description": "The closed D2R-009 idempotency carrier. A separate stable InvocationId remains required by its owning object.",
+  "type": "object",
+  "required": ["idempotency"],
+  "properties": {
+    "idempotency": {
+      "type": "object",
+      "required": ["namespace", "key"],
+      "properties": {
+        "namespace": { "$ref": "urn:uuid:aa90be25-0d0c-403d-847e-a3b8295e0aed" },
+        "key": { "$ref": "urn:uuid:3868e676-6b8a-4692-b7d4-4e47ff5e88f4" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

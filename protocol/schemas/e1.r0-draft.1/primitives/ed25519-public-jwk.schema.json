@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:803b84c2-c480-40b7-ae73-21ee38e7c3d0",
+  "title": "Ed25519PublicJwk",
+  "description": "The closed H-10 three-member Ed25519 public JWK. Private and deployment-specific members are prohibited.",
+  "type": "object",
+  "required": ["crv", "kty", "x"],
+  "properties": {
+    "crv": { "const": "Ed25519" },
+    "kty": { "const": "OKP" },
+    "x": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    }
+  },
+  "additionalProperties": false
+}

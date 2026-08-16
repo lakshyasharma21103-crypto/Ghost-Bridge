@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:d2b355cb-7e39-423a-9a5c-7cbc9926ffa7",
+  "title": "TrustSequence",
+  "description": "Trust sequence integer; genesis is 1 and reset, wrap, clamp, and coercion are prohibited.",
+  "type": "integer",
+  "minimum": 1,
+  "maximum": 9007199254740991
+}

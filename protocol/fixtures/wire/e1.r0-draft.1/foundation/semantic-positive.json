@@ -1,0 +1,15 @@
+{
+  "fixtureSchema": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "semantic-positive",
+  "cases": [
+    { "id": "FX-TIMESTAMP-LEAP-DAY", "kind": "value", "targetSchema": "urn:uuid:691c8a94-3fe6-4a48-89d3-412600e1e2a4", "value": "2024-02-29T00:00:00.000Z", "structuralExpected": "pass", "semanticExpected": "pass", "semanticCheck": "canonical-timestamp" },
+    { "id": "FX-INTERVAL-CLOSED-CLOSED", "kind": "value", "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964", "value": { "kind": "interval", "lower": { "at": "2026-08-15T00:00:00.000Z", "inclusive": true }, "upper": { "at": "2026-08-16T00:00:00.000Z", "inclusive": true } }, "structuralExpected": "pass", "semanticExpected": "pass", "semanticCheck": "time-evidence" },
+    { "id": "FX-INTERVAL-OPEN-CLOSED", "kind": "value", "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964", "value": { "kind": "interval", "lower": { "at": "2026-08-15T00:00:00.000Z", "inclusive": false }, "upper": { "at": "2026-08-16T00:00:00.000Z", "inclusive": true } }, "structuralExpected": "pass", "semanticExpected": "pass", "semanticCheck": "time-evidence" },
+    { "id": "FX-INTERVAL-CLOSED-OPEN", "kind": "value", "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964", "value": { "kind": "interval", "lower": { "at": "2026-08-15T00:00:00.000Z", "inclusive": true }, "upper": { "at": "2026-08-16T00:00:00.000Z", "inclusive": false } }, "structuralExpected": "pass", "semanticExpected": "pass", "semanticCheck": "time-evidence" },
+    { "id": "FX-INTERVAL-OPEN-OPEN", "kind": "value", "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964", "value": { "kind": "interval", "lower": { "at": "2026-08-15T00:00:00.000Z", "inclusive": false }, "upper": { "at": "2026-08-16T00:00:00.000Z", "inclusive": false } }, "structuralExpected": "pass", "semanticExpected": "pass", "semanticCheck": "time-evidence" },
+    { "id": "FX-TENANT-EQUALITY-CASE", "kind": "equality", "targetSchema": "urn:uuid:3358b7cb-f988-4bf6-b812-970a3f3dcb13", "values": ["Org", "org"], "equalExpected": false, "semanticCheck": "tenant-exact-equality" },
+    { "id": "FX-TENANT-EQUALITY-PUNCTUATION", "kind": "equality", "targetSchema": "urn:uuid:3358b7cb-f988-4bf6-b812-970a3f3dcb13", "values": ["org-prod", "org_prod"], "equalExpected": false, "semanticCheck": "tenant-exact-equality" },
+    { "id": "FX-TENANT-EQUALITY-REPEATED-DOT", "kind": "equality", "targetSchema": "urn:uuid:3358b7cb-f988-4bf6-b812-970a3f3dcb13", "values": ["org..prod", "org.prod"], "equalExpected": false, "semanticCheck": "tenant-exact-equality" }
+  ]
+}

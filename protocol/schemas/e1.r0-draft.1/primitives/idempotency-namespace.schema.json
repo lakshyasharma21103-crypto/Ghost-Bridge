@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:aa90be25-0d0c-403d-847e-a3b8295e0aed",
+  "title": "IdempotencyNamespace",
+  "description": "A Host-owned 1 through 64-octet idempotency namespace, distinct from correlation and registry identity.",
+  "$ref": "urn:uuid:b360f786-e930-4969-820b-003efadbac6d"
+}

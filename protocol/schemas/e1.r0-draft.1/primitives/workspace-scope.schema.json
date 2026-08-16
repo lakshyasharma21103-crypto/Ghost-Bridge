@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:e157539f-0e4d-4193-af4b-021fa58881ea",
+  "title": "WorkspaceScope",
+  "description": "The closed tagged Workspace absent-or-present carrier.",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "const": "absent" }
+      }
+    },
+    {
+      "type": "object",
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "present" },
+        "value": { "$ref": "urn:uuid:a393228c-9b9d-4070-98ee-25e36ac34acb" }
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

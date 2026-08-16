@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:b360f786-e930-4969-820b-003efadbac6d",
+  "title": "CanonicalBase64url1To64Octets",
+  "description": "Shared representation helper for 1 through 64 decoded octets in canonical unpadded base64url.",
+  "type": "string",
+  "minLength": 2,
+  "maxLength": 86,
+  "pattern": "^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-][AQgw]|[A-Za-z0-9_-]{2}[AEIMQUYcgkosw048])?$"
+}

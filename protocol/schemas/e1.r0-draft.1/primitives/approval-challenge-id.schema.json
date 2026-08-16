@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:e27e6244-aabf-4d75-a79c-ea2b43cc8073",
+  "title": "ApprovalChallengeId",
+  "description": "A distinct Approval Challenge operational identity. Possession is not authority.",
+  "$ref": "urn:uuid:49bd1792-0f82-43d2-a218-27503453622a"
+}

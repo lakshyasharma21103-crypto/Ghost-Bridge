@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:3868e676-6b8a-4692-b7d4-4e47ff5e88f4",
+  "title": "IdempotencyKey",
+  "description": "A Host-owned 1 through 128-octet idempotency key, distinct from correlation and operational identity.",
+  "$ref": "urn:uuid:677407e9-d334-43e2-ae04-b196848eea99"
+}
