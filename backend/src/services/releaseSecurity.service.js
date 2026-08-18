@@ -12,6 +12,68 @@ const DOCUMENTED_FIXTURE_PATHS = Object.freeze([
   /(?:^|\/)(?:developerSandboxService|dataAccessPerformanceHarness\.service|dataAccessRegistry\.service)\.js$/i,
   /^gemini-(?:basic-request|basic-response|models-response)\.json$/i,
 ]);
+const MAX_SCANNED_FILE_BYTES = 2 * 1024 * 1024;
+// These exact fingerprints classify scanner input only. They are not protocol
+// authority and deliberately do not authorize future paths or structures.
+const FACET_PROPERTY_ARTIFACT_PATH =
+  'protocol/registries/e1.r0-draft.1/release-data/facet-property.registry.json';
+const RELEASE_DATA_SOURCE_PATH =
+  'protocol/schema-validation/release-data/e1.r0-draft.1.source.json';
+const FACET_PROPERTY_SCHEMA_ID = 'urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe';
+const FACET_PROPERTY_ARTIFACT_ID = 'urn:uuid:aef799c0-6fd3-4e3d-a0bd-c804e137661f';
+const RELEASE_DATA_SOURCE_SCHEMA_ID = 'urn:uuid:377b6b6b-2c73-4309-9df8-343057a56e41';
+const PROTOCOL_RELEASE = 'ghostbridge/e1.r0-draft.1';
+const FACET_PROPERTY_REGISTRY_CLASS = 'gb.registry.facet-property';
+const RELEASE_REGISTRY_TOKEN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
+const FACET_ARTIFACT_KEYS = Object.freeze([
+  'artifactSchema',
+  'protocolRelease',
+  'registryClass',
+  'facetPropertyArtifact',
+  'facets',
+  'failureCodes',
+  'invariantProperties',
+  'capabilityNarrowableProperties',
+  'classificationRules',
+  'releaseSelectionRoles',
+  'approvalRoleAssignments',
+  'taskRoleAssignments',
+  'receiptRoleAssignments',
+]);
+const INVARIANT_PROPERTY_KEYS = Object.freeze([
+  'token',
+  'revision',
+  'classification',
+  'facets',
+  'meaning',
+  'roles',
+  'failure',
+]);
+const NARROWABLE_PROPERTY_KEYS = Object.freeze([
+  'token',
+  'revision',
+  'classification',
+  'facets',
+  'meaning',
+  'applicableSources',
+  'capabilityLocalReason',
+  'noWidenNoWaiver',
+  'conflictFailure',
+]);
+const RECEIPT_NARROWABLE_PROPERTY_KEYS = Object.freeze([
+  ...NARROWABLE_PROPERTY_KEYS,
+  'values',
+  'optionalIsAlias',
+  'stricterRequirementSources',
+]);
+const FILE_SCAN_BLOCKERS = Object.freeze({
+  accessError: 'TRACKED_FILE_SCAN_ERROR',
+  changedDuringScan: 'TRACKED_FILE_CHANGED_DURING_SCAN',
+  oversize: 'TRACKED_FILE_SIZE_LIMIT_EXCEEDED',
+  pathOutsideRepository: 'TRACKED_FILE_PATH_OUTSIDE_REPOSITORY',
+  symlink: 'TRACKED_SYMBOLIC_LINK_BLOCKED',
+  unsupportedType: 'TRACKED_FILE_TYPE_UNSUPPORTED',
+});
 
 const DETECTORS = Object.freeze([
   {
@@ -57,6 +119,186 @@ function normalizePath(filePath) {
   return String(filePath || '').replaceAll('\\', '/').replace(/^\.\/+/, '');
 }
 
+function compareCodeUnits(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasExactKeys(value, expectedKeys) {
+  if (!isPlainObject(value)) return false;
+  const actual = Object.keys(value).sort(compareCodeUnits);
+  const expected = [...expectedKeys].sort(compareCodeUnits);
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isStringArray(value) {
+  return Array.isArray(value) && value.every(isNonEmptyString);
+}
+
+function isPublicRegistryToken(value) {
+  return (
+    typeof value === 'string' &&
+    value.length >= 1 &&
+    value.length <= 128 &&
+    RELEASE_REGISTRY_TOKEN.test(value)
+  );
+}
+
+function isInvariantPropertyRecord(value) {
+  return (
+    hasExactKeys(value, INVARIANT_PROPERTY_KEYS) &&
+    isPublicRegistryToken(value.token) &&
+    Number.isInteger(value.revision) &&
+    value.revision >= 1 &&
+    value.classification === 'invariant' &&
+    isStringArray(value.facets) &&
+    isNonEmptyString(value.meaning) &&
+    isNonEmptyString(value.roles) &&
+    isStringArray(value.failure)
+  );
+}
+
+function isNarrowablePropertyRecord(value) {
+  const exactShape =
+    hasExactKeys(value, NARROWABLE_PROPERTY_KEYS) ||
+    hasExactKeys(value, RECEIPT_NARROWABLE_PROPERTY_KEYS);
+  return (
+    exactShape &&
+    isPublicRegistryToken(value.token) &&
+    Number.isInteger(value.revision) &&
+    value.revision >= 1 &&
+    value.classification === 'capability-narrowable' &&
+    isStringArray(value.facets) &&
+    isNonEmptyString(value.meaning) &&
+    isStringArray(value.applicableSources) &&
+    isNonEmptyString(value.capabilityLocalReason) &&
+    isNonEmptyString(value.noWidenNoWaiver) &&
+    isNonEmptyString(value.conflictFailure) &&
+    (!Object.hasOwn(value, 'values') || isStringArray(value.values)) &&
+    (!Object.hasOwn(value, 'optionalIsAlias') || typeof value.optionalIsAlias === 'boolean') &&
+    (!Object.hasOwn(value, 'stricterRequirementSources') ||
+      isStringArray(value.stricterRequirementSources))
+  );
+}
+
+function facetPropertyTokens(value) {
+  if (
+    !hasExactKeys(value, FACET_ARTIFACT_KEYS) ||
+    value.artifactSchema !== FACET_PROPERTY_SCHEMA_ID ||
+    value.protocolRelease !== PROTOCOL_RELEASE ||
+    value.registryClass !== FACET_PROPERTY_REGISTRY_CLASS ||
+    value.facetPropertyArtifact !== FACET_PROPERTY_ARTIFACT_ID ||
+    !Array.isArray(value.facets) ||
+    !Array.isArray(value.failureCodes) ||
+    !Array.isArray(value.invariantProperties) ||
+    value.invariantProperties.length === 0 ||
+    !value.invariantProperties.every(isInvariantPropertyRecord) ||
+    !Array.isArray(value.capabilityNarrowableProperties) ||
+    value.capabilityNarrowableProperties.length === 0 ||
+    !value.capabilityNarrowableProperties.every(isNarrowablePropertyRecord) ||
+    !isPlainObject(value.classificationRules) ||
+    !isPlainObject(value.releaseSelectionRoles) ||
+    !isPlainObject(value.approvalRoleAssignments) ||
+    !isPlainObject(value.taskRoleAssignments) ||
+    !isPlainObject(value.receiptRoleAssignments)
+  ) {
+    return null;
+  }
+  const tokens = [
+    ...value.invariantProperties.map((record) => record.token),
+    ...value.capabilityNarrowableProperties.map((record) => record.token),
+  ];
+  return new Set(tokens).size === tokens.length ? tokens : null;
+}
+
+function tokensFromMaintainedSource(value) {
+  if (
+    !hasExactKeys(value, [
+      'sourceSchema',
+      'protocolRelease',
+      'status',
+      'serialization',
+      'artifacts',
+    ]) ||
+    value.sourceSchema !== RELEASE_DATA_SOURCE_SCHEMA_ID ||
+    value.protocolRelease !== PROTOCOL_RELEASE ||
+    value.status !== 'maintained-semantic-source' ||
+    !hasExactKeys(value.serialization, [
+      'encoding',
+      'bom',
+      'newline',
+      'indentSpaces',
+      'terminalNewline',
+    ]) ||
+    value.serialization.encoding !== 'UTF-8' ||
+    value.serialization.bom !== false ||
+    value.serialization.newline !== 'LF' ||
+    value.serialization.indentSpaces !== 2 ||
+    value.serialization.terminalNewline !== true ||
+    !Array.isArray(value.artifacts)
+  ) {
+    return null;
+  }
+  const candidates = value.artifacts.filter(
+    (descriptor) =>
+      descriptor?.path === FACET_PROPERTY_ARTIFACT_PATH ||
+      descriptor?.artifact?.registryClass === FACET_PROPERTY_REGISTRY_CLASS,
+  );
+  if (candidates.length !== 1) return null;
+  const descriptor = candidates[0];
+  if (
+    !hasExactKeys(descriptor, ['path', 'schemaId', 'identityField', 'artifact']) ||
+    descriptor.path !== FACET_PROPERTY_ARTIFACT_PATH ||
+    descriptor.schemaId !== FACET_PROPERTY_SCHEMA_ID ||
+    descriptor.identityField !== 'facetPropertyArtifact'
+  ) {
+    return null;
+  }
+  return facetPropertyTokens(descriptor.artifact);
+}
+
+function recognizedPublicProtocolIdentifierLines(content, filePath) {
+  const normalizedPath = normalizePath(filePath);
+  if (
+    normalizedPath !== FACET_PROPERTY_ARTIFACT_PATH &&
+    normalizedPath !== RELEASE_DATA_SOURCE_PATH
+  ) {
+    return new Set();
+  }
+  const text = String(content || '');
+  if (Buffer.byteLength(text, 'utf8') > MAX_SCANNED_FILE_BYTES) return new Set();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) return new Set();
+    throw error;
+  }
+  const tokens =
+    normalizedPath === FACET_PROPERTY_ARTIFACT_PATH
+      ? facetPropertyTokens(parsed)
+      : tokensFromMaintainedSource(parsed);
+  if (!tokens) return new Set();
+
+  const occurrences = new Map(tokens.map((token) => [token, []]));
+  text.split(/\r?\n/).forEach((line, index) => {
+    const match = line.match(/^\s*(?:\{\s*)?"token"\s*:\s*"([^"\\\r\n]+)"/);
+    if (match && occurrences.has(match[1])) occurrences.get(match[1]).push(index + 1);
+  });
+  if ([...occurrences.values()].some((lineNumbers) => lineNumbers.length !== 1)) {
+    return new Set();
+  }
+  return new Set([...occurrences.values()].map(([lineNumber]) => lineNumber));
+}
+
 function sensitiveVariableName(name) {
   const normalized = String(name || '').replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
   if (/(?:_VERSION|_TIMEOUT|_LIMIT|_COUNT|_MAX|_MIN|OUTPUT_TOKENS)$/.test(normalized)) {
@@ -73,7 +315,7 @@ function safeAssignmentFinding(line, filePath) {
   const match = environmentFile
     ? line.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]{2,127})\s*=\s*(.*)$/)
     : line.match(
-        /^\s*(?:const|let|var)?\s*["']?([A-Za-z][A-Za-z0-9_]*)["']?\s*[:=]\s*["'`]([^"'`]{16,})["'`]/,
+        /^\s*(?:\{\s*)?(?:const|let|var)?\s*["']?([A-Za-z][A-Za-z0-9_]*)["']?\s*[:=]\s*["'`]([^"'`]{16,})["'`]/,
       );
   if (!match || !sensitiveVariableName(match[1])) return null;
   const value = match[2].trim();
@@ -96,9 +338,22 @@ function safeAssignmentFinding(line, filePath) {
         : 'SECRET_ASSIGNMENT';
 }
 
+function safeFinding(detector, filePath, lineNumber) {
+  return Object.freeze({
+    detector,
+    filePath: normalizePath(filePath),
+    lineNumber,
+    redacted: `<redacted:${detector}>`,
+  });
+}
+
 function scanText(content, filePath = '<memory>') {
   const findings = [];
-  const lines = String(content || '').split(/\r?\n/);
+  const text = String(content || '');
+  const lines = text.split(/\r?\n/);
+
+  // Strong credential-content detection is deliberately independent of any
+  // public-identifier classification and always runs first.
   lines.forEach((line, index) => {
     for (const detector of DETECTORS) {
       if (!detector.pattern.test(line)) continue;
@@ -108,25 +363,25 @@ function scanText(content, filePath = '<memory>') {
       ) {
         continue;
       }
-      findings.push({
-        detector: detector.name,
-        filePath: normalizePath(filePath),
-        lineNumber: index + 1,
-        redacted: `<redacted:${detector.name}>`,
-      });
+      findings.push(safeFinding(detector.name, filePath, index + 1));
     }
+  });
+
+  // Classification can suppress only the generic token-name assignment
+  // heuristic. Invalid path, structure, JSON, value shape, or line mapping
+  // produces an empty set and therefore reverts to ordinary scanning.
+  const publicIdentifierLines = recognizedPublicProtocolIdentifierLines(text, filePath);
+  lines.forEach((line, index) => {
     const assignmentDetector = safeAssignmentFinding(line, filePath);
+    const publicProtocolIdentifier =
+      assignmentDetector === 'RUNTIME_TOKEN_ASSIGNMENT' && publicIdentifierLines.has(index + 1);
     if (
       assignmentDetector &&
+      !publicProtocolIdentifier &&
       !line.includes(`release-secret-scanner: allow ${assignmentDetector}`) &&
       !line.includes('release-secret-scanner: fixture')
     ) {
-      findings.push({
-        detector: assignmentDetector,
-        filePath: normalizePath(filePath),
-        lineNumber: index + 1,
-        redacted: `<redacted:${assignmentDetector}>`,
-      });
+      findings.push(safeFinding(assignmentDetector, filePath, index + 1));
     }
   });
   return findings;
@@ -143,7 +398,7 @@ function gitTrackedFiles(repositoryRoot) {
     .split('\0')
     .map(normalizePath)
     .filter(Boolean)
-    .sort((left, right) => left.localeCompare(right));
+    .sort(compareCodeUnits);
 }
 
 function isScannableTrackedPath(relativePath) {
@@ -157,25 +412,107 @@ function isScannableTrackedPath(relativePath) {
   );
 }
 
+function sameFileIdentity(beforeOpen, afterOpen) {
+  return (
+    afterOpen.isFile() &&
+    beforeOpen.dev === afterOpen.dev &&
+    beforeOpen.ino === afterOpen.ino
+  );
+}
+
+function readBoundedFile(fileSystem, descriptor) {
+  const bytes = Buffer.allocUnsafe(MAX_SCANNED_FILE_BYTES + 1);
+  let byteLength = 0;
+  while (byteLength < bytes.length) {
+    const readLength = fileSystem.readSync(
+      descriptor,
+      bytes,
+      byteLength,
+      bytes.length - byteLength,
+      null,
+    );
+    if (!Number.isInteger(readLength) || readLength < 0) {
+      throw new Error('Invalid bounded file-read result');
+    }
+    if (readLength === 0) break;
+    byteLength += readLength;
+  }
+  if (byteLength > MAX_SCANNED_FILE_BYTES) return { blocker: FILE_SCAN_BLOCKERS.oversize };
+  return { content: bytes.subarray(0, byteLength).toString('utf8') };
+}
+
+function inspectTrackedFile(absolutePath, fileSystem) {
+  let entry;
+  try {
+    entry = fileSystem.lstatSync(absolutePath);
+  } catch {
+    return { blocker: FILE_SCAN_BLOCKERS.accessError };
+  }
+  if (entry.isSymbolicLink()) return { blocker: FILE_SCAN_BLOCKERS.symlink };
+  if (!entry.isFile()) return { blocker: FILE_SCAN_BLOCKERS.unsupportedType };
+  if (entry.size > MAX_SCANNED_FILE_BYTES) return { blocker: FILE_SCAN_BLOCKERS.oversize };
+
+  let descriptor;
+  let inspection;
+  try {
+    const noFollow =
+      typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0;
+    descriptor = fileSystem.openSync(absolutePath, fs.constants.O_RDONLY | noFollow);
+    const openedEntry = fileSystem.fstatSync(descriptor);
+    if (!sameFileIdentity(entry, openedEntry)) {
+      inspection = { blocker: FILE_SCAN_BLOCKERS.changedDuringScan };
+    } else if (openedEntry.size > MAX_SCANNED_FILE_BYTES) {
+      inspection = { blocker: FILE_SCAN_BLOCKERS.oversize };
+    } else {
+      inspection = readBoundedFile(fileSystem, descriptor);
+    }
+  } catch {
+    inspection = { blocker: FILE_SCAN_BLOCKERS.accessError };
+  }
+  if (descriptor !== undefined) {
+    try {
+      fileSystem.closeSync(descriptor);
+    } catch {
+      inspection = { blocker: FILE_SCAN_BLOCKERS.accessError };
+    }
+  }
+  return inspection || { blocker: FILE_SCAN_BLOCKERS.accessError };
+}
+
 function scanTrackedFiles(repositoryRoot, options = {}) {
+  const fileSystem = options.fileSystem || fs;
   const candidates = (options.files || gitTrackedFiles(repositoryRoot))
     .map(normalizePath)
-    .filter(isScannableTrackedPath);
+    .filter(isScannableTrackedPath)
+    .sort(compareCodeUnits);
   const fixtureFiles = candidates.filter((file) =>
     DOCUMENTED_FIXTURE_PATHS.some((pattern) => pattern.test(file)),
   );
   const files = candidates.filter((file) => !fixtureFiles.includes(file));
   const findings = [];
+  let scannedFileCount = 0;
+  let blockedFileCount = 0;
   for (const relativePath of files) {
     const absolutePath = path.resolve(repositoryRoot, relativePath);
-    if (!absolutePath.startsWith(path.resolve(repositoryRoot) + path.sep)) continue;
-    const stat = fs.statSync(absolutePath);
-    if (stat.size > 2 * 1024 * 1024) continue;
-    findings.push(...scanText(fs.readFileSync(absolutePath, 'utf8'), relativePath));
+    if (!absolutePath.startsWith(path.resolve(repositoryRoot) + path.sep)) {
+      findings.push(safeFinding(FILE_SCAN_BLOCKERS.pathOutsideRepository, relativePath, null));
+      blockedFileCount += 1;
+      continue;
+    }
+    const inspection = inspectTrackedFile(absolutePath, fileSystem);
+    if (inspection.blocker) {
+      findings.push(safeFinding(inspection.blocker, relativePath, null));
+      blockedFileCount += 1;
+      continue;
+    }
+    findings.push(...scanText(inspection.content, relativePath));
+    scannedFileCount += 1;
   }
   return Object.freeze({
     passed: findings.length === 0,
-    scannedFileCount: files.length,
+    candidateFileCount: files.length,
+    scannedFileCount,
+    blockedFileCount,
     documentedFixtureFileCount: fixtureFiles.length,
     findings: Object.freeze(findings),
     historyScanned: false,

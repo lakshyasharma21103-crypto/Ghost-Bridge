@@ -11,6 +11,17 @@ const { permissionsForBuiltInRole } = require('../constants/builtInRoles');
 
 const repositoryRoot = path.resolve(__dirname, '../../..');
 
+function safeScannerDiagnostic(findings) {
+  return JSON.stringify(
+    findings.map(({ detector, filePath, lineNumber }) => ({
+      detector,
+      filePath,
+      lineNumber,
+      redacted: `<redacted:${detector}>`,
+    })),
+  );
+}
+
 test('production validation returns stable safe codes without values', () => {
   const result = core.validateStartupConfiguration({
     NODE_ENV: 'production',
@@ -40,7 +51,11 @@ test('repository environment hygiene and tracked scanner pass', () => {
   assert.equal(security.validateEnvironmentExamples(repositoryRoot).passed, true);
   assert.equal(security.validateGitignore(repositoryRoot).passed, true);
   const scan = security.scanTrackedFiles(repositoryRoot);
-  assert.equal(scan.passed, true);
+  assert.equal(
+    scan.passed,
+    true,
+    `Tracked scanner findings: ${safeScannerDiagnostic(scan.findings)}`,
+  );
   assert.equal(scan.historyScanned, false);
 });
 
