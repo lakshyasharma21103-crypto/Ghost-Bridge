@@ -43,7 +43,8 @@ function main() {
   const validatorsBySchema = new Map([...foundation.schemaIds].map((schemaId) => [schemaId, ajv.getSchema(schemaId)]));
   const releaseBundle = loadReleaseDataFiles(repositoryRoot);
   const validateManifest = validatorsBySchema.get(RELEASE_MANIFEST_SCHEMA_ID);
-  const releaseData = validateReleaseDataBundle({ bundle: releaseBundle, validateManifest, validatorsBySchema });
+  const conformanceLock = loadReleaseDataConformanceLock(repositoryRoot);
+  const releaseData = validateReleaseDataBundle({ bundle: releaseBundle, validateManifest, validatorsBySchema, conformanceLock });
   const loadedAssets = loadManifestAssets({ repositoryRoot, manifest: foundation.manifest, schemaIds: foundation.schemaIds });
   validateAssetSchemas({ ajv, manifest: foundation.manifest, assets: loadedAssets.assets });
 
@@ -51,7 +52,6 @@ function main() {
   const validateSource = validatorsBySchema.get(RELEASE_SOURCE_SCHEMA_ID);
   if (typeof validateSource !== "function" || !validateSource(source)) fail(`Maintained release-data source failed structural validation: ${ajv.errorsText(validateSource?.errors)}`);
   const generated = generateReleaseData(source);
-  const conformanceLock = loadReleaseDataConformanceLock(repositoryRoot);
   const conformanceLockResult = verifyReleaseDataConformanceLock(conformanceLock, source);
   verifyArtifactsAgainstConformanceLock(conformanceLock, releaseData.artifactsByClass);
   const reproduction = checkGeneratedReleaseData(generated, repositoryRoot);

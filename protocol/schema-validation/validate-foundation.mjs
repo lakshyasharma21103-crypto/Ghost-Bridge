@@ -6,7 +6,7 @@ import { assertAllDeclaredPathsProcessed, loadFoundationBundle, loadManifestAsse
 import { errorMessage, fail } from "./lib/errors.mjs";
 import { runFoundationFixtures } from "./lib/fixture-runner.mjs";
 import { loadAuthorityIndex, verifyBundleProvenance } from "./lib/provenance.mjs";
-import { loadReleaseDataFiles, validateReleaseDataBundle } from "./lib/release-data-loader.mjs";
+import { loadReleaseDataFiles, validateReleaseDataBundleFoundationRegression } from "./lib/release-data-loader.mjs";
 import { assertValidatorImportIsolation, createOfflineSchemaValidator, scanBundleSchemaSafety, validateAssetSchemas } from "./lib/schema-safety.mjs";
 import { runRawJsonParserSelfTests, runSeededValidatorSelfTests } from "./lib/self-tests.mjs";
 import { assertSemanticCheckDeclarations } from "./lib/semantic-checks.mjs";
@@ -42,7 +42,7 @@ function main() {
   const validateRegistry = ajv.getSchema(releaseManifestEntry.schemaId);
   const validatorsBySchema = new Map(bundle.schemaIds.values().map((schemaId) => [schemaId, ajv.getSchema(schemaId)]));
   const releaseDataBundle = loadReleaseDataFiles(repositoryRoot);
-  const releaseData = validateReleaseDataBundle({
+  const releaseData = validateReleaseDataBundleFoundationRegression({
     bundle: releaseDataBundle,
     validateManifest: validateRegistry,
     validatorsBySchema,

@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadFoundationBundle } from "./lib/bundle-loader.mjs";
+import { loadFoundationBundle, loadManifestAssets } from "./lib/bundle-loader.mjs";
 import { fail, releaseDataFail } from "./lib/errors.mjs";
 import { parseJsonSource, decodeStrictUtf8 } from "./lib/json-source.mjs";
 import { assertCanonicalPosixRelativePath, resolveRepositoryFilesystemPath } from "./lib/path-policy.mjs";
@@ -33,12 +33,14 @@ import {
   verifyReleaseDataConformanceLock,
 } from "./lib/release-data-conformance-lock.mjs";
 import { loadReleaseDataFiles, validateReleaseDataBundle } from "./lib/release-data-loader.mjs";
+import { verifyReleaseDataConstraintCoverage } from "./lib/release-data-constraint-coverage.mjs";
 import { createOfflineSchemaValidator } from "./lib/schema-safety.mjs";
 import { canonicalBase64url, sha256Base64url } from "./lib/semantic-checks.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptPath), "../..");
 const PREFLIGHT_TOKEN = Symbol("release-data-generation-preflight");
+const preflightRecords = new WeakMap();
 
 const validationPaths = Object.freeze({
   manifest: "protocol/schemas/e1.r0-draft.1/foundation-manifest.json",
@@ -128,7 +130,9 @@ export function loadReleaseDataGenerationContext(root = repositoryRoot) {
   });
   const { ajv } = createOfflineSchemaValidator(foundation.schemas);
   const validatorsBySchema = new Map([...foundation.schemaIds].map((schemaId) => [schemaId, ajv.getSchema(schemaId)]));
-  return { ajv, validatorsBySchema, validateManifest: validatorsBySchema.get(RELEASE_MANIFEST_SCHEMA_ID) };
+  const loadedAssets = loadManifestAssets({ repositoryRoot: root, manifest: foundation.manifest, schemaIds: foundation.schemaIds });
+  const inventory = loadedAssets.assets.get(foundation.manifest.semanticConstraintInventory.path);
+  return { ajv, validatorsBySchema, validateManifest: validatorsBySchema.get(RELEASE_MANIFEST_SCHEMA_ID), inventory };
 }
 
 function generatedBundle(generated) {
@@ -139,12 +143,59 @@ function generatedBundle(generated) {
   };
 }
 
-export function preflightReleaseDataGeneration({
-  root = repositoryRoot,
-  source = loadMaintainedSource(root),
-  conformanceLock = loadReleaseDataConformanceLock(root),
-  validationContext = loadReleaseDataGenerationContext(root),
-} = {}) {
+function cloneGeneratedCandidate(generated) {
+  return {
+    manifest: structuredClone(generated.manifest),
+    manifestBytes: Buffer.from(generated.manifestBytes),
+    artifactBytes: new Map([...generated.artifactBytes].map(([relativePath, bytes]) => [relativePath, Buffer.from(bytes)])),
+  };
+}
+
+function generatedCandidateFingerprint(generated) {
+  if (!generated || !Buffer.isBuffer(generated.manifestBytes) || !(generated.artifactBytes instanceof Map)) {
+    releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, "Prevalidated generated candidate has an invalid representation");
+  }
+  const artifacts = [...generated.artifactBytes]
+    .map(([relativePath, bytes]) => {
+      if (typeof relativePath !== "string" || !Buffer.isBuffer(bytes)) releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, "Prevalidated generated artifact bytes are invalid");
+      return { relativePath, sha256: sha256Base64url(bytes), byteLength: bytes.byteLength };
+    })
+    .toSorted((left, right) => (left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0));
+  const projection = {
+    manifestObjectSha256: sha256Base64url(serializeGeneratedJson(generated.manifest)),
+    manifestBytesSha256: sha256Base64url(generated.manifestBytes),
+    manifestByteLength: generated.manifestBytes.byteLength,
+    artifacts,
+  };
+  return sha256Base64url(serializeGeneratedJson(projection));
+}
+
+function requireUnchangedPreflight(preflight) {
+  const record = preflightRecords.get(preflight);
+  if (preflight?.[PREFLIGHT_TOKEN] !== true || !record) {
+    releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, "Generated release-data output was not produced by the complete preflight");
+  }
+  let currentFingerprint;
+  try {
+    currentFingerprint = generatedCandidateFingerprint(preflight.generated);
+  } catch (error) {
+    if (error?.code === DIAGNOSTICS.GENERATOR_PREFLIGHT) throw error;
+    releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, "Prevalidated generated candidate became unreadable after preflight", { cause: error });
+  }
+  if (currentFingerprint !== record.fingerprint) {
+    releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, "Prevalidated generated candidate changed after validation");
+  }
+  return record;
+}
+
+export function preflightReleaseDataGeneration(options = {}) {
+  const root = options.root === undefined ? repositoryRoot : options.root;
+  const sourceWasProvided = options.source !== undefined;
+  const conformanceLockWasProvided = options.conformanceLock !== undefined;
+  const validationContextWasProvided = options.validationContext !== undefined;
+  const source = sourceWasProvided ? options.source : loadMaintainedSource(root);
+  const conformanceLock = conformanceLockWasProvided ? options.conformanceLock : loadReleaseDataConformanceLock(root);
+  const validationContext = validationContextWasProvided ? options.validationContext : loadReleaseDataGenerationContext(root);
   const validateSource = validationContext.validatorsBySchema.get(RELEASE_SOURCE_SCHEMA_ID);
   if (typeof validateSource !== "function" || !validateSource(source)) {
     releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, `Maintained release-data source failed structural validation: ${validationContext.ajv.errorsText(validateSource?.errors)}`);
@@ -154,18 +205,34 @@ export function preflightReleaseDataGeneration({
     bundle: generatedBundle(generated),
     validateManifest: validationContext.validateManifest,
     validatorsBySchema: validationContext.validatorsBySchema,
+    conformanceLock,
   });
   const lockResult = verifyReleaseDataConformanceLock(conformanceLock, source);
   verifyArtifactsAgainstConformanceLock(conformanceLock, candidateResult.artifactsByClass);
-  return Object.freeze({
+  const constraintCoverage = verifyReleaseDataConstraintCoverage(validationContext.inventory, candidateResult.executedSemanticCheckIds);
+  const publicPreflight = Object.freeze({
     [PREFLIGHT_TOKEN]: true,
     generated,
-    source,
-    conformanceLock,
-    validationContext,
-    candidateResult,
-    lockResult,
+    candidateFingerprint: generatedCandidateFingerprint(generated),
+    artifactCount: candidateResult.artifactsByClass.size,
+    executedSemanticCheckCount: constraintCoverage.executedCheckerCount,
   });
+  preflightRecords.set(publicPreflight, Object.freeze({
+    fingerprint: publicPreflight.candidateFingerprint,
+    candidate: cloneGeneratedCandidate(generated),
+    source: structuredClone(source),
+    conformanceLock: structuredClone(conformanceLock),
+    validationContext,
+    lockResult,
+    constraintCoverage,
+    freshPreflightInputs: Object.freeze({
+      root,
+      ...(sourceWasProvided ? { source: structuredClone(source) } : {}),
+      ...(conformanceLockWasProvided ? { conformanceLock: structuredClone(conformanceLock) } : {}),
+      ...(validationContextWasProvided ? { validationContext } : {}),
+    }),
+  }));
+  return publicPreflight;
 }
 
 export function validateEstablishedReleaseForWrite({ generated, currentBundle, validateManifest }) {
@@ -177,7 +244,20 @@ export function validateEstablishedReleaseForWrite({ generated, currentBundle, v
   if (!Array.isArray(entries) || entries.length !== REGISTRY_DEFINITIONS.length) {
     releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, "Current release-data manifest is not the exact established seven-entry set");
   }
+  const currentManifestBytes = currentBundle?.manifestRecord?.bytes;
+  if (!Buffer.isBuffer(currentManifestBytes)) releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, "Current release-data manifest bytes are unavailable");
+  let parsedCurrentManifest;
+  try {
+    parsedCurrentManifest = parseJsonSource(decodeStrictUtf8(currentManifestBytes, RELEASE_MANIFEST_PATH), RELEASE_MANIFEST_PATH);
+  } catch (error) {
+    releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, "Current release-data manifest bytes cannot be parsed exactly", { cause: error });
+  }
+  if (JSON.stringify(parsedCurrentManifest) !== JSON.stringify(manifest)) {
+    releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, "Current release-data manifest object does not match the validated manifest bytes");
+  }
   assertExactStrings(entries.map((item) => item?.registryClass), REGISTRY_CLASS_SET, "Current release-data manifest class set");
+
+  const validatedCurrentBytes = new Map([[RELEASE_MANIFEST_PATH, Buffer.from(currentManifestBytes)]]);
 
   for (const definition of REGISTRY_DEFINITIONS) {
     const matches = entries.filter((item) => item.registryClass === definition.registryClass);
@@ -190,6 +270,7 @@ export function validateEstablishedReleaseForWrite({ generated, currentBundle, v
     }
     const record = currentBundle.artifactRecords.get(definition.path);
     if (!Buffer.isBuffer(record?.bytes)) releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Current artifact is missing: ${definition.path}`);
+    validatedCurrentBytes.set(definition.path, Buffer.from(record.bytes));
     const integrity = currentEntry.artifactByteIntegrity;
     if (integrity?.algorithm !== "sha-256" || !canonicalBase64url(integrity.value, 32, 32) || integrity.byteLength !== record.bytes.byteLength || sha256Base64url(record.bytes) !== integrity.value) {
       releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Current artifact integrity does not match its manifest reference: ${definition.registryClass}`);
@@ -213,7 +294,7 @@ export function validateEstablishedReleaseForWrite({ generated, currentBundle, v
       releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Changed artifact bytes require a new immutable typed identity: ${definition.registryClass}`);
     }
   }
-  return { artifactCount: REGISTRY_DEFINITIONS.length };
+  return { artifactCount: REGISTRY_DEFINITIONS.length, validatedCurrentBytes };
 }
 
 function stagedOutputs(generated) {
@@ -223,23 +304,48 @@ function stagedOutputs(generated) {
   ];
 }
 
-function replaceGeneratedOutputs(generated, root = repositoryRoot, { beforeReplace } = {}) {
+function restoreReplacedOutputs(replacements) {
+  const recoveryFailures = [];
+  for (const item of replacements) {
+    if (item.replaced) {
+      try {
+        const current = readFileSync(item.target);
+        if (current.equals(item.candidate)) writeFileSync(item.target, item.original);
+        else recoveryFailures.push(`${item.relativePath}: target changed after replacement and was not overwritten during recovery`);
+      } catch (error) {
+        recoveryFailures.push(`${item.relativePath}: ${String(error)}`);
+      }
+    }
+    rmSync(item.staged, { force: true });
+  }
+  return recoveryFailures;
+}
+
+function replaceGeneratedOutputs(generated, validatedCurrentBytes, root = repositoryRoot, { beforeReplace } = {}) {
   const replacements = [];
   try {
     for (const [relativePath, bytes] of stagedOutputs(generated)) {
       if (!Buffer.isBuffer(bytes)) releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, `Generated output is missing: ${relativePath}`);
+      const validatedCurrent = validatedCurrentBytes.get(relativePath);
+      if (!Buffer.isBuffer(validatedCurrent)) releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Validated current bytes are missing: ${relativePath}`);
       const target = resolveRepositoryFilesystemPath(root, relativePath, "file", "generated output path");
-      const original = readFileSync(target);
+      const currentAtStaging = readFileSync(target);
+      if (!currentAtStaging.equals(validatedCurrent)) releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Established target changed after validation: ${relativePath}`);
       const originalMode = statSync(target).mode & 0o777;
       const staged = `${target}.rda-stage-${process.pid}-${randomUUID()}`;
-      const descriptor = openSync(staged, "wx", originalMode);
       try {
-        writeFileSync(descriptor, bytes);
-        fsyncSync(descriptor);
-      } finally {
-        closeSync(descriptor);
+        const descriptor = openSync(staged, "wx", originalMode);
+        try {
+          writeFileSync(descriptor, bytes);
+          fsyncSync(descriptor);
+        } finally {
+          closeSync(descriptor);
+        }
+      } catch (error) {
+        rmSync(staged, { force: true });
+        throw error;
       }
-      replacements.push({ relativePath, target, staged, original });
+      replacements.push({ relativePath, target, staged, original: Buffer.from(validatedCurrent), candidate: Buffer.from(bytes), replaced: false });
     }
   } catch (error) {
     for (const item of replacements) rmSync(item.staged, { force: true });
@@ -249,37 +355,48 @@ function replaceGeneratedOutputs(generated, root = repositoryRoot, { beforeRepla
   try {
     for (let index = 0; index < replacements.length; index += 1) {
       beforeReplace?.(replacements[index].relativePath, index);
+      const currentBeforeReplace = readFileSync(replacements[index].target);
+      if (!currentBeforeReplace.equals(replacements[index].original)) {
+        releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Established target changed between validation and replacement: ${replacements[index].relativePath}`);
+      }
       renameSync(replacements[index].staged, replacements[index].target);
+      replacements[index].replaced = true;
     }
   } catch (error) {
-    const rollbackFailures = [];
-    for (const item of replacements) {
-      try {
-        writeFileSync(item.target, item.original);
-      } catch (rollbackError) {
-        rollbackFailures.push(`${item.relativePath}: ${String(rollbackError)}`);
-      }
-      rmSync(item.staged, { force: true });
-    }
-    releaseDataFail(DIAGNOSTICS.GENERATOR_REPLACEMENT, `Generated-output replacement failed and originals were restored${rollbackFailures.length === 0 ? "" : `; rollback failures=${JSON.stringify(rollbackFailures)}`}`, { cause: error });
+    const recoveryFailures = restoreReplacedOutputs(replacements);
+    releaseDataFail(DIAGNOSTICS.GENERATOR_REPLACEMENT, `Generated-output replacement failed; safely restorable prior outputs were restored${recoveryFailures.length === 0 ? "" : `; recovery limits=${JSON.stringify(recoveryFailures)}`}`, { cause: error });
   }
-  return { writtenFiles: replacements.length };
+  return { writtenFiles: replacements.length, replacements };
 }
 
-export function writeGeneratedReleaseData(preflight, root = repositoryRoot, options = undefined) {
-  if (preflight?.[PREFLIGHT_TOKEN] !== true) releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, "Generated release-data output was not produced by the complete preflight");
+export function writeGeneratedReleaseData(preflight, root = repositoryRoot, options = {}) {
+  const initialRecord = requireUnchangedPreflight(preflight);
+  const freshPreflight = preflightReleaseDataGeneration(initialRecord.freshPreflightInputs);
+  const freshRecord = requireUnchangedPreflight(freshPreflight);
+  if (freshRecord.fingerprint !== initialRecord.fingerprint) {
+    releaseDataFail(DIAGNOSTICS.GENERATOR_PREFLIGHT, "Fresh write-time preflight does not match the previously reviewed candidate");
+  }
+  const candidate = freshRecord.candidate;
   let currentBundle;
   try {
     currentBundle = loadReleaseDataFiles(root);
   } catch (error) {
     releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, "Established release-data manifest or artifact set could not be loaded exactly; implicit bootstrap is prohibited", { cause: error });
   }
-  validateEstablishedReleaseForWrite({
-    generated: preflight.generated,
+  const establishedState = validateEstablishedReleaseForWrite({
+    generated: candidate,
     currentBundle,
-    validateManifest: preflight.validationContext.validateManifest,
+    validateManifest: freshRecord.validationContext.validateManifest,
   });
-  return replaceGeneratedOutputs(preflight.generated, root, options);
+  const replacement = replaceGeneratedOutputs(candidate, establishedState.validatedCurrentBytes, root, options);
+  try {
+    options.beforeFinalVerification?.();
+    const finalVerification = verifyFinalWrittenState(candidate, freshRecord, root);
+    return { writtenFiles: replacement.writtenFiles, finalVerification };
+  } catch (error) {
+    const recoveryFailures = restoreReplacedOutputs(replacement.replacements);
+    releaseDataFail(DIAGNOSTICS.GENERATOR_REPLACEMENT, `Post-replacement validation failed; safely restorable prior outputs were restored${recoveryFailures.length === 0 ? "" : `; recovery limits=${JSON.stringify(recoveryFailures)}`}`, { cause: error });
+  }
 }
 
 export function checkGeneratedReleaseData(generated, root = repositoryRoot) {
@@ -290,6 +407,25 @@ export function checkGeneratedReleaseData(generated, root = repositoryRoot) {
   }
   if (mismatches.length > 0) fail(`Generated release-data assets are stale: ${JSON.stringify(mismatches.toSorted())}`);
   return { checkedFiles: 1 + generated.artifactBytes.size };
+}
+
+function verifyFinalWrittenState(candidate, preflightRecord, root) {
+  const finalBundle = loadReleaseDataFiles(root);
+  const finalResult = validateReleaseDataBundle({
+    bundle: finalBundle,
+    validateManifest: preflightRecord.validationContext.validateManifest,
+    validatorsBySchema: preflightRecord.validationContext.validatorsBySchema,
+    conformanceLock: preflightRecord.conformanceLock,
+  });
+  const coverage = verifyReleaseDataConstraintCoverage(preflightRecord.validationContext.inventory, finalResult.executedSemanticCheckIds);
+  verifyReleaseDataConformanceLock(preflightRecord.conformanceLock, preflightRecord.source);
+  verifyArtifactsAgainstConformanceLock(preflightRecord.conformanceLock, finalResult.artifactsByClass);
+  const reproduction = checkGeneratedReleaseData(candidate, root);
+  return {
+    artifactCount: finalResult.artifactsByClass.size,
+    executedSemanticCheckCount: coverage.executedCheckerCount,
+    reproducedFileCount: reproduction.checkedFiles,
+  };
 }
 
 function main() {

@@ -66,16 +66,26 @@ node protocol/schema-validation/generate-release-data.mjs --check
 ```
 
 Before `--write` changes any established file, it strict-reads and structurally
-validates the maintained source, executes all seven-artifact semantic checkers,
-verifies the independent conformance lock, and validates the complete generated
-candidate in memory. It then requires the current manifest's exact seven-entry
-set, every current file and typed identity, and exact current manifest hashes and
-lengths. Missing or malformed current state has no bootstrap fallback. All eight
-outputs are staged before replacement. A replacement error triggers bounded
-restoration from the pre-read established bytes; the deterministic self-tests
-inject such an error and verify restoration. Portable filesystems cannot provide
-one atomic rename across eight paths, so a rollback failure is reported as a
-hard generator error requiring repository recovery before reuse.
+validates the maintained source, executes the complete registered semantic
+checker inventory, verifies the independent conformance lock, and validates the
+complete generated candidate in memory. The write path repeats that preflight,
+requires its private candidate fingerprint to match the previously reviewed
+candidate, and writes only from the private fresh snapshot. Mutating a returned
+preflight object therefore cannot alter the bytes selected for writing.
+
+The writer then requires the current manifest's exact seven-entry set, every
+current file and typed identity, and exact current manifest hashes and lengths.
+Missing or malformed current state has no bootstrap fallback. It captures the
+exact validated bytes, stages all seven artifacts followed by the manifest, and
+rechecks each target against the captured bytes immediately before replacement.
+Concurrent changes fail closed and are not overwritten during bounded recovery.
+After all eight replacements, the writer reloads the on-disk set and repeats
+class-set, integrity, structure, semantic-checker, conformance-lock, and exact
+reproduction verification before reporting success. Deterministic self-tests
+cover replacement races, post-write verification failure, and safe restoration.
+Portable filesystems cannot provide one atomic rename across eight paths, so any
+unrestorable concurrent state is reported as a hard generator error requiring
+repository recovery before reuse.
 
 The manifest requires exactly one artifact for each accepted class. Typed UUID
 identity, class, exact release, artifact schema, immutable POSIX-relative path,
@@ -84,9 +94,14 @@ bytes are decoded or parsed. Only after all seven pass integrity, strict JSON,
 structural schema, and semantic checks does the set load atomically.
 
 Release-data semantic constraints are registered as named executable checker
-functions. Validation records the checkers that actually returned successfully
-and requires the registered and executed ID sets to equal the inventory ID set
-exactly; missing, disabled, duplicate, unmapped, and undeclared checkers reject.
+functions. Every registered D2-01B checker enforces its invariant and the exact
+conformance-lock projection for the artifact classes it owns. Full semantic and
+bundle validation require lock evidence. The foundation validator instead uses
+an explicitly named D2-01A regression-only invariant path and does not report
+D2-01B checker execution. D2-01B validation records the checkers that actually
+returned successfully and requires the registered and executed ID sets to equal
+the inventory ID set exactly; missing, disabled, duplicate, unmapped, and
+undeclared checkers reject.
 
 The release-data corpus is dispatch-routed from
 `protocol/fixtures/wire/e1.r0-draft.1/release-data/corpus.json`. Every case has

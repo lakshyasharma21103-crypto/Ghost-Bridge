@@ -71,18 +71,26 @@ export function verifyArtifactsAgainstConformanceLock(lock, artifactsByClass) {
   if (!(artifactsByClass instanceof Map)) failLock("Artifact conformance input is not a class map");
   if (!Array.isArray(lock?.artifacts) || lock.artifacts.length !== REGISTRY_DEFINITIONS.length) failLock("Conformance lock artifact set is malformed");
   for (const definition of REGISTRY_DEFINITIONS) {
-    const locked = lock.artifacts.find((item) => item?.registryClass === definition.registryClass);
-    const artifact = artifactsByClass.get(definition.registryClass);
-    if (!locked || !artifact) failLock(`Conformance lock class set is incomplete: ${definition.registryClass}`);
-    const bytes = serializeProjection(artifact);
-    if (locked.path !== definition.path
-      || locked.artifactSchema !== definition.schemaId
-      || locked.identityField !== definition.identityField
-      || locked.artifactIdentity !== artifact[definition.identityField]
-      || locked.artifactSha256 !== sha256Base64url(bytes)
-      || locked.byteLength !== bytes.byteLength) {
-      failLock(`Artifact semantics do not match the reviewed lock: ${definition.registryClass}`);
-    }
+    verifyArtifactAgainstConformanceLock(lock, definition.registryClass, artifactsByClass.get(definition.registryClass));
   }
   return { artifactCount: REGISTRY_DEFINITIONS.length };
+}
+
+export function verifyArtifactAgainstConformanceLock(lock, registryClass, artifact) {
+  const definition = REGISTRY_DEFINITIONS.find((item) => item.registryClass === registryClass);
+  if (!definition) failLock(`Unknown registry class requested from conformance lock: ${String(registryClass)}`);
+  if (!Array.isArray(lock?.artifacts) || lock.artifacts.length !== REGISTRY_DEFINITIONS.length) failLock("Conformance lock artifact set is malformed");
+  const matches = lock.artifacts.filter((item) => item?.registryClass === registryClass);
+  if (matches.length !== 1 || !artifact) failLock(`Conformance lock class set is incomplete or ambiguous: ${registryClass}`);
+  const locked = matches[0];
+  const bytes = serializeProjection(artifact);
+  if (locked.path !== definition.path
+    || locked.artifactSchema !== definition.schemaId
+    || locked.identityField !== definition.identityField
+    || locked.artifactIdentity !== artifact[definition.identityField]
+    || locked.artifactSha256 !== sha256Base64url(bytes)
+    || locked.byteLength !== bytes.byteLength) {
+    failLock(`Artifact semantics do not match the reviewed lock: ${registryClass}`);
+  }
+  return { registryClass, artifactSha256: locked.artifactSha256, byteLength: locked.byteLength };
 }

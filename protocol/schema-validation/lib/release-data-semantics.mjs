@@ -9,6 +9,7 @@ import {
   REGISTRY_CLASS_SET,
 } from "./release-data-constants.mjs";
 import { canonicalBase64url, sha256Base64url } from "./semantic-checks.mjs";
+import { verifyArtifactAgainstConformanceLock } from "./release-data-conformance-lock.mjs";
 
 const CAPABILITY_LOCAL_NAME = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/;
 const CAPABILITY_NAMESPACE_IDENTITY = /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -68,7 +69,7 @@ export function capabilityScopesEqual(left, right) {
     && left.capabilityVersion === right.capabilityVersion;
 }
 
-export function checkAtomicSourceAuthority(context) {
+function checkAtomicSourceAuthorityInvariants(context) {
   const source = artifact(context, "gb.registry.source-claim-authority");
   const dimensionIds = uniqueMemberValues(source.dimensions, "id", "source dimensions");
   requireCondition(dimensionIds.length === 81, `Expected 81 atomic source dimensions, found ${dimensionIds.length}`);
@@ -108,7 +109,7 @@ export function checkAtomicSourceAuthority(context) {
   context.metrics.sourceDimensionCount = dimensionIds.length;
 }
 
-export function checkAuthenticationProfiles(context) {
+function checkAuthenticationProfilesInvariants(context) {
   const authentication = artifact(context, "gb.registry.authentication-profile");
   requireCondition(exactSet(authentication.profiles.map((item) => `${item.id}/${item.revision}`), ["gb.auth.signed-request-pop/1", "gb.auth.none-test-fixture/1"]), "Authentication profile set is not exact");
   const signed = authentication.profiles.find((item) => item.id === "gb.auth.signed-request-pop");
@@ -120,7 +121,7 @@ export function checkAuthenticationProfiles(context) {
   context.metrics.authenticationProfileCount = authentication.profiles.length;
 }
 
-export function checkCapabilityNarrowing(context) {
+function checkCapabilityNarrowingInvariants(context) {
   const facet = artifact(context, "gb.registry.facet-property");
   const narrowableTokens = uniqueMemberValues(facet.capabilityNarrowableProperties, "token", "capability-narrowable properties");
   requireCondition(exactSet(narrowableTokens, ["requester-cancellation-support", "effect-retry-permission", "capability-approval-requirement", "capability-receipt-disposition", "capability-extension-requirements"]), "Capability-narrowable property set is not exact", DIAGNOSTICS.CAPABILITY_PROPERTY_SET);
@@ -130,12 +131,12 @@ export function checkCapabilityNarrowing(context) {
   context.metrics.capabilityNarrowablePropertyCount = narrowableTokens.length;
 }
 
-export function checkCoreExplicitEmpty(context) {
+function checkCoreExplicitEmptyInvariants(context) {
   const core = artifact(context, "gb.registry.core-capability-allocation");
   requireCondition(Array.isArray(core.capabilityAllocations) && core.capabilityAllocations.length === 0 && core.implicitAllocationAllowed === false, "Core allocation is not explicit empty", DIAGNOSTICS.CORE_NONEMPTY);
 }
 
-export function checkDirectionalBindings(context) {
+function checkDirectionalBindingsInvariants(context) {
   const directional = artifact(context, "gb.registry.directional-binding");
   const bindingIds = uniqueMemberValues(directional.bindings, "id", "directional bindings");
   requireCondition(bindingIds.length === 20, `Expected 20 directional bindings, found ${bindingIds.length}`);
@@ -146,7 +147,7 @@ export function checkDirectionalBindings(context) {
   context.metrics.directionalBindingCount = bindingIds.length;
 }
 
-export function checkExternalEligibility(context) {
+function checkExternalEligibilityInvariants(context) {
   const external = artifact(context, "gb.registry.external-capability-eligibility");
   requireCondition(external.eligibilityRules.length === 13, "External eligibility rule inventory is incomplete");
   const orders = external.eligibilityRules.map((item) => item.order);
@@ -154,7 +155,7 @@ export function checkExternalEligibility(context) {
   requireCondition(external.namespaceAuthority.collisionPrevention === true && Object.entries(external.namespaceAuthority).filter(([key]) => key !== "collisionPrevention").every(([, value]) => value === false), "External namespace grants authority", DIAGNOSTICS.NAMESPACE_ESCALATION);
 }
 
-export function checkFacetPropertyInventory(context) {
+function checkFacetPropertyInventoryInvariants(context) {
   const facet = artifact(context, "gb.registry.facet-property");
   requireCondition(exactSet(facet.facets.map((item) => `${item.id}/${item.revision}/${item.code}`), [
     "gb.facet.host.core/1/HC", "gb.facet.agent.core/1/AC", "gb.facet.trust-verification.core/1/TC", "gb.facet.host.governed-execution/1/HG", "gb.facet.agent.governed-execution/1/AG",
@@ -167,7 +168,7 @@ export function checkFacetPropertyInventory(context) {
   context.metrics.invariantPropertyCount = invariantTokens.length;
 }
 
-export function checkGlobalExplicitEmpty(context) {
+function checkGlobalExplicitEmptyInvariants(context) {
   const global = artifact(context, "gb.registry.global-feature-allocation");
   for (const property of ["globalFeatureAllocations", "featureToProfileRelationships", "featureToCapabilityRelationships", "otherGlobalRelationships"]) {
     requireCondition(Array.isArray(global[property]) && global[property].length === 0, `Global set is not explicit empty: ${property}`, DIAGNOSTICS.GLOBAL_NONEMPTY);
@@ -175,12 +176,12 @@ export function checkGlobalExplicitEmpty(context) {
   requireCondition(global.inferenceAllowed === false, "Global allocation inference is enabled", DIAGNOSTICS.GLOBAL_NONEMPTY);
 }
 
-export function checkHistoricalImmutability(context) {
+function checkHistoricalImmutabilityInvariants(context) {
   const external = artifact(context, "gb.registry.external-capability-eligibility");
   requireCondition(external.historicalResolution.exactImmutableContractEvidence === true && Object.entries(external.historicalResolution).filter(([key]) => key !== "exactImmutableContractEvidence").every(([, value]) => value === false), "External history permits mutable substitution", DIAGNOSTICS.MUTABLE_HISTORY);
 }
 
-export function checkManifestAtomicity(context) {
+function checkManifestAtomicityInvariants(context) {
   requireCondition(exactSet(context.artifactsByClass.keys(), REGISTRY_CLASS_SET), "Release-data semantic class set is incomplete", DIAGNOSTICS.PARTIAL_LOAD);
   if (!context.bundle) return;
   const entries = context.bundle.manifest?.registryArtifacts;
@@ -188,19 +189,19 @@ export function checkManifestAtomicity(context) {
   requireCondition(context.bundle.artifactRecords instanceof Map && context.bundle.artifactRecords.size === 7, "Release-data artifact load is not atomic", DIAGNOSTICS.PARTIAL_LOAD);
 }
 
-export function checkReceiptDisposition(context) {
+function checkReceiptDispositionInvariants(context) {
   const facet = artifact(context, "gb.registry.facet-property");
   const receipt = facet.capabilityNarrowableProperties.find((item) => item.token === "capability-receipt-disposition");
   requireCondition(receipt && exactSet(receipt.values, ["required", "permitted", "prohibited"]) && receipt.optionalIsAlias === false, "Receipt disposition set is not exact", DIAGNOSTICS.RECEIPT_VALUE);
   requireCondition(receipt.stricterRequirementSources.length === 5 && receipt.conflictFailure.includes("REQ-VERS-0013"), "Receipt no-waiver conflict rule is incomplete", DIAGNOSTICS.RECEIPT_NO_WAIVER);
 }
 
-export function checkRoleSeparation(context) {
+function checkRoleSeparationInvariants(context) {
   const facet = artifact(context, "gb.registry.facet-property");
   requireCondition(facet.approvalRoleAssignments.decisionIssuer === "eligible Approver only" && facet.approvalRoleAssignments.approvalLifecycleOwner.startsWith("Agent"), "Approval role separation changed");
 }
 
-export function checkTypedArtifactBinding(context) {
+function checkTypedArtifactBindingInvariants(context) {
   for (const registryClass of REGISTRY_CLASS_SET) {
     const value = artifact(context, registryClass);
     const definition = REGISTRY_BY_CLASS.get(registryClass);
@@ -211,14 +212,14 @@ export function checkTypedArtifactBinding(context) {
   }
 }
 
-export function checkTrustNegotiationSeparation(context) {
+function checkTrustNegotiationSeparationInvariants(context) {
   const facet = artifact(context, "gb.registry.facet-property");
   const deterministic = facet.invariantProperties.find((item) => item.token === "deterministic-release-negotiation");
   requireCondition(deterministic && exactSet(deterministic.facets, ["HC", "AC"]) && !deterministic.facets.includes("TC"), "Trust Core participates in bilateral negotiation", DIAGNOSTICS.TRUST_NEGOTIATION);
   requireCondition(facet.releaseSelectionRoles.trustCoreBilateralSelector === false && facet.releaseSelectionRoles.trustCoreFallbackAuthority === false, "Trust Core gained selection or fallback authority", DIAGNOSTICS.TRUST_NEGOTIATION);
 }
 
-export function checkExactByteIntegrity(context) {
+function checkExactByteIntegrityInvariants(context) {
   if (!context.bundle) return;
   for (const entry of context.bundle.manifest.registryArtifacts) {
     const bytes = context.bundle.artifactRecords.get(entry.path)?.bytes;
@@ -228,6 +229,106 @@ export function checkExactByteIntegrity(context) {
     requireCondition(sha256Base64url(bytes) === integrity.value, `Artifact SHA-256 mismatch: ${entry.registryClass}`, DIAGNOSTICS.WRONG_INTEGRITY_SHA256);
   }
 }
+
+function verifyOwnedExactArtifacts(context, registryClasses) {
+  requireCondition(context?.conformanceLock !== undefined, "Full release-data semantic validation requires reviewed conformance-lock evidence", DIAGNOSTICS.SEMANTIC_LOCK);
+  for (const registryClass of registryClasses) {
+    verifyArtifactAgainstConformanceLock(context.conformanceLock, registryClass, artifact(context, registryClass));
+  }
+}
+
+export function checkAtomicSourceAuthority(context) {
+  checkAtomicSourceAuthorityInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.source-claim-authority"]);
+}
+
+export function checkAuthenticationProfiles(context) {
+  checkAuthenticationProfilesInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.authentication-profile"]);
+}
+
+export function checkCapabilityNarrowing(context) {
+  checkCapabilityNarrowingInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.facet-property"]);
+}
+
+export function checkCoreExplicitEmpty(context) {
+  checkCoreExplicitEmptyInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.core-capability-allocation"]);
+}
+
+export function checkDirectionalBindings(context) {
+  checkDirectionalBindingsInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.directional-binding"]);
+}
+
+export function checkExternalEligibility(context) {
+  checkExternalEligibilityInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.external-capability-eligibility"]);
+}
+
+export function checkFacetPropertyInventory(context) {
+  checkFacetPropertyInventoryInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.facet-property"]);
+}
+
+export function checkGlobalExplicitEmpty(context) {
+  checkGlobalExplicitEmptyInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.global-feature-allocation"]);
+}
+
+export function checkHistoricalImmutability(context) {
+  checkHistoricalImmutabilityInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.external-capability-eligibility"]);
+}
+
+export function checkManifestAtomicity(context) {
+  checkManifestAtomicityInvariants(context);
+  verifyOwnedExactArtifacts(context, REGISTRY_CLASS_SET);
+}
+
+export function checkReceiptDisposition(context) {
+  checkReceiptDispositionInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.facet-property"]);
+}
+
+export function checkRoleSeparation(context) {
+  checkRoleSeparationInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.facet-property"]);
+}
+
+export function checkTypedArtifactBinding(context) {
+  checkTypedArtifactBindingInvariants(context);
+  verifyOwnedExactArtifacts(context, REGISTRY_CLASS_SET);
+}
+
+export function checkTrustNegotiationSeparation(context) {
+  checkTrustNegotiationSeparationInvariants(context);
+  verifyOwnedExactArtifacts(context, ["gb.registry.facet-property"]);
+}
+
+export function checkExactByteIntegrity(context) {
+  checkExactByteIntegrityInvariants(context);
+  verifyOwnedExactArtifacts(context, REGISTRY_CLASS_SET);
+}
+
+const FOUNDATION_REGRESSION_INVARIANT_CHECKS = Object.freeze([
+  checkAtomicSourceAuthorityInvariants,
+  checkAuthenticationProfilesInvariants,
+  checkCapabilityNarrowingInvariants,
+  checkCoreExplicitEmptyInvariants,
+  checkDirectionalBindingsInvariants,
+  checkExternalEligibilityInvariants,
+  checkFacetPropertyInventoryInvariants,
+  checkGlobalExplicitEmptyInvariants,
+  checkHistoricalImmutabilityInvariants,
+  checkManifestAtomicityInvariants,
+  checkReceiptDispositionInvariants,
+  checkRoleSeparationInvariants,
+  checkTypedArtifactBindingInvariants,
+  checkTrustNegotiationSeparationInvariants,
+  checkExactByteIntegrityInvariants,
+]);
 
 export const RELEASE_DATA_SEMANTIC_CHECKERS = Object.freeze([
   Object.freeze({ id: "RDA-SEM-ATOMIC-SOURCE-AUTHORITY", check: checkAtomicSourceAuthority }),
@@ -261,9 +362,19 @@ export function executeReleaseDataSemanticCheckers(context, checkers = RELEASE_D
 }
 
 export function validateReleaseDataSemantics(artifactsByClass, validationContext = undefined) {
-  const context = { artifactsByClass, bundle: validationContext?.bundle, metrics: {} };
-  const executedSemanticCheckIds = executeReleaseDataSemanticCheckers(context, validationContext?.checkers);
+  requireCondition(validationContext?.conformanceLock !== undefined, "Full D2-01B semantic validation requires reviewed conformance-lock evidence", DIAGNOSTICS.SEMANTIC_LOCK);
+  const context = { artifactsByClass, bundle: validationContext?.bundle, conformanceLock: validationContext.conformanceLock, metrics: {} };
+  // Preserve the most specific established diagnostic before exact-lock checks
+  // run. Registered checkers still repeat their own invariant and exactness work.
+  for (const check of FOUNDATION_REGRESSION_INVARIANT_CHECKS) check(context);
+  const executedSemanticCheckIds = executeReleaseDataSemanticCheckers(context);
   return { ...context.metrics, semanticCheckCount: executedSemanticCheckIds.length, executedSemanticCheckIds };
+}
+
+export function validateReleaseDataFoundationRegressionSemantics(artifactsByClass, validationContext = undefined) {
+  const context = { artifactsByClass, bundle: validationContext?.bundle, metrics: {} };
+  for (const check of FOUNDATION_REGRESSION_INVARIANT_CHECKS) check(context);
+  return { ...context.metrics, foundationRegressionCheckCount: FOUNDATION_REGRESSION_INVARIANT_CHECKS.length };
 }
 
 export function authorizeSourceClaim(sourceRegistry, dimensionId, source, present) {

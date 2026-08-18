@@ -3,7 +3,7 @@ import { assertExactPathSet, listRepositoryFiles } from "./bundle-loader.mjs";
 import { decodeStrictUtf8, parseJsonSource } from "./json-source.mjs";
 import { readExactJsonAsset, loadReleaseDataFiles, validateReleaseDataBundle } from "./release-data-loader.mjs";
 import { DIAGNOSTICS, RELEASE_FIXTURE_PATH, RELEASE_FIXTURE_SCHEMA_ID } from "./release-data-constants.mjs";
-import { loadReleaseDataConformanceLock, verifyArtifactsAgainstConformanceLock } from "./release-data-conformance-lock.mjs";
+import { loadReleaseDataConformanceLock } from "./release-data-conformance-lock.mjs";
 import {
   authorizeSourceClaim,
   classifyFacetProperty,
@@ -52,15 +52,14 @@ function refreshArtifact(bundle, registryClass, mutate) {
 function validateMutatedFileBundle(baselineBundle, mutate, context) {
   const bundle = cloneFileBundle(baselineBundle);
   mutate(bundle);
-  validateReleaseDataBundle({ bundle, validateManifest: context.validateManifest, validatorsBySchema: context.validatorsBySchema });
+  validateReleaseDataBundle({ bundle, validateManifest: context.validateManifest, validatorsBySchema: context.validatorsBySchema, conformanceLock: context.conformanceLock });
   return ACCEPTED;
 }
 
 function validateMutatedSemantics(context, mutate) {
   const artifacts = cloneArtifactMap(context.baselineResult.artifactsByClass);
   mutate(artifacts);
-  validateReleaseDataSemantics(artifacts);
-  verifyArtifactsAgainstConformanceLock(context.conformanceLock, artifacts);
+  validateReleaseDataSemantics(artifacts, { conformanceLock: context.conformanceLock });
   return ACCEPTED;
 }
 
@@ -325,9 +324,9 @@ export function runReleaseDataFixtures({ repositoryRoot, validatorsBySchema, val
   const fixtureIds = fixtureRecord.value.cases.map((item) => item.id);
   if (new Set(fixtureIds).size !== fixtureIds.length) fail("Duplicate release-data fixture ID");
 
-  const baselineBundle = loadReleaseDataFiles(repositoryRoot);
-  const baselineResult = validateReleaseDataBundle({ bundle: baselineBundle, validateManifest, validatorsBySchema });
   const conformanceLock = loadReleaseDataConformanceLock(repositoryRoot);
+  const baselineBundle = loadReleaseDataFiles(repositoryRoot);
+  const baselineResult = validateReleaseDataBundle({ bundle: baselineBundle, validateManifest, validatorsBySchema, conformanceLock });
   const context = { baselineBundle, baselineResult, conformanceLock, validateManifest, validatorsBySchema };
   let positiveCount = 0;
   let negativeCount = 0;

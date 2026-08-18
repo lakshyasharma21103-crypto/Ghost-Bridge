@@ -12,7 +12,7 @@ import {
   RELEASE_MANIFEST_PATH,
   RELEASE_MANIFEST_SCHEMA_ID,
 } from "./release-data-constants.mjs";
-import { validateReleaseDataSemantics } from "./release-data-semantics.mjs";
+import { validateReleaseDataFoundationRegressionSemantics, validateReleaseDataSemantics } from "./release-data-semantics.mjs";
 
 function requireCondition(condition, code, message) {
   if (!condition) releaseDataFail(code, message);
@@ -70,7 +70,7 @@ export function loadReleaseDataFiles(repositoryRoot) {
   return { manifest, manifestRecord, artifactRecords };
 }
 
-export function validateReleaseDataBundle({ bundle, validateManifest, validatorsBySchema }) {
+function validateReleaseDataBundleInternal({ bundle, validateManifest, validatorsBySchema, conformanceLock }, semanticValidator) {
   const { manifest, artifactRecords } = bundle;
   requireCondition(manifest && typeof manifest === "object" && !Array.isArray(manifest), DIAGNOSTICS.MANIFEST_SCHEMA, "Release-data manifest must be an object");
   requireCondition(Array.isArray(manifest.registryArtifacts), DIAGNOSTICS.MANIFEST_SCHEMA, "Release-data manifest has no registryArtifacts array");
@@ -130,5 +130,13 @@ export function validateReleaseDataBundle({ bundle, validateManifest, validators
     artifactsByClass.set(entry.registryClass, artifact);
   }
   requireCondition(artifactsByClass.size === 7, DIAGNOSTICS.PARTIAL_LOAD, "Atomic registry set did not load exactly seven classes");
-  return { artifactsByClass, ...validateReleaseDataSemantics(artifactsByClass, { bundle }) };
+  return { artifactsByClass, ...semanticValidator(artifactsByClass, { bundle, conformanceLock }) };
+}
+
+export function validateReleaseDataBundle(options) {
+  return validateReleaseDataBundleInternal(options, validateReleaseDataSemantics);
+}
+
+export function validateReleaseDataBundleFoundationRegression(options) {
+  return validateReleaseDataBundleInternal(options, validateReleaseDataFoundationRegressionSemantics);
 }
