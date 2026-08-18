@@ -8,11 +8,11 @@
       "protocolRelease": "ghostbridge/e1.r0-draft.1",
       "artifactSchema": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
       "path": "protocol/registries/e1.r0-draft.1/release-data/source-claim-authority.registry.json",
-      "sourceClaimAuthorityArtifact": "urn:uuid:7a6f7806-7154-4aeb-a322-80267e8aa507",
+      "sourceClaimAuthorityArtifact": "urn:uuid:053c83e9-617f-4e59-93bf-da9159241d92",
       "artifactByteIntegrity": {
         "algorithm": "sha-256",
-        "value": "ptqsNQzKmUOhg9ctl39nWrSmIMGWOpWJFbbjzkceMRU",
-        "byteLength": 27099
+        "value": "Jhm-G1Bb6bd4XCsvGFLg2gjrhkDFy60WfJ9FZinyVkM",
+        "byteLength": 27223
       }
     },
     {

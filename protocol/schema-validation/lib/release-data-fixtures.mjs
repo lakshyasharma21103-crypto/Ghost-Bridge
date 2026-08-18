@@ -3,6 +3,7 @@ import { assertExactPathSet, listRepositoryFiles } from "./bundle-loader.mjs";
 import { decodeStrictUtf8, parseJsonSource } from "./json-source.mjs";
 import { readExactJsonAsset, loadReleaseDataFiles, validateReleaseDataBundle } from "./release-data-loader.mjs";
 import { DIAGNOSTICS, RELEASE_FIXTURE_PATH, RELEASE_FIXTURE_SCHEMA_ID } from "./release-data-constants.mjs";
+import { loadReleaseDataConformanceLock, verifyArtifactsAgainstConformanceLock } from "./release-data-conformance-lock.mjs";
 import {
   authorizeSourceClaim,
   classifyFacetProperty,
@@ -55,10 +56,11 @@ function validateMutatedFileBundle(baselineBundle, mutate, context) {
   return ACCEPTED;
 }
 
-function validateMutatedSemantics(baselineArtifacts, mutate) {
-  const artifacts = cloneArtifactMap(baselineArtifacts);
+function validateMutatedSemantics(context, mutate) {
+  const artifacts = cloneArtifactMap(context.baselineResult.artifactsByClass);
   mutate(artifacts);
   validateReleaseDataSemantics(artifacts);
+  verifyArtifactsAgainstConformanceLock(context.conformanceLock, artifacts);
   return ACCEPTED;
 }
 
@@ -141,68 +143,165 @@ function runScenario(testCase, context) {
       }), context);
     case "unauthorized-source-claim":
       return authorizeSourceClaim(baselineArtifacts.get("gb.registry.source-claim-authority"), "agent-identity", "Request body", true);
+    case "host-context-claim-authority":
+      return authorizeSourceClaim(baselineArtifacts.get("gb.registry.source-claim-authority"), "capability-required-host-conditions", "Host", true);
+    case "host-context-authority-escalation":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "capability-required-host-conditions").authorizedClaims.push({ source: "Host", presence: "R", qualification: "supplies matching context where applicable" });
+      });
+    case "host-context-widen":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.source-claim-authority").contextSupplyObligations[0].authorizesClaim = true;
+      });
+    case "host-context-replace":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "capability-required-host-conditions").authorizedClaims = [{ source: "Host", presence: "R", qualification: "supplies matching context where applicable" }];
+      });
+    case "source-owner-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "agent-identity").authorizedClaims[0].source = "Request body";
+      });
+    case "source-presence-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "agent-identity").authorizedClaims[0].presence = "P";
+      });
+    case "source-duplicate-conflict":
+      return validateMutatedSemantics(context, (artifacts) => {
+        const claims = artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "agent-identity").authorizedClaims;
+        claims.push({ ...structuredClone(claims[0]), presence: "P" });
+      });
+    case "source-qualification-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "agent-identity").authorizedClaims[0].qualification = "fixture qualification";
+      });
+    case "derived-value-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.source-claim-authority").derivedOnlyDimensions[0] = "fixture-derived-only-value";
+      });
     case "grant-identity-escalation":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         const source = artifacts.get("gb.registry.source-claim-authority");
         const original = target === "organization" ? "grant-organization-scope-binding" : "grant-tagged-workspace-scope-binding";
         source.dimensions.find((item) => item.id === original).id = `${target}-identity-authority`;
       });
     case "derived-source-claim":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "offer-restriction").id = target;
       });
     case "trust-reference-validity":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.source-claim-authority").dimensions.find((item) => item.id === "bounded-trust-verification-result").id = "trust-evidence-reference";
       });
     case "trust-core-negotiation":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.facet-property").invariantProperties.find((item) => item.token === "deterministic-release-negotiation").facets.push("TC");
       });
     case "unknown-property":
       return classifyFacetProperty(baselineArtifacts.get("gb.registry.facet-property"), "unregistered-fixture-property");
     case "sixth-capability-property":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         const properties = artifacts.get("gb.registry.facet-property").capabilityNarrowableProperties;
         properties.push({ ...structuredClone(properties[0]), token: "sixth-fixture-property" });
       });
     case "narrowing-without-exact-version":
-      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: "external.fixture", propertyToken: "requester-cancellation-support" });
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: { namespaceClass: "core", name: "fixture" }, propertyToken: "requester-cancellation-support" });
+    case "valid-core-capability-scope":
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: { namespaceClass: "core", name: "fixture.core" }, capabilityVersion: "v1", propertyToken: "requester-cancellation-support" });
+    case "valid-external-capability-scope":
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: { namespaceClass: "external", namespace: "urn:uuid:12345678-1234-4123-8123-123456789abc", name: "fixture.external" }, capabilityVersion: "release_1", propertyToken: "requester-cancellation-support" });
+    case "string-capability-key":
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: "external.fixture", capabilityVersion: "v1", propertyToken: "requester-cancellation-support" });
+    case "integer-capability-version":
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: { namespaceClass: "core", name: "fixture" }, capabilityVersion: 1, propertyToken: "requester-cancellation-support" });
+    case "malformed-capability-version":
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: { namespaceClass: "core", name: "fixture" }, capabilityVersion: "1.0", propertyToken: "requester-cancellation-support" });
+    case "external-capability-missing-namespace":
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: { namespaceClass: "external", name: "fixture" }, capabilityVersion: "v1", propertyToken: "requester-cancellation-support" });
+    case "core-capability-has-namespace":
+      return validateCapabilityNarrowing(baselineArtifacts.get("gb.registry.facet-property"), { capabilityKey: { namespaceClass: "core", namespace: "urn:uuid:12345678-1234-4123-8123-123456789abc", name: "fixture" }, capabilityVersion: "v1", propertyToken: "requester-cancellation-support" });
     case "receipt-optional-value":
       return evaluateReceiptDisposition({ disposition: "optional" });
     case "receipt-no-waiver-conflict":
       return evaluateReceiptDisposition({ disposition: "permitted", stricterRequirement: "required" });
     case "core-nonempty":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.core-capability-allocation").capabilityAllocations.push({ key: "fixture" });
       });
     case "global-allocation-nonempty":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.global-feature-allocation").globalFeatureAllocations.push({ feature: "fixture" });
       });
     case "global-relationship-nonempty":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.global-feature-allocation").featureToProfileRelationships.push({ feature: "fixture" });
       });
     case "namespace-authority-escalation":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.external-capability-eligibility").namespaceAuthority.ownership = true;
       });
     case "authentication-fallback":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.authentication-profile").profiles.find((item) => item.id === "gb.auth.signed-request-pop").prohibitedFallbacks.pop();
       });
     case "fixture-none-production":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.authentication-profile").profiles.find((item) => item.id === "gb.auth.none-test-fixture").production = true;
       });
     case "mutable-historical-substitution":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.external-capability-eligibility").historicalResolution.mutableLatest = true;
       });
     case "future-binding":
-      return validateMutatedSemantics(baselineArtifacts, (artifacts) => {
+      return validateMutatedSemantics(context, (artifacts) => {
         artifacts.get("gb.registry.directional-binding").dependencyOrder.push("future-connection-result");
+      });
+    case "directional-kind-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.directional-binding").bindings[0].kind = "evaluation";
+      });
+    case "directional-meaning-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.directional-binding").bindings[0].meaning = "fixture changed meaning";
+      });
+    case "invariant-facet-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.facet-property").invariantProperties[0].facets[0] = "HG";
+      });
+    case "invariant-role-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.facet-property").invariantProperties[0].roles = "fixture role";
+      });
+    case "invariant-failure-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.facet-property").invariantProperties[0].failure[0] = "FO";
+      });
+    case "invariant-meaning-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.facet-property").invariantProperties[0].meaning = "fixture changed meaning";
+      });
+    case "failure-code-meaning-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.facet-property").failureCodes[0].meaning = "fixture changed failure meaning";
+      });
+    case "external-rule-text-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.external-capability-eligibility").eligibilityRules[0].rule = "fixture changed rule";
+      });
+    case "external-duplicate-order":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.external-capability-eligibility").eligibilityRules[1].order = 1;
+      });
+    case "external-rule-reordered":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.external-capability-eligibility").eligibilityRules.reverse();
+      });
+    case "narrowable-no-waiver-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.facet-property").capabilityNarrowableProperties[0].noWidenNoWaiver = "fixture weakened rule";
+      });
+    case "narrowable-conflict-changed":
+      return validateMutatedSemantics(context, (artifacts) => {
+        artifacts.get("gb.registry.facet-property").capabilityNarrowableProperties[0].conflictFailure = "fixture changed conflict";
       });
     case "signed-pop-premature-eligibility":
       return validateMutatedFileBundle(baselineBundle, (bundle) => refreshArtifact(bundle, "gb.registry.authentication-profile", (artifact) => {
@@ -228,7 +327,8 @@ export function runReleaseDataFixtures({ repositoryRoot, validatorsBySchema, val
 
   const baselineBundle = loadReleaseDataFiles(repositoryRoot);
   const baselineResult = validateReleaseDataBundle({ bundle: baselineBundle, validateManifest, validatorsBySchema });
-  const context = { baselineBundle, baselineResult, validateManifest, validatorsBySchema };
+  const conformanceLock = loadReleaseDataConformanceLock(repositoryRoot);
+  const context = { baselineBundle, baselineResult, conformanceLock, validateManifest, validatorsBySchema };
   let positiveCount = 0;
   let negativeCount = 0;
   const exercised = [];

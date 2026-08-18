@@ -7,6 +7,7 @@ import { loadFoundationBundle, loadManifestAssets } from "./lib/bundle-loader.mj
 import { errorMessage, fail } from "./lib/errors.mjs";
 import { loadReleaseDataFiles, validateReleaseDataBundle } from "./lib/release-data-loader.mjs";
 import { verifyReleaseDataConstraintCoverage } from "./lib/release-data-constraint-coverage.mjs";
+import { loadReleaseDataConformanceLock, verifyArtifactsAgainstConformanceLock, verifyReleaseDataConformanceLock } from "./lib/release-data-conformance-lock.mjs";
 import { runReleaseDataFixtures } from "./lib/release-data-fixtures.mjs";
 import { runReleaseDataSelfTests } from "./lib/release-data-self-tests.mjs";
 import { RELEASE_MANIFEST_SCHEMA_ID, RELEASE_SOURCE_SCHEMA_ID } from "./lib/release-data-constants.mjs";
@@ -50,10 +51,13 @@ function main() {
   const validateSource = validatorsBySchema.get(RELEASE_SOURCE_SCHEMA_ID);
   if (typeof validateSource !== "function" || !validateSource(source)) fail(`Maintained release-data source failed structural validation: ${ajv.errorsText(validateSource?.errors)}`);
   const generated = generateReleaseData(source);
+  const conformanceLock = loadReleaseDataConformanceLock(repositoryRoot);
+  const conformanceLockResult = verifyReleaseDataConformanceLock(conformanceLock, source);
+  verifyArtifactsAgainstConformanceLock(conformanceLock, releaseData.artifactsByClass);
   const reproduction = checkGeneratedReleaseData(generated, repositoryRoot);
 
   const inventory = loadedAssets.assets.get(foundation.manifest.semanticConstraintInventory.path);
-  const constraintCoverage = verifyReleaseDataConstraintCoverage(inventory);
+  const constraintCoverage = verifyReleaseDataConstraintCoverage(inventory, releaseData.executedSemanticCheckIds);
   const authority = loadAuthorityIndex({
     repositoryRoot,
     specificationRoot: paths.specification,
@@ -64,6 +68,10 @@ function main() {
   const fixtureResult = runReleaseDataFixtures({ repositoryRoot, validatorsBySchema, validateManifest });
   const selfTests = runReleaseDataSelfTests({
     source,
+    conformanceLock,
+    inventory,
+    ajv,
+    repositoryRoot,
     baselineBundle: releaseBundle,
     baselineResult: releaseData,
     validateManifest,
@@ -79,6 +87,7 @@ function main() {
   console.log(`OFFLINE_REFS PASS ${schemaSafety.referenceCount}`);
   console.log(`PROVENANCE PASS constraints=${provenance.constraintCount}`);
   console.log(`GENERATOR_REPRODUCIBILITY PASS files=${reproduction.checkedFiles}`);
+  console.log(`SEMANTIC_CONFORMANCE_LOCK PASS artifacts=${conformanceLockResult.artifactCount}`);
   console.log(`REGISTRY_CLASS_SET PASS ${releaseData.artifactsByClass.size}/7`);
   console.log(`SOURCE_CLAIM_DIMENSIONS PASS ${releaseData.sourceDimensionCount}/81`);
   console.log(`DIRECTIONAL_BINDINGS PASS ${releaseData.directionalBindingCount}/20`);
@@ -86,7 +95,7 @@ function main() {
   console.log(`INVARIANT_PROPERTIES PASS ${releaseData.invariantPropertyCount}/54`);
   console.log(`CAPABILITY_NARROWABLE_PROPERTIES PASS ${releaseData.capabilityNarrowablePropertyCount}/5`);
   console.log(`AUTHENTICATION_PROFILES PASS ${releaseData.authenticationProfileCount}/2`);
-  console.log(`SEMANTIC_CONSTRAINT_COVERAGE PASS ${constraintCoverage.executableCheckCount}/${constraintCoverage.constraintCount}`);
+  console.log(`SEMANTIC_CONSTRAINT_COVERAGE PASS executed=${constraintCoverage.executedCheckerCount}/${constraintCoverage.constraintCount} registered=${constraintCoverage.registeredCheckerCount}`);
   console.log(`FIXTURE_CORPUS PASS total=${fixtureResult.fixtureCount} positive=${fixtureResult.positiveCount} negative=${fixtureResult.negativeCount}`);
   console.log(`DETERMINISTIC_SELF_TESTS PASS ${selfTests.count}`);
   console.log(`VALIDATOR_IMPORT_ISOLATION PASS files=${importIsolation.scannedFiles} modules=${importIsolation.scannedModules}`);

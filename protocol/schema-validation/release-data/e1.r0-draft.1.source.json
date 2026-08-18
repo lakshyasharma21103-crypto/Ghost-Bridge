@@ -18,7 +18,7 @@
         "artifactSchema": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
         "protocolRelease": "ghostbridge/e1.r0-draft.1",
         "registryClass": "gb.registry.source-claim-authority",
-        "sourceClaimAuthorityArtifact": "urn:uuid:7a6f7806-7154-4aeb-a322-80267e8aa507",
+        "sourceClaimAuthorityArtifact": "urn:uuid:053c83e9-617f-4e59-93bf-da9159241d92",
         "claimSemantics": {
           "R": "required-when-source-instance-and-dimension-are-applicable",
           "P": "permitted-optional-claim",
@@ -86,7 +86,7 @@
           { "id": "capability-risk-classification", "label": "Capability risk classification", "authorizedClaims": [{ "source": "Passport/manifest", "presence": "R", "qualification": "where assigned" }] },
           { "id": "capability-effect-classification", "label": "Capability effect classification", "authorizedClaims": [{ "source": "Passport/manifest", "presence": "R", "qualification": "where assigned" }] },
           { "id": "capability-current-availability", "label": "Capability current availability", "authorizedClaims": [{ "source": "Discovery", "presence": "R", "qualification": "none" }] },
-          { "id": "capability-required-host-conditions", "label": "Capability required Host conditions", "authorizedClaims": [{ "source": "Passport/manifest", "presence": "P", "qualification": "none" }, { "source": "Offer", "presence": "P", "qualification": "none" }, { "source": "Grant", "presence": "P", "qualification": "none" }, { "source": "Host", "presence": "R", "qualification": "supplies matching context where applicable" }] },
+          { "id": "capability-required-host-conditions", "label": "Capability required Host conditions", "authorizedClaims": [{ "source": "Passport/manifest", "presence": "P", "qualification": "none" }, { "source": "Offer", "presence": "P", "qualification": "none" }, { "source": "Grant", "presence": "P", "qualification": "none" }] },
           { "id": "capability-optional-host-conditions-preferences", "label": "Capability optional Host conditions/preferences", "authorizedClaims": [{ "source": "Host", "presence": "P", "qualification": "none" }] },
           { "id": "capability-consent-permission", "label": "Capability consent permission", "authorizedClaims": [{ "source": "Consent", "presence": "R", "qualification": "none" }] },
           { "id": "capability-policy-narrowing-denial", "label": "Capability policy narrowing/denial", "authorizedClaims": [{ "source": "Policy", "presence": "P", "qualification": "none" }] },
@@ -115,6 +115,15 @@
           { "id": "grant-restriction", "label": "Grant restriction", "authorizedClaims": [{ "source": "Grant", "presence": "P", "qualification": "none" }] },
           { "id": "consent-restriction", "label": "Consent restriction", "authorizedClaims": [{ "source": "Consent", "presence": "R", "qualification": "none" }] },
           { "id": "deployment-policy-restriction", "label": "Deployment policy restriction", "authorizedClaims": [{ "source": "Policy", "presence": "P", "qualification": "none" }] }
+        ],
+        "contextSupplyObligations": [
+          {
+            "dimensionId": "capability-required-host-conditions",
+            "supplier": "Host",
+            "applicability": "where-applicable",
+            "meaning": "supplies matching context where applicable",
+            "authorizesClaim": false
+          }
         ],
         "requiredConsistencyDimensions": [
           "client-host-local-preferred-release",

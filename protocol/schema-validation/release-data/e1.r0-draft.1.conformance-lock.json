@@ -1,0 +1,71 @@
+{
+  "lockFormat": "ghostbridge-release-data-conformance-lock/v1",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "status": "nonsemantic-build-conformance-evidence",
+  "sourceSemanticSha256": "Lt7s0qbC2L0AueyTr5HRuJ9L_XS9SrO_Wkl7McYdRgY",
+  "artifacts": [
+    {
+      "registryClass": "gb.registry.source-claim-authority",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/source-claim-authority.registry.json",
+      "artifactSchema": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
+      "identityField": "sourceClaimAuthorityArtifact",
+      "artifactIdentity": "urn:uuid:053c83e9-617f-4e59-93bf-da9159241d92",
+      "artifactSha256": "Jhm-G1Bb6bd4XCsvGFLg2gjrhkDFy60WfJ9FZinyVkM",
+      "byteLength": 27223
+    },
+    {
+      "registryClass": "gb.registry.directional-binding",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/directional-binding.registry.json",
+      "artifactSchema": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2",
+      "identityField": "directionalBindingArtifact",
+      "artifactIdentity": "urn:uuid:4a63c5b5-44e0-47f6-ab92-d567b8bc2f93",
+      "artifactSha256": "_mM0zi4nSFq31R_cGxiGOEKtERR_TtxgF_Hp_LxM6Lg",
+      "byteLength": 6289
+    },
+    {
+      "registryClass": "gb.registry.facet-property",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/facet-property.registry.json",
+      "artifactSchema": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe",
+      "identityField": "facetPropertyArtifact",
+      "artifactIdentity": "urn:uuid:aef799c0-6fd3-4e3d-a0bd-c804e137661f",
+      "artifactSha256": "7VPO3S0knxUoz_BaAA5E6equO08OovxtcMLbOzg0NP8",
+      "byteLength": 30830
+    },
+    {
+      "registryClass": "gb.registry.core-capability-allocation",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/core-capability-allocation.registry.json",
+      "artifactSchema": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46",
+      "identityField": "coreCapabilityAllocationArtifact",
+      "artifactIdentity": "urn:uuid:e5f50ea4-bfbf-4576-8f30-c490509d36ca",
+      "artifactSha256": "y_4tqgTap7-oLuzTs8ctbmZfk1hzrtTYG1z7Ux1wIto",
+      "byteLength": 534
+    },
+    {
+      "registryClass": "gb.registry.external-capability-eligibility",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/external-capability-eligibility.registry.json",
+      "artifactSchema": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e",
+      "identityField": "externalCapabilityEligibilityArtifact",
+      "artifactIdentity": "urn:uuid:f8b4e9bf-73de-43d3-88b2-08d349c54b5c",
+      "artifactSha256": "0ZUHp8GazFN3jddxW-l2_f_g9uQpuPXotblIDiIBUpk",
+      "byteLength": 2752
+    },
+    {
+      "registryClass": "gb.registry.global-feature-allocation",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/global-feature-allocation.registry.json",
+      "artifactSchema": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28",
+      "identityField": "globalFeatureAllocationArtifact",
+      "artifactIdentity": "urn:uuid:68d7f665-49cb-4e7f-847b-a61a0b3f18f1",
+      "artifactSha256": "dG1sG5WYNi_e2qoW16EGo1DBENmrUGT8USZ7l4yGD7Q",
+      "byteLength": 517
+    },
+    {
+      "registryClass": "gb.registry.authentication-profile",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/authentication-profile.registry.json",
+      "artifactSchema": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c",
+      "identityField": "authenticationProfileArtifact",
+      "artifactIdentity": "urn:uuid:7dd88266-dfaf-4614-b833-5c2e517e9a59",
+      "artifactSha256": "SVk5XHQUIBNNL4ofb7tJSKXcXs6gPaalJzSUe4YeM1U",
+      "byteLength": 2281
+    }
+  ]
+}

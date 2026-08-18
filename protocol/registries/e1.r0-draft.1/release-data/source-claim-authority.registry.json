@@ -2,7 +2,7 @@
   "artifactSchema": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
   "protocolRelease": "ghostbridge/e1.r0-draft.1",
   "registryClass": "gb.registry.source-claim-authority",
-  "sourceClaimAuthorityArtifact": "urn:uuid:7a6f7806-7154-4aeb-a322-80267e8aa507",
+  "sourceClaimAuthorityArtifact": "urn:uuid:053c83e9-617f-4e59-93bf-da9159241d92",
   "claimSemantics": {
     "R": "required-when-source-instance-and-dimension-are-applicable",
     "P": "permitted-optional-claim",
@@ -718,11 +718,6 @@
           "source": "Grant",
           "presence": "P",
           "qualification": "none"
-        },
-        {
-          "source": "Host",
-          "presence": "R",
-          "qualification": "supplies matching context where applicable"
         }
       ]
     },
@@ -1038,6 +1033,15 @@
           "qualification": "none"
         }
       ]
+    }
+  ],
+  "contextSupplyObligations": [
+    {
+      "dimensionId": "capability-required-host-conditions",
+      "supplier": "Host",
+      "applicability": "where-applicable",
+      "meaning": "supplies matching context where applicable",
+      "authorizesClaim": false
     }
   ],
   "requiredConsistencyDimensions": [

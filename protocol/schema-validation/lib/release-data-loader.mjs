@@ -130,5 +130,5 @@ export function validateReleaseDataBundle({ bundle, validateManifest, validators
     artifactsByClass.set(entry.registryClass, artifact);
   }
   requireCondition(artifactsByClass.size === 7, DIAGNOSTICS.PARTIAL_LOAD, "Atomic registry set did not load exactly seven classes");
-  return { artifactsByClass, ...validateReleaseDataSemantics(artifactsByClass) };
+  return { artifactsByClass, ...validateReleaseDataSemantics(artifactsByClass, { bundle }) };
 }
