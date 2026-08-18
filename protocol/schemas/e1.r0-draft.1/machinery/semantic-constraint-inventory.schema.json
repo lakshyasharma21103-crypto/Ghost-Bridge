@@ -80,7 +80,7 @@
         "downstreamOwner"
       ],
       "properties": {
-        "id": { "type": "string", "pattern": "^FND-[A-Z0-9-]+$" },
+        "id": { "type": "string", "pattern": "^(?:FND|RDA)-[A-Z0-9-]+$" },
         "validationLayer": { "enum": ["RAW", "SEMANTIC", "RAW_AND_SEMANTIC"] },
         "affected": {
           "type": "array",
@@ -92,7 +92,8 @@
         "structuralCoverage": { "enum": ["NONE", "PARTIAL"] },
         "provenance": { "$ref": "#/$defs/provenance" },
         "failureAuthority": { "$ref": "#/$defs/failureAuthority" },
-        "downstreamOwner": { "type": "string", "pattern": "^D2-[0-9]{2}[A-Z]?$" }
+        "downstreamOwner": { "type": "string", "pattern": "^D2-[0-9]{2}[A-Z]?$" },
+        "executableCheck": { "type": "string", "pattern": "^RDA-SEM-[A-Z0-9-]+$" }
       },
       "additionalProperties": false
     }

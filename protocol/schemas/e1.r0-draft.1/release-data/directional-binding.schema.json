@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2",
+  "title": "Directional Binding Registry",
+  "type": "object",
+  "required": ["artifactSchema", "protocolRelease", "registryClass", "directionalBindingArtifact", "bindings", "invariantDistinctions", "prohibitedFutureBindings", "dependencyOrder", "connectionAuthorityCreatedOnlyBy", "offerIssuerAsserted"],
+  "properties": {
+    "artifactSchema": { "const": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "registryClass": { "const": "gb.registry.directional-binding" },
+    "directionalBindingArtifact": { "$ref": "#/$defs/artifactIdentity" },
+    "bindings": { "type": "array", "minItems": 20, "maxItems": 20, "items": { "$ref": "#/$defs/binding" } },
+    "invariantDistinctions": { "type": "array", "minItems": 9, "maxItems": 9, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "prohibitedFutureBindings": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" } },
+    "dependencyOrder": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "validated-inputs" },
+        { "const": "deterministic-negotiated-result" },
+        { "const": "complete-redemption-intent" },
+        { "const": "atomic-connection-commit" }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "connectionAuthorityCreatedOnlyBy": { "const": "atomic-connection-commit" },
+    "offerIssuerAsserted": { "const": false }
+  },
+  "$defs": {
+    "artifactIdentity": { "type": "string", "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "binding": {
+      "type": "object",
+      "required": ["id", "binding", "kind", "meaning"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]+$" },
+        "binding": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "kind": { "enum": ["source-intrinsic", "evaluation-comparison", "downstream-result-binding"] },
+        "meaning": { "type": "string", "minLength": 1, "maxLength": 400 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

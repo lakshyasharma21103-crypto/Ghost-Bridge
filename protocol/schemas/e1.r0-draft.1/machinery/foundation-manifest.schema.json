@@ -150,6 +150,7 @@
         "assetClass": {
           "enum": [
             "d2-machinery",
+            "release-data-registry",
             "representation-helper",
             "wire-primitive",
             "wire-foundation-object"

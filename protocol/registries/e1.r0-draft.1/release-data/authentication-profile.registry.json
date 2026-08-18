@@ -1,0 +1,71 @@
+{
+  "artifactSchema": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "registryClass": "gb.registry.authentication-profile",
+  "authenticationProfileArtifact": "urn:uuid:7dd88266-dfaf-4614-b833-5c2e517e9a59",
+  "profiles": [
+    {
+      "id": "gb.auth.signed-request-pop",
+      "revision": 1,
+      "registration": "registered",
+      "semanticEligibility": "pending-complete-immutable-profile-and-required-d2-evidence",
+      "eligible": false,
+      "eligibilityRequires": [
+        "contract",
+        "schema",
+        "security-parameters",
+        "proof-semantics",
+        "required-d2-evidence"
+      ],
+      "implementationQualificationIsEligibilityCondition": false,
+      "securityBounds": {
+        "credentialMaximumValiditySeconds": 86400,
+        "requestProofLifetimeSeconds": 60,
+        "requestProofMaximumAgeSeconds": 60,
+        "expiry": "exclusive",
+        "gracePeriodSeconds": 0
+      },
+      "prohibitedFallbacks": [
+        "authentication-profile",
+        "bearer-for-proof-of-possession",
+        "adjacent-profile",
+        "provider-default",
+        "cached-success",
+        "production-fixture-none"
+      ],
+      "tlsOrChannelLifetimeExtendsValidity": false,
+      "requestProofFreshnessIsTrustFreshness": false,
+      "earlierTerminationReasons": [
+        "revocation",
+        "compromise",
+        "key-ineligibility",
+        "Trust-failure",
+        "Connection-state",
+        "authorization",
+        "consent",
+        "policy"
+      ]
+    },
+    {
+      "id": "gb.auth.none-test-fixture",
+      "revision": 1,
+      "registration": "registered",
+      "semanticEligibility": "permanently-non-production-test-fixture",
+      "eligible": false,
+      "production": false,
+      "productionDefault": false,
+      "productionFallback": false,
+      "canCreateProductionConnection": false,
+      "canRecoverProductionConnection": false,
+      "canReactivateProductionConnection": false,
+      "canExerciseProductionConnection": false,
+      "canSatisfyProductionAuthentication": false
+    }
+  ],
+  "separationRules": [
+    "registration != eligibility",
+    "eligibility != selection",
+    "selection != authentication success",
+    "authentication success != authorization"
+  ]
+}

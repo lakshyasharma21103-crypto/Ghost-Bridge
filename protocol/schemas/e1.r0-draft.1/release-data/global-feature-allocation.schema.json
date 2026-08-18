@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28",
+  "title": "Global Feature Allocation Registry",
+  "type": "object",
+  "required": ["artifactSchema", "protocolRelease", "registryClass", "globalFeatureAllocationArtifact", "globalFeatureAllocations", "featureToProfileRelationships", "featureToCapabilityRelationships", "otherGlobalRelationships", "emptySetMeaning", "inferenceAllowed"],
+  "properties": {
+    "artifactSchema": { "const": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "registryClass": { "const": "gb.registry.global-feature-allocation" },
+    "globalFeatureAllocationArtifact": { "type": "string", "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "globalFeatureAllocations": { "type": "array", "maxItems": 0 },
+    "featureToProfileRelationships": { "type": "array", "maxItems": 0 },
+    "featureToCapabilityRelationships": { "type": "array", "maxItems": 0 },
+    "otherGlobalRelationships": { "type": "array", "maxItems": 0 },
+    "emptySetMeaning": { "const": "no-global-feature-or-relationship-is-allocated" },
+    "inferenceAllowed": { "const": false }
+  },
+  "additionalProperties": false
+}

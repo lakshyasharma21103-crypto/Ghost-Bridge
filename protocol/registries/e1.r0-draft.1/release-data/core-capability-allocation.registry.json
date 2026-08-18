@@ -1,0 +1,10 @@
+{
+  "artifactSchema": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "registryClass": "gb.registry.core-capability-allocation",
+  "coreCapabilityAllocationArtifact": "urn:uuid:e5f50ea4-bfbf-4576-8f30-c490509d36ca",
+  "capabilityAllocations": [],
+  "emptySetMeaning": "no-core-capability-key-or-version-is-allocated",
+  "facetConformanceMeaning": "satisfaction-of-registered-invariant-properties-not-capability-implementation-or-enablement",
+  "implicitAllocationAllowed": false
+}

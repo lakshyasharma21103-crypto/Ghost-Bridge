@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e",
+  "title": "External Capability Eligibility Registry",
+  "type": "object",
+  "required": ["artifactSchema", "protocolRelease", "registryClass", "externalCapabilityEligibilityArtifact", "eligibilityRules", "namespaceAuthority", "historicalResolution"],
+  "properties": {
+    "artifactSchema": { "const": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "registryClass": { "const": "gb.registry.external-capability-eligibility" },
+    "externalCapabilityEligibilityArtifact": { "$ref": "#/$defs/artifactIdentity" },
+    "eligibilityRules": { "type": "array", "minItems": 13, "maxItems": 13, "items": { "$ref": "#/$defs/rule" } },
+    "namespaceAuthority": {
+      "type": "object",
+      "required": ["collisionPrevention", "identity", "ownership", "authenticity", "trust", "publication", "compatibility", "execution"],
+      "properties": {
+        "collisionPrevention": { "const": true },
+        "identity": { "const": false },
+        "ownership": { "const": false },
+        "authenticity": { "const": false },
+        "trust": { "const": false },
+        "publication": { "const": false },
+        "compatibility": { "const": false },
+        "execution": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "historicalResolution": {
+      "type": "object",
+      "required": ["exactImmutableContractEvidence", "mutableCurrent", "mutableLatest", "packageLookup", "sdkLookup", "networkLookup", "deploymentLookup"],
+      "properties": {
+        "exactImmutableContractEvidence": { "const": true },
+        "mutableCurrent": { "const": false },
+        "mutableLatest": { "const": false },
+        "packageLookup": { "const": false },
+        "sdkLookup": { "const": false },
+        "networkLookup": { "const": false },
+        "deploymentLookup": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "artifactIdentity": { "type": "string", "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "rule": {
+      "type": "object",
+      "required": ["order", "rule"],
+      "properties": {
+        "order": { "type": "integer", "minimum": 1, "maximum": 13 },
+        "rule": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

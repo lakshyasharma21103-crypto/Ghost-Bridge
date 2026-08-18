@@ -6,7 +6,7 @@ import { assertAllDeclaredPathsProcessed, loadFoundationBundle, loadManifestAsse
 import { errorMessage, fail } from "./lib/errors.mjs";
 import { runFoundationFixtures } from "./lib/fixture-runner.mjs";
 import { loadAuthorityIndex, verifyBundleProvenance } from "./lib/provenance.mjs";
-import { assertRecognizedAllocationRegistry, validateReleaseRegistry } from "./lib/registry-validation.mjs";
+import { loadReleaseDataFiles, validateReleaseDataBundle } from "./lib/release-data-loader.mjs";
 import { assertValidatorImportIsolation, createOfflineSchemaValidator, scanBundleSchemaSafety, validateAssetSchemas } from "./lib/schema-safety.mjs";
 import { runRawJsonParserSelfTests, runSeededValidatorSelfTests } from "./lib/self-tests.mjs";
 import { assertSemanticCheckDeclarations } from "./lib/semantic-checks.mjs";
@@ -37,6 +37,16 @@ function main() {
   });
   const schemaSafety = scanBundleSchemaSafety(bundle);
   const { ajv, metaSchemaPasses } = createOfflineSchemaValidator(bundle.schemas);
+  const releaseManifestEntry = bundle.manifest.registries.find((entry) => entry.path === paths.registries + "/release-registry.json");
+  if (!releaseManifestEntry) fail("No declared release-data manifest was found");
+  const validateRegistry = ajv.getSchema(releaseManifestEntry.schemaId);
+  const validatorsBySchema = new Map(bundle.schemaIds.values().map((schemaId) => [schemaId, ajv.getSchema(schemaId)]));
+  const releaseDataBundle = loadReleaseDataFiles(repositoryRoot);
+  const releaseData = validateReleaseDataBundle({
+    bundle: releaseDataBundle,
+    validateManifest: validateRegistry,
+    validatorsBySchema,
+  });
   const loadedAssets = loadManifestAssets({
     repositoryRoot,
     manifest: bundle.manifest,
@@ -44,33 +54,18 @@ function main() {
   });
   validateAssetSchemas({ ajv, manifest: bundle.manifest, assets: loadedAssets.assets });
 
-  const registryResults = [];
-  const processedRegistryPaths = new Set();
-  for (const entry of bundle.manifest.registries) {
-    assertRecognizedAllocationRegistry({ entry, manifest: bundle.manifest });
-    const registry = loadedAssets.assets.get(entry.path);
-    const validateRegistry = ajv.getSchema(entry.schemaId);
-    if (registry === undefined) fail(`Declared registry was not loaded: ${entry.path}`);
-    registryResults.push({
-      entry,
-      registry,
-      validateRegistry,
-      result: validateReleaseRegistry({
-        registry,
-        validateRegistry,
-        errorsText: () => ajv.errorsText(validateRegistry.errors),
-      }),
-    });
-    processedRegistryPaths.add(entry.path);
-  }
-  if (registryResults.length === 0) fail("No declared release-allocation registry was found");
+  const processedRegistryPaths = new Set([
+    releaseManifestEntry.path,
+    ...releaseData.artifactsByClass.values().map((artifact) =>
+      bundle.manifest.registries.find((entry) => entry.schemaId === artifact.artifactSchema)?.path,
+    ),
+  ]);
+  if (processedRegistryPaths.has(undefined)) fail("A loaded release-data artifact has no foundation-manifest entry");
   const registryProcessing = assertAllDeclaredPathsProcessed(
     "registry",
     bundle.manifest.registries.map((entry) => entry.path),
     processedRegistryPaths,
   );
-  registryResults.sort((left, right) => (left.entry.path < right.entry.path ? -1 : left.entry.path > right.entry.path ? 1 : 0));
-
   const inventory = loadedAssets.assets.get(bundle.manifest.semanticConstraintInventory.path);
   const authority = loadAuthorityIndex({
     repositoryRoot,
@@ -97,11 +92,10 @@ function main() {
   const importIsolation = assertValidatorImportIsolation(repositoryRoot, paths.validation);
 
   const rawJsonSelfTests = runRawJsonParserSelfTests();
-  const registry = registryResults[0];
   const seededSelfTests = runSeededValidatorSelfTests({
     bundle,
-    registry: registry.registry,
-    validateRegistry: registry.validateRegistry,
+    registry: releaseDataBundle.manifest,
+    validateRegistry,
   });
 
   console.log(`VALIDATOR Ajv ${ajvVersion} Draft 2020-12`);
@@ -124,7 +118,7 @@ function main() {
   }
   console.log(`SEMANTIC_CHECKS PASS ${fixtures.semanticCount}`);
   console.log(`SEMANTIC_CHECK_IDENTIFIERS PASS ${semanticCheckDeclarationCount}`);
-  console.log(`REGISTRY_EXACT_SET PASS facets=${registry.result.facetCount} auth=${registry.result.authenticationProfileCount}`);
+  console.log(`REGISTRY_EXACT_SET PASS classes=${releaseData.artifactsByClass.size} facets=${releaseData.facetCount} auth=${releaseData.authenticationProfileCount}`);
   console.log(`REGISTRY_PROCESSING_COVERAGE PASS ${registryProcessing.processed}/${registryProcessing.declared}`);
   console.log("REGISTRY_ORDER_INDEPENDENCE PASS");
   console.log("TIMESTAMP_COMPARISON PASS ASCII_CODE_UNIT");

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:d11fe4f0-85ee-4d0c-9210-778cb3cc4ef9",
+  "title": "D2-01B Release-Data Fixture Corpus",
+  "type": "object",
+  "required": ["corpusSchema", "protocolRelease", "cases"],
+  "properties": {
+    "corpusSchema": { "const": "urn:uuid:d11fe4f0-85ee-4d0c-9210-778cb3cc4ef9" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "cases": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/case" } }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["id", "scenario", "parameters", "expectedDisposition", "expectedDiagnostic"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^RDA-FX-[A-Z0-9-]+$" },
+        "scenario": { "enum": [
+          "complete-set", "optional-absence", "missing-class", "unknown-class", "duplicate-class", "wrong-release", "artifact-wrong-release", "wrong-registry-class", "artifact-class-mismatch", "wrong-artifact-identity", "wrong-artifact-type", "wrong-integrity-reference", "wrong-sha256", "wrong-byte-length", "partial-load", "multiply-referenced-artifact", "invalid-registry-content", "preferred-version-optionalized", "unauthorized-source-claim", "grant-identity-escalation", "derived-source-claim", "trust-reference-validity", "trust-core-negotiation", "unknown-property", "sixth-capability-property", "narrowing-without-exact-version", "receipt-optional-value", "receipt-no-waiver-conflict", "core-nonempty", "global-allocation-nonempty", "global-relationship-nonempty", "namespace-authority-escalation", "authentication-fallback", "fixture-none-production", "mutable-historical-substitution", "future-binding", "signed-pop-premature-eligibility"
+        ] },
+        "parameters": {
+          "type": "object",
+          "properties": { "target": { "type": "string", "minLength": 1, "maxLength": 160 } },
+          "additionalProperties": false
+        },
+        "expectedDisposition": { "enum": ["accept", "reject"] },
+        "expectedDiagnostic": { "type": "string", "pattern": "^RDA_[A-Z0-9_]+$" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

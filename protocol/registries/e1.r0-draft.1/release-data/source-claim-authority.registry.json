@@ -1,0 +1,1074 @@
+{
+  "artifactSchema": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "registryClass": "gb.registry.source-claim-authority",
+  "sourceClaimAuthorityArtifact": "urn:uuid:7a6f7806-7154-4aeb-a322-80267e8aa507",
+  "claimSemantics": {
+    "R": "required-when-source-instance-and-dimension-are-applicable",
+    "P": "permitted-optional-claim",
+    "optionalAbsence": "no-claim",
+    "unlistedSource": "unauthorized-no-authority",
+    "omissionDefault": false,
+    "absenceAsDenial": false,
+    "wildcard": false,
+    "inheritance": false,
+    "coercion": false,
+    "atomicBySemanticDimension": true,
+    "bindingIsClaimAuthority": false,
+    "derivedValueIsSourceClaim": false
+  },
+  "dimensions": [
+    {
+      "id": "agent-identity",
+      "label": "Agent identity",
+      "authorizedClaims": [
+        {
+          "source": "Passport/immutable manifest",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "passport-identity",
+      "label": "Passport identity",
+      "authorizedClaims": [
+        {
+          "source": "Passport",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "passport-version",
+      "label": "Passport version",
+      "authorizedClaims": [
+        {
+          "source": "Passport",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "passport-issuer-identity",
+      "label": "Passport issuer identity",
+      "authorizedClaims": [
+        {
+          "source": "Passport",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-issuer-identity",
+      "label": "Grant issuer identity",
+      "authorizedClaims": [
+        {
+          "source": "Install Grant",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "client-host-participant-supported-release-set",
+      "label": "Client/Host participant supported-release set",
+      "authorizedClaims": [
+        {
+          "source": "Client participant metadata",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "client-host-local-preferred-release",
+      "label": "Client/Host local preferred release",
+      "authorizedClaims": [
+        {
+          "source": "Client participant metadata",
+          "presence": "R",
+          "qualification": "canonical-input consistency claim; non-authorizing; non-ranking; non-selection-channel; cannot force bilateral selection"
+        }
+      ]
+    },
+    {
+      "id": "agent-participant-supported-release-set",
+      "label": "Agent participant supported-release set",
+      "authorizedClaims": [
+        {
+          "source": "Agent participant metadata",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "agent-local-preferred-release",
+      "label": "Agent local preferred release",
+      "authorizedClaims": [
+        {
+          "source": "Agent participant metadata",
+          "presence": "R",
+          "qualification": "canonical-input consistency claim; non-authorizing; non-ranking; non-selection-channel; cannot force bilateral selection"
+        }
+      ]
+    },
+    {
+      "id": "current-deployed-release-availability",
+      "label": "Current deployed release availability",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "offer-release-bound",
+      "label": "Offer release bound",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "only where the accepted Offer contract carries it"
+        }
+      ]
+    },
+    {
+      "id": "grant-release-bound",
+      "label": "Grant release bound",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "only where D1 binds that Grant dimension"
+        }
+      ]
+    },
+    {
+      "id": "consent-envelope-permitted-release-set",
+      "label": "Consent-envelope permitted release set",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "release-policy-status-security-narrowing",
+      "label": "Release policy/status/security narrowing",
+      "authorizedClaims": [
+        {
+          "source": "Policy/status/security authority",
+          "presence": "P",
+          "qualification": "denial or narrowing only"
+        }
+      ]
+    },
+    {
+      "id": "grant-organization-scope-binding",
+      "label": "Grant organization-scope binding",
+      "authorizedClaims": [
+        {
+          "source": "Install Grant",
+          "presence": "R",
+          "qualification": "where organization scope is applicable; binding is not Organization identity authority"
+        }
+      ]
+    },
+    {
+      "id": "organization-restriction",
+      "label": "Organization restriction",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Host requirement",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        },
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-tagged-workspace-scope-binding",
+      "label": "Grant tagged-workspace-scope binding",
+      "authorizedClaims": [
+        {
+          "source": "Install Grant",
+          "presence": "R",
+          "qualification": "where workspace scope is applicable, including exact tagged explicit absence; binding is not Workspace identity authority"
+        }
+      ]
+    },
+    {
+      "id": "workspace-restriction",
+      "label": "Workspace restriction",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Host requirement",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        },
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-participant-identity",
+      "label": "Host participant identity",
+      "authorizedClaims": [
+        {
+          "source": "Client/Host participant metadata",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-audience-applicability-requirement",
+      "label": "Host/audience applicability requirement",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Host",
+          "presence": "R",
+          "qualification": "where an exact Host binding is required"
+        },
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        },
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "authenticated-principal",
+      "label": "Authenticated principal",
+      "authorizedClaims": [
+        {
+          "source": "Bounded selected-profile authentication result",
+          "presence": "R",
+          "qualification": "no request body or metadata source owns it"
+        }
+      ]
+    },
+    {
+      "id": "purpose-bound-agent-resource-target",
+      "label": "Purpose-bound Agent/resource target",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "R",
+          "qualification": "none"
+        },
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Host requirement",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "network-origin",
+      "label": "Network Origin",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "R",
+          "qualification": "transport verification supplies validity, not identity substitution"
+        }
+      ]
+    },
+    {
+      "id": "profile-identity-support-ceiling",
+      "label": "Profile identity support ceiling",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "profile-current-deployment-availability",
+      "label": "Profile current deployment availability",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "offer-profile-subset-restriction",
+      "label": "Offer profile subset/restriction",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-profile-subset-restriction",
+      "label": "Grant profile subset/restriction",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-required-profile",
+      "label": "Host required profile",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "unless an accepted requirement makes it required"
+        }
+      ]
+    },
+    {
+      "id": "host-optional-profile-interest",
+      "label": "Host optional profile interest",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "consent-permitted-profile-subset",
+      "label": "Consent-permitted profile subset",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "profile-policy-narrowing",
+      "label": "Profile policy narrowing",
+      "authorizedClaims": [
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "facet-identity-claim",
+      "label": "Facet identity claim",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "facet-current-deployment-availability",
+      "label": "Facet current deployment availability",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "offer-facet-restriction",
+      "label": "Offer facet restriction",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-facet-restriction",
+      "label": "Grant facet restriction",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-required-facet",
+      "label": "Host required facet",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "unless an accepted requirement makes it required"
+        }
+      ]
+    },
+    {
+      "id": "host-optional-facet-interest",
+      "label": "Host optional facet interest",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "consent-permitted-facet-subset",
+      "label": "Consent-permitted facet subset",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "facet-policy-narrowing",
+      "label": "Facet policy narrowing",
+      "authorizedClaims": [
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "capability-key-ceiling",
+      "label": "Capability key ceiling",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "capability-version-ceiling",
+      "label": "Capability version ceiling",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "immutable-external-contract-reference",
+      "label": "Immutable external contract reference",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "current-deployed-capability-availability",
+      "label": "Current deployed capability availability",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "offer-capability-subset-restrictions",
+      "label": "Offer capability subset/restrictions",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-capability-subset-restrictions",
+      "label": "Grant capability subset/restrictions",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-required-capability",
+      "label": "Host required capability",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "R",
+          "qualification": "only when the Host declares a requirement"
+        }
+      ]
+    },
+    {
+      "id": "host-optional-capability-interest",
+      "label": "Host optional capability interest",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-capability-preference",
+      "label": "Host capability preference",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "among already eligible choices"
+        }
+      ]
+    },
+    {
+      "id": "capability-restrictions-limits",
+      "label": "Capability restrictions/limits",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Discovery",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        },
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "capability-risk-classification",
+      "label": "Capability risk classification",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "capability-effect-classification",
+      "label": "Capability effect classification",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "capability-current-availability",
+      "label": "Capability current availability",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "capability-required-host-conditions",
+      "label": "Capability required Host conditions",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Host",
+          "presence": "R",
+          "qualification": "supplies matching context where applicable"
+        }
+      ]
+    },
+    {
+      "id": "capability-optional-host-conditions-preferences",
+      "label": "Capability optional Host conditions/preferences",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "capability-consent-permission",
+      "label": "Capability consent permission",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "capability-policy-narrowing-denial",
+      "label": "Capability policy narrowing/denial",
+      "authorizedClaims": [
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "passport-manifest-authentication-profile-support-ceiling",
+      "label": "Passport/manifest authentication-profile support ceiling",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "discovery-current-deployed-profile-support",
+      "label": "Discovery current deployed profile support",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "R",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "offer-transaction-profile-subset-restriction",
+      "label": "Offer transaction profile subset/restriction",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-transaction-profile-ceiling-restriction",
+      "label": "Grant transaction profile ceiling/restriction",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-profile-requirement",
+      "label": "Host profile requirement",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-exact-profile-selection",
+      "label": "Host exact profile selection",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "R",
+          "qualification": "selected from the already-derived eligible set"
+        }
+      ]
+    },
+    {
+      "id": "consent-permission-for-selected-profile",
+      "label": "Consent permission for selected profile",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "authentication-policy-narrowing-denial",
+      "label": "Authentication policy narrowing/denial",
+      "authorizedClaims": [
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "extension-support-ceiling",
+      "label": "Extension support ceiling",
+      "authorizedClaims": [
+        {
+          "source": "Passport/manifest",
+          "presence": "P",
+          "qualification": "where assigned"
+        }
+      ]
+    },
+    {
+      "id": "extension-current-availability",
+      "label": "Extension current availability",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "offer-extension-restriction",
+      "label": "Offer extension restriction",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-extension-restriction",
+      "label": "Grant extension restriction",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-required-extension",
+      "label": "Host required extension",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "R",
+          "qualification": "only when declared required"
+        }
+      ]
+    },
+    {
+      "id": "host-optional-extension-interest",
+      "label": "Host optional extension interest",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "consent-permitted-extension-set",
+      "label": "Consent-permitted extension set",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "extension-policy-narrowing",
+      "label": "Extension policy narrowing",
+      "authorizedClaims": [
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "experiment-support",
+      "label": "Experiment support",
+      "authorizedClaims": [
+        {
+          "source": "Discovery",
+          "presence": "P",
+          "qualification": "none"
+        },
+        {
+          "source": "Participant exact-support metadata",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "host-experiment-request",
+      "label": "Host experiment request",
+      "authorizedClaims": [
+        {
+          "source": "Host",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "experiment-consent",
+      "label": "Experiment consent",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "when selected"
+        }
+      ]
+    },
+    {
+      "id": "experiment-policy-denial-narrowing",
+      "label": "Experiment policy denial/narrowing",
+      "authorizedClaims": [
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "bounded-trust-verification-result",
+      "label": "Bounded Trust-verification result",
+      "authorizedClaims": [
+        {
+          "source": "Applicable Trust-verification authority",
+          "presence": "R",
+          "qualification": "Trust evidence reference is not Trust validity"
+        }
+      ]
+    },
+    {
+      "id": "offer-restriction",
+      "label": "Offer restriction",
+      "authorizedClaims": [
+        {
+          "source": "Offer",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "grant-restriction",
+      "label": "Grant restriction",
+      "authorizedClaims": [
+        {
+          "source": "Grant",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "consent-restriction",
+      "label": "Consent restriction",
+      "authorizedClaims": [
+        {
+          "source": "Consent",
+          "presence": "R",
+          "qualification": "none"
+        }
+      ]
+    },
+    {
+      "id": "deployment-policy-restriction",
+      "label": "Deployment policy restriction",
+      "authorizedClaims": [
+        {
+          "source": "Policy",
+          "presence": "P",
+          "qualification": "none"
+        }
+      ]
+    }
+  ],
+  "requiredConsistencyDimensions": [
+    "client-host-local-preferred-release",
+    "agent-local-preferred-release"
+  ],
+  "derivedOnlyDimensions": [
+    "bilateral-candidate-release-set",
+    "final-selected-release",
+    "final-common-authentication-eligible-set",
+    "final-selected-authentication-profile-validity",
+    "selected-facets",
+    "selected-capabilities-and-versions",
+    "enabled-disabled-and-omitted-capability-sets",
+    "selected-extensions-and-dependency-closure",
+    "selected-experiments",
+    "combined-restrictions-and-limits",
+    "complete-negotiated-result",
+    "complete-redemption-intent",
+    "connection-authority"
+  ],
+  "separationRules": [
+    "preferred-release-claims-are-participant-owned-consistency-evidence-only",
+    "grant-organization-scope-binding-is-not-organization-identity-authority",
+    "grant-tagged-workspace-scope-binding-is-not-workspace-identity-authority",
+    "tagged-workspace-explicit-absence-is-not-wildcard-default-inheritance-or-coercion",
+    "final-selected-release-is-derived-by-client-and-agent-only",
+    "final-common-authentication-eligible-set-is-derived-and-has-no-source-owner",
+    "host-selects-one-exact-profile-from-derived-eligible-set-and-agent-verifies",
+    "trust-evidence-reference-is-not-trust-validity",
+    "no-generic-trust-reference-source-authority",
+    "no-offer-issuer-source-authority"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46",
+  "title": "Core Capability Allocation Registry",
+  "type": "object",
+  "required": ["artifactSchema", "protocolRelease", "registryClass", "coreCapabilityAllocationArtifact", "capabilityAllocations", "emptySetMeaning", "facetConformanceMeaning", "implicitAllocationAllowed"],
+  "properties": {
+    "artifactSchema": { "const": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "registryClass": { "const": "gb.registry.core-capability-allocation" },
+    "coreCapabilityAllocationArtifact": { "type": "string", "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "capabilityAllocations": { "type": "array", "maxItems": 0 },
+    "emptySetMeaning": { "const": "no-core-capability-key-or-version-is-allocated" },
+    "facetConformanceMeaning": { "const": "satisfaction-of-registered-invariant-properties-not-capability-implementation-or-enablement" },
+    "implicitAllocationAllowed": { "const": false }
+  },
+  "additionalProperties": false
+}
