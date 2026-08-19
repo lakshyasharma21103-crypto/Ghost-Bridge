@@ -271,6 +271,14 @@ The post-merge reconciliation classification is
 requirement for evidence from two genuinely independent Draft 2020-12
 validators remains `SECOND_VALIDATOR_EVIDENCE_PENDING`.
 
+[D2-01R1 Revision 2 — Shared Canonical Wire Vocabulary](./d2-01r1-e1.r0-draft.1-shared-canonical-wire-vocabulary-contract.md)
+is `ACCEPTED` by explicit human approval dated 2026-08-19. Its implementation
+is `NOT YET AUTHORIZED` and `NOT COMPLETE`; D2-01 remains `INCOMPLETE`, and
+second-validator evidence remains pending. The acceptance includes all eight
+binding independent-review corrections recorded in the dedicated contract.
+It closes no `GB-*` gap and establishes no conformance, interoperability,
+release, production-readiness, or Protocol 1.0 claim.
+
 The reconciliation found no current unavoidable semantic-authority blocker.
 That finding does not authorize future implementation to invent semantics.
 Every future slice retains the STOP rule if a representation choice would alter
@@ -280,8 +288,9 @@ accepted semantic meaning.
 
 D2-02 through D2-05 remain incomplete. Historical labels D2-01C, D2-01D,
 D2-01E, and D2-01F do not currently have durable accepted slice contracts and
-must not be treated as if such contracts already exist. No replacement slice
-label is accepted by this status record.
+must not be treated as if such contracts already exist. D2-01R1 Revision 2 is
+the accepted bounded contract for the shared canonical wire vocabulary; its
+acceptance does not authorize or establish implementation progress.
 
 All 60 `GB-*` gaps remain `PENDING`. The candidate remains
 `ghostbridge/e1.r0-draft.1` and remains draft/prerelease.
