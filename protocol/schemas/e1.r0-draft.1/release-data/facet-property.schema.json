@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe",
+  "title": "Facet Property Registry",
+  "type": "object",
+  "required": ["artifactSchema", "protocolRelease", "registryClass", "facetPropertyArtifact", "facets", "failureCodes", "invariantProperties", "capabilityNarrowableProperties", "classificationRules", "releaseSelectionRoles", "approvalRoleAssignments", "taskRoleAssignments", "receiptRoleAssignments"],
+  "properties": {
+    "artifactSchema": { "const": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "registryClass": { "const": "gb.registry.facet-property" },
+    "facetPropertyArtifact": { "$ref": "#/$defs/artifactIdentity" },
+    "facets": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "$ref": "#/$defs/facet" } },
+    "failureCodes": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "$ref": "#/$defs/failureCode" } },
+    "invariantProperties": { "type": "array", "minItems": 54, "maxItems": 54, "items": { "$ref": "#/$defs/invariantProperty" } },
+    "capabilityNarrowableProperties": { "type": "array", "minItems": 5, "maxItems": 5, "items": { "oneOf": [{ "$ref": "#/$defs/ordinaryNarrowableProperty" }, { "$ref": "#/$defs/receiptNarrowableProperty" }] } },
+    "classificationRules": {
+      "type": "object",
+      "required": ["unclassifiedPropertyDisposition", "narrowingScope", "canWeakenSharedInvariant", "canWeakenStrongerApplicableRequirement", "canWeakenConsent", "canWeakenPolicy", "canWeakenSecurityFloor", "canWeakenHostRequiredCondition"],
+      "properties": {
+        "unclassifiedPropertyDisposition": { "const": "fail-as-invariant" },
+        "narrowingScope": { "const": "exact-capability-key-and-exact-capability-version-only" },
+        "canWeakenSharedInvariant": { "const": false },
+        "canWeakenStrongerApplicableRequirement": { "const": false },
+        "canWeakenConsent": { "const": false },
+        "canWeakenPolicy": { "const": false },
+        "canWeakenSecurityFloor": { "const": false },
+        "canWeakenHostRequiredCondition": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "releaseSelectionRoles": {
+      "type": "object",
+      "required": ["bilateralSelectors", "trustCoreBilateralSelector", "trustCoreMayValidateApplicableReleaseBoundEvidence", "trustCoreCandidateSelectionAuthority", "trustCoreSelectedReleaseCommitAuthority", "trustCoreFallbackAuthority"],
+      "properties": {
+        "bilateralSelectors": { "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["Client/Host Core", "Agent Core"] } },
+        "trustCoreBilateralSelector": { "const": false },
+        "trustCoreMayValidateApplicableReleaseBoundEvidence": { "const": true },
+        "trustCoreCandidateSelectionAuthority": { "const": false },
+        "trustCoreSelectedReleaseCommitAuthority": { "const": false },
+        "trustCoreFallbackAuthority": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "approvalRoleAssignments": { "$ref": "#/$defs/approvalRoles" },
+    "taskRoleAssignments": { "$ref": "#/$defs/taskRoles" },
+    "receiptRoleAssignments": { "$ref": "#/$defs/receiptRoles" }
+  },
+  "$defs": {
+    "artifactIdentity": { "type": "string", "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "facetCode": { "enum": ["HC", "AC", "TC", "HG", "AG"] },
+    "facet": {
+      "type": "object",
+      "required": ["id", "revision", "code"],
+      "properties": {
+        "id": { "enum": ["gb.facet.host.core", "gb.facet.agent.core", "gb.facet.trust-verification.core", "gb.facet.host.governed-execution", "gb.facet.agent.governed-execution"] },
+        "revision": { "const": 1 },
+        "code": { "$ref": "#/$defs/facetCode" }
+      },
+      "additionalProperties": false
+    },
+    "failureCode": {
+      "type": "object",
+      "required": ["code", "meaning"],
+      "properties": {
+        "code": { "enum": ["FI", "FA", "FH", "FP", "FN"] },
+        "meaning": { "type": "string", "minLength": 1, "maxLength": 300 }
+      },
+      "additionalProperties": false
+    },
+    "invariantProperty": {
+      "type": "object",
+      "required": ["token", "revision", "classification", "facets", "meaning", "roles", "failure"],
+      "properties": {
+        "token": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,127}$" },
+        "revision": { "const": 1 },
+        "classification": { "const": "invariant" },
+        "facets": { "type": "array", "minItems": 1, "maxItems": 5, "uniqueItems": true, "items": { "$ref": "#/$defs/facetCode" } },
+        "meaning": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "roles": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "failure": { "type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": { "enum": ["FI", "FA", "FH", "FP", "FN"] } }
+      },
+      "additionalProperties": false
+    },
+    "ordinaryNarrowableProperty": {
+      "type": "object",
+      "required": ["token", "revision", "classification", "facets", "meaning", "applicableSources", "capabilityLocalReason", "noWidenNoWaiver", "conflictFailure"],
+      "properties": {
+        "token": { "enum": ["requester-cancellation-support", "effect-retry-permission", "capability-approval-requirement", "capability-extension-requirements"] },
+        "revision": { "const": 1 },
+        "classification": { "const": "capability-narrowable" },
+        "facets": { "$ref": "#/$defs/governedFacets" },
+        "meaning": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "applicableSources": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 120 } },
+        "capabilityLocalReason": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "noWidenNoWaiver": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "conflictFailure": { "type": "string", "minLength": 1, "maxLength": 600 }
+      },
+      "additionalProperties": false
+    },
+    "receiptNarrowableProperty": {
+      "type": "object",
+      "required": ["token", "revision", "classification", "facets", "meaning", "applicableSources", "capabilityLocalReason", "noWidenNoWaiver", "conflictFailure", "values", "optionalIsAlias", "stricterRequirementSources"],
+      "properties": {
+        "token": { "const": "capability-receipt-disposition" },
+        "revision": { "const": 1 },
+        "classification": { "const": "capability-narrowable" },
+        "facets": { "$ref": "#/$defs/governedFacets" },
+        "meaning": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "applicableSources": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 120 } },
+        "capabilityLocalReason": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "noWidenNoWaiver": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "conflictFailure": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "values": { "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true, "items": { "enum": ["required", "permitted", "prohibited"] } },
+        "optionalIsAlias": { "const": false },
+        "stricterRequirementSources": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "governedFacets": { "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["HG", "AG"] } },
+    "approvalRoles": {
+      "type": "object",
+      "required": ["agentGovernedCoverage", "agentChallengeAuthority", "decisionIssuer", "agentDecisionRole", "approvalLifecycleOwner", "hostGovernedCoverage", "hostNotApplicable", "trustCoreApprovalRole"],
+      "properties": {
+        "agentGovernedCoverage": { "type": "string", "minLength": 1 },
+        "agentChallengeAuthority": { "type": "string", "minLength": 1 },
+        "decisionIssuer": { "const": "eligible Approver only" },
+        "agentDecisionRole": { "type": "string", "minLength": 1 },
+        "approvalLifecycleOwner": { "type": "string", "minLength": 1 },
+        "hostGovernedCoverage": { "type": "string", "minLength": 1 },
+        "hostNotApplicable": { "type": "string", "minLength": 1 },
+        "trustCoreApprovalRole": { "const": "not-applicable" }
+      },
+      "additionalProperties": false
+    },
+    "taskRoles": {
+      "type": "object",
+      "required": ["agentGovernedCoverage", "hostGovernedCoverage", "hostNotApplicable", "trustCoreTaskRole"],
+      "properties": {
+        "agentGovernedCoverage": { "type": "string", "minLength": 1 },
+        "hostGovernedCoverage": { "type": "string", "minLength": 1 },
+        "hostNotApplicable": { "type": "string", "minLength": 1 },
+        "trustCoreTaskRole": { "const": "not-applicable" }
+      },
+      "additionalProperties": false
+    },
+    "receiptRoles": {
+      "type": "object",
+      "required": ["hostGovernedCoverage", "hostNotApplicable", "agentGovernedCoverage", "agentReqRcpt0008", "trustCoreCoverage", "trustCoreNotApplicable"],
+      "properties": {
+        "hostGovernedCoverage": { "type": "string", "minLength": 1 },
+        "hostNotApplicable": { "type": "string", "minLength": 1 },
+        "agentGovernedCoverage": { "type": "string", "minLength": 1 },
+        "agentReqRcpt0008": { "type": "string", "minLength": 1 },
+        "trustCoreCoverage": { "type": "string", "minLength": 1 },
+        "trustCoreNotApplicable": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

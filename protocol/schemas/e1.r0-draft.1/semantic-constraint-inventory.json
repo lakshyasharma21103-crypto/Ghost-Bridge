@@ -327,6 +327,171 @@
       },
       "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
       "downstreamOwner": "D2-01A"
+    },
+    {
+      "id": "RDA-SEM-ATOMIC-SOURCE-AUTHORITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["source-claim authority registry", "source claims", "derived-only values"],
+      "predicate": "Require exactly 81 unique atomic dimensions, one record at most per source and dimension, exact R/P and qualification behavior, required participant preferred-release consistency claims, unauthorized-source rejection, separate non-authorizing Host context supply for applicable capability-required conditions, no binding-to-authority escalation, and no source ownership for derived values.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-04", "H-13"], "req": ["REQ-VERS-0012", "REQ-VERS-0013", "REQ-VERS-0014", "REQ-VERS-0016"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-ATOMIC-SOURCE-AUTHORITY"
+    },
+    {
+      "id": "RDA-SEM-DIRECTIONAL-BINDINGS",
+      "validationLayer": "SEMANTIC",
+      "affected": ["directional-binding registry", "redemption intent", "Connection commit"],
+      "predicate": "Require all exact fields of the 20 unique accepted bindings, invariant distinctions, prohibited future bindings, the exact dependency order and Connection-authority rule, no Offer issuer, and no future or circular binding.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-04", "H-06", "H-13"], "req": ["REQ-INST-0002", "REQ-CONN-0003", "REQ-VERS-0016"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-CONN-0003"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-DIRECTIONAL-BINDINGS"
+    },
+    {
+      "id": "RDA-SEM-FACET-PROPERTY-INVENTORY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["facet-property registry", "five facets", "54 invariant properties"],
+      "predicate": "Require the exact five revision-1 facets and all exact semantic fields of the 54 unique revision-1 invariant property records, failure meanings, applicability, and closed classification.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-04", "H-13"], "req": ["REQ-VERS-0011", "REQ-VERS-0013", "REQ-VERS-0016"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-FACET-PROPERTY-INVENTORY"
+    },
+    {
+      "id": "RDA-SEM-TRUST-NEGOTIATION-SEPARATION",
+      "validationLayer": "SEMANTIC",
+      "affected": ["deterministic-release-negotiation property", "Trust Core"],
+      "predicate": "Limit bilateral release selection to Client/Host Core and Agent Core; Trust Core may validate applicable release-bound evidence but has no selection, commit, or fallback authority.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-04", "H-11"], "req": ["REQ-VERS-0014", "REQ-TRUST-0012"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-TRUST-NEGOTIATION-SEPARATION"
+    },
+    {
+      "id": "RDA-SEM-ROLE-SEPARATION",
+      "validationLayer": "SEMANTIC",
+      "affected": ["Approval role assignments", "Challenge", "Decision", "Approval-authority lifecycle"],
+      "predicate": "Preserve Agent Challenge issuance and lifecycle ownership while reserving immutable Decision issuance to an eligible Approver only.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-08", "H-13"], "req": ["REQ-APPR-0002", "REQ-APPR-0005", "REQ-APPR-0022"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-APPR-0022"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-ROLE-SEPARATION"
+    },
+    {
+      "id": "RDA-SEM-CAPABILITY-NARROWING",
+      "validationLayer": "SEMANTIC",
+      "affected": ["capability-narrowable property records", "exact capability key/version"],
+      "predicate": "Allow exactly five named revision-1 properties to narrow only one exact closed Core or External CapabilityKey and exact string CapabilityVersion without normalization, ordering, fallback, weakening an invariant, or waiving a stronger applicable requirement.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-04", "H-07", "H-08", "H-09", "H-13"], "req": ["REQ-VERS-0011", "REQ-VERS-0013", "REQ-VERS-0016"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-CAPABILITY-NARROWING"
+    },
+    {
+      "id": "RDA-SEM-RECEIPT-DISPOSITION",
+      "validationLayer": "SEMANTIC",
+      "affected": ["capability-receipt-disposition", "stricter applicable Receipt requirements"],
+      "predicate": "Admit only required, permitted, and prohibited; reject optional; and prevent permitted or prohibited from waiving a stricter applicable Receipt requirement.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-04", "H-09", "H-10", "H-11"], "req": ["REQ-TASK-0025", "REQ-TASK-0026", "REQ-RCPT-0001", "REQ-VERS-0013"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-RECEIPT-DISPOSITION"
+    },
+    {
+      "id": "RDA-SEM-CORE-EXPLICIT-EMPTY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["core-capability-allocation registry"],
+      "predicate": "Require an explicit empty Core capability allocation and prohibit implicit allocation from namespace, SDK, deployment, runtime, or tests.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-04", "H-13"], "req": ["REQ-VERS-0011", "REQ-VERS-0013"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-CORE-EXPLICIT-EMPTY"
+    },
+    {
+      "id": "RDA-SEM-EXTERNAL-ELIGIBILITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["external-capability-eligibility registry", "namespace authority"],
+      "predicate": "Apply the exact ordered 1..13 external eligibility/governance rules and exact namespace-authority and historical-resolution matrices while ensuring namespace identity prevents collisions only and grants no other authority.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-04", "H-13"], "req": ["REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0013"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-EXTERNAL-ELIGIBILITY"
+    },
+    {
+      "id": "RDA-SEM-HISTORICAL-IMMUTABILITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["external capability history", "subordinate registry artifact references"],
+      "predicate": "Resolve exact immutable historical contract and registry bytes without current, latest, package, SDK, network, or deployment substitution.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-13", "H-14"], "req": ["REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"], "d2r": ["D2R-004B"] },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-HISTORICAL-IMMUTABILITY"
+    },
+    {
+      "id": "RDA-SEM-GLOBAL-EXPLICIT-EMPTY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["global-feature-allocation registry", "all global relationship sets"],
+      "predicate": "Require explicit empty global feature, feature-to-profile, feature-to-capability, and all other relationship sets with no inference.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-04", "H-13"], "req": ["REQ-VERS-0011", "REQ-VERS-0013"], "d2r": ["D2R-007"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-GLOBAL-EXPLICIT-EMPTY"
+    },
+    {
+      "id": "RDA-SEM-AUTHENTICATION-PROFILES",
+      "validationLayer": "SEMANTIC",
+      "affected": ["authentication-profile registry", "signed-request-pop", "none-test-fixture"],
+      "predicate": "Require exactly the two revision-1 profiles, preserve pending signed-request-pop eligibility and exact bounds, prohibit fallback, and keep fixture none permanently non-production.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-04", "H-05", "H-07", "H-11", "H-13"], "req": ["REQ-AUTH-0002", "REQ-AUTH-0003", "REQ-AUTH-0007", "REQ-AUTH-0008", "REQ-AUTH-0009"], "d2r": ["D2R-026", "D2R-027"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-AUTH-0003"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-AUTHENTICATION-PROFILES"
+    },
+    {
+      "id": "RDA-SEM-MANIFEST-ATOMICITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["release-data manifest", "seven subordinate registry classes", "atomic load result"],
+      "predicate": "Require the closed seven-class set exactly once and grant no release-data authority unless every referenced artifact completes validation in one atomic set.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-04", "H-13", "H-14"], "req": ["REQ-VERS-0009", "REQ-VERS-0011", "REQ-VERS-0013", "REQ-VERS-0016"], "d2r": ["D2R-007", "D2R-030"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0013"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-MANIFEST-ATOMICITY"
+    },
+    {
+      "id": "RDA-SEM-TYPED-ARTIFACT-BINDING",
+      "validationLayer": "SEMANTIC",
+      "affected": ["typed registry artifact identities", "manifest class/release/schema/path bindings"],
+      "predicate": "Require distinct typed UUIDv4 artifact identities and mutual equality among manifest identity, class, exact release, schema, path, and parsed artifact fields without cross-class substitution.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": { "h": ["H-03", "H-13", "H-14"], "req": ["REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"], "d2r": ["D2R-003", "D2R-004B", "D2R-030"] },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-TYPED-ARTIFACT-BINDING"
+    },
+    {
+      "id": "RDA-SEM-EXACT-BYTE-INTEGRITY",
+      "validationLayer": "RAW_AND_SEMANTIC",
+      "affected": ["seven subordinate artifact byte streams", "ArtifactByteIntegrityRef"],
+      "predicate": "Before artifact parsing, hash the exact raw bytes with SHA-256 and compare both the canonical digest and exact octet length without normalization, newline conversion, reserialization, or H-10 projection.",
+      "structuralCoverage": "NONE",
+      "provenance": { "h": ["H-03", "H-13", "H-14"], "req": ["REQ-DISC-0003", "REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"], "d2r": ["D2R-004B"] },
+      "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
+      "downstreamOwner": "D2-01B",
+      "executableCheck": "RDA-SEM-EXACT-BYTE-INTEGRITY"
     }
   ]
 }

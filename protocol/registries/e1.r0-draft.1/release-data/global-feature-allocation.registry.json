@@ -1,0 +1,12 @@
+{
+  "artifactSchema": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "registryClass": "gb.registry.global-feature-allocation",
+  "globalFeatureAllocationArtifact": "urn:uuid:68d7f665-49cb-4e7f-847b-a61a0b3f18f1",
+  "globalFeatureAllocations": [],
+  "featureToProfileRelationships": [],
+  "featureToCapabilityRelationships": [],
+  "otherGlobalRelationships": [],
+  "emptySetMeaning": "no-global-feature-or-relationship-is-allocated",
+  "inferenceAllowed": false
+}

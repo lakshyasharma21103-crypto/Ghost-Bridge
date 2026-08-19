@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:377b6b6b-2c73-4309-9df8-343057a56e41",
+  "title": "D2-01B Maintained Release-Data Semantic Source",
+  "type": "object",
+  "required": ["sourceSchema", "protocolRelease", "status", "serialization", "artifacts"],
+  "properties": {
+    "sourceSchema": { "const": "urn:uuid:377b6b6b-2c73-4309-9df8-343057a56e41" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "status": { "const": "maintained-semantic-source" },
+    "serialization": {
+      "type": "object",
+      "required": ["encoding", "bom", "newline", "indentSpaces", "terminalNewline"],
+      "properties": {
+        "encoding": { "const": "UTF-8" },
+        "bom": { "const": false },
+        "newline": { "const": "LF" },
+        "indentSpaces": { "const": 2 },
+        "terminalNewline": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": { "oneOf": [
+        { "$ref": "#/$defs/sourceClaimAuthority" },
+        { "$ref": "#/$defs/directionalBinding" },
+        { "$ref": "#/$defs/facetProperty" },
+        { "$ref": "#/$defs/coreCapabilityAllocation" },
+        { "$ref": "#/$defs/externalCapabilityEligibility" },
+        { "$ref": "#/$defs/globalFeatureAllocation" },
+        { "$ref": "#/$defs/authenticationProfile" }
+      ] },
+      "allOf": [
+        { "contains": { "$ref": "#/$defs/sourceClaimAuthority" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/directionalBinding" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/facetProperty" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/coreCapabilityAllocation" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/externalCapabilityEligibility" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/globalFeatureAllocation" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/authenticationProfile" }, "minContains": 1, "maxContains": 1 }
+      ]
+    }
+  },
+  "$defs": {
+    "sourceClaimAuthority": {
+      "type": "object",
+      "required": ["path", "schemaId", "identityField", "artifact"],
+      "properties": {
+        "path": { "const": "protocol/registries/e1.r0-draft.1/release-data/source-claim-authority.registry.json" },
+        "schemaId": { "const": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d" },
+        "identityField": { "const": "sourceClaimAuthorityArtifact" },
+        "artifact": { "$ref": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d" }
+      },
+      "additionalProperties": false
+    },
+    "directionalBinding": {
+      "type": "object",
+      "required": ["path", "schemaId", "identityField", "artifact"],
+      "properties": {
+        "path": { "const": "protocol/registries/e1.r0-draft.1/release-data/directional-binding.registry.json" },
+        "schemaId": { "const": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2" },
+        "identityField": { "const": "directionalBindingArtifact" },
+        "artifact": { "$ref": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2" }
+      },
+      "additionalProperties": false
+    },
+    "facetProperty": {
+      "type": "object",
+      "required": ["path", "schemaId", "identityField", "artifact"],
+      "properties": {
+        "path": { "const": "protocol/registries/e1.r0-draft.1/release-data/facet-property.registry.json" },
+        "schemaId": { "const": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe" },
+        "identityField": { "const": "facetPropertyArtifact" },
+        "artifact": { "$ref": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe" }
+      },
+      "additionalProperties": false
+    },
+    "coreCapabilityAllocation": {
+      "type": "object",
+      "required": ["path", "schemaId", "identityField", "artifact"],
+      "properties": {
+        "path": { "const": "protocol/registries/e1.r0-draft.1/release-data/core-capability-allocation.registry.json" },
+        "schemaId": { "const": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46" },
+        "identityField": { "const": "coreCapabilityAllocationArtifact" },
+        "artifact": { "$ref": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46" }
+      },
+      "additionalProperties": false
+    },
+    "externalCapabilityEligibility": {
+      "type": "object",
+      "required": ["path", "schemaId", "identityField", "artifact"],
+      "properties": {
+        "path": { "const": "protocol/registries/e1.r0-draft.1/release-data/external-capability-eligibility.registry.json" },
+        "schemaId": { "const": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e" },
+        "identityField": { "const": "externalCapabilityEligibilityArtifact" },
+        "artifact": { "$ref": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e" }
+      },
+      "additionalProperties": false
+    },
+    "globalFeatureAllocation": {
+      "type": "object",
+      "required": ["path", "schemaId", "identityField", "artifact"],
+      "properties": {
+        "path": { "const": "protocol/registries/e1.r0-draft.1/release-data/global-feature-allocation.registry.json" },
+        "schemaId": { "const": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28" },
+        "identityField": { "const": "globalFeatureAllocationArtifact" },
+        "artifact": { "$ref": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28" }
+      },
+      "additionalProperties": false
+    },
+    "authenticationProfile": {
+      "type": "object",
+      "required": ["path", "schemaId", "identityField", "artifact"],
+      "properties": {
+        "path": { "const": "protocol/registries/e1.r0-draft.1/release-data/authentication-profile.registry.json" },
+        "schemaId": { "const": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c" },
+        "identityField": { "const": "authenticationProfileArtifact" },
+        "artifact": { "$ref": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

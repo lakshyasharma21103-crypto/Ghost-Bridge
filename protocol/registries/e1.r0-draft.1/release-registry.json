@@ -1,59 +1,91 @@
 {
-  "registrySchema": "urn:uuid:927bbd7a-e229-440d-95f1-6ff0ebefe716",
+  "manifestSchema": "urn:uuid:927bbd7a-e229-440d-95f1-6ff0ebefe716",
   "protocolRelease": "ghostbridge/e1.r0-draft.1",
   "status": "draft-prerelease",
-  "registryClass": "release-owned-allocations",
-  "facets": [
+  "registryArtifacts": [
     {
-      "id": "gb.facet.host.core",
-      "revision": 1,
-      "allocationStatus": "allocated"
-    },
-    {
-      "id": "gb.facet.agent.core",
-      "revision": 1,
-      "allocationStatus": "allocated"
-    },
-    {
-      "id": "gb.facet.trust-verification.core",
-      "revision": 1,
-      "allocationStatus": "allocated"
-    },
-    {
-      "id": "gb.facet.host.governed-execution",
-      "revision": 1,
-      "allocationStatus": "allocated"
-    },
-    {
-      "id": "gb.facet.agent.governed-execution",
-      "revision": 1,
-      "allocationStatus": "allocated"
-    }
-  ],
-  "authenticationProfiles": [
-    {
-      "id": "gb.auth.signed-request-pop",
-      "revision": 1,
-      "eligibility": "pending-complete-profile-and-d2-evidence",
-      "eligible": false,
-      "productionDefault": false,
-      "productionFallback": false,
-      "securityBounds": {
-        "credentialMaximumValiditySeconds": 86400,
-        "requestProofLifetimeSeconds": 60,
-        "requestProofMaximumAgeSeconds": 60
+      "registryClass": "gb.registry.source-claim-authority",
+      "protocolRelease": "ghostbridge/e1.r0-draft.1",
+      "artifactSchema": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/source-claim-authority.registry.json",
+      "sourceClaimAuthorityArtifact": "urn:uuid:053c83e9-617f-4e59-93bf-da9159241d92",
+      "artifactByteIntegrity": {
+        "algorithm": "sha-256",
+        "value": "Jhm-G1Bb6bd4XCsvGFLg2gjrhkDFy60WfJ9FZinyVkM",
+        "byteLength": 27223
       }
     },
     {
-      "id": "gb.auth.none-test-fixture",
-      "revision": 1,
-      "eligibility": "permanently-non-production-test-fixture",
-      "eligible": false,
-      "productionDefault": false,
-      "productionFallback": false,
-      "productionConnectionAuthority": false
+      "registryClass": "gb.registry.directional-binding",
+      "protocolRelease": "ghostbridge/e1.r0-draft.1",
+      "artifactSchema": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/directional-binding.registry.json",
+      "directionalBindingArtifact": "urn:uuid:4a63c5b5-44e0-47f6-ab92-d567b8bc2f93",
+      "artifactByteIntegrity": {
+        "algorithm": "sha-256",
+        "value": "_mM0zi4nSFq31R_cGxiGOEKtERR_TtxgF_Hp_LxM6Lg",
+        "byteLength": 6289
+      }
+    },
+    {
+      "registryClass": "gb.registry.facet-property",
+      "protocolRelease": "ghostbridge/e1.r0-draft.1",
+      "artifactSchema": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/facet-property.registry.json",
+      "facetPropertyArtifact": "urn:uuid:aef799c0-6fd3-4e3d-a0bd-c804e137661f",
+      "artifactByteIntegrity": {
+        "algorithm": "sha-256",
+        "value": "7VPO3S0knxUoz_BaAA5E6equO08OovxtcMLbOzg0NP8",
+        "byteLength": 30830
+      }
+    },
+    {
+      "registryClass": "gb.registry.core-capability-allocation",
+      "protocolRelease": "ghostbridge/e1.r0-draft.1",
+      "artifactSchema": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/core-capability-allocation.registry.json",
+      "coreCapabilityAllocationArtifact": "urn:uuid:e5f50ea4-bfbf-4576-8f30-c490509d36ca",
+      "artifactByteIntegrity": {
+        "algorithm": "sha-256",
+        "value": "y_4tqgTap7-oLuzTs8ctbmZfk1hzrtTYG1z7Ux1wIto",
+        "byteLength": 534
+      }
+    },
+    {
+      "registryClass": "gb.registry.external-capability-eligibility",
+      "protocolRelease": "ghostbridge/e1.r0-draft.1",
+      "artifactSchema": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/external-capability-eligibility.registry.json",
+      "externalCapabilityEligibilityArtifact": "urn:uuid:f8b4e9bf-73de-43d3-88b2-08d349c54b5c",
+      "artifactByteIntegrity": {
+        "algorithm": "sha-256",
+        "value": "0ZUHp8GazFN3jddxW-l2_f_g9uQpuPXotblIDiIBUpk",
+        "byteLength": 2752
+      }
+    },
+    {
+      "registryClass": "gb.registry.global-feature-allocation",
+      "protocolRelease": "ghostbridge/e1.r0-draft.1",
+      "artifactSchema": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/global-feature-allocation.registry.json",
+      "globalFeatureAllocationArtifact": "urn:uuid:68d7f665-49cb-4e7f-847b-a61a0b3f18f1",
+      "artifactByteIntegrity": {
+        "algorithm": "sha-256",
+        "value": "dG1sG5WYNi_e2qoW16EGo1DBENmrUGT8USZ7l4yGD7Q",
+        "byteLength": 517
+      }
+    },
+    {
+      "registryClass": "gb.registry.authentication-profile",
+      "protocolRelease": "ghostbridge/e1.r0-draft.1",
+      "artifactSchema": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c",
+      "path": "protocol/registries/e1.r0-draft.1/release-data/authentication-profile.registry.json",
+      "authenticationProfileArtifact": "urn:uuid:7dd88266-dfaf-4614-b833-5c2e517e9a59",
+      "artifactByteIntegrity": {
+        "algorithm": "sha-256",
+        "value": "SVk5XHQUIBNNL4ofb7tJSKXcXs6gPaalJzSUe4YeM1U",
+        "byteLength": 2281
+      }
     }
-  ],
-  "capabilityRegistryCreated": false,
-  "negotiationSemanticsOwnedByD1": true
+  ]
 }

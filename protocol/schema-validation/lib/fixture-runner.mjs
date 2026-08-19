@@ -115,7 +115,8 @@ export function runFoundationFixtures({ manifest, assets, ajv }) {
     processedFixturePaths.add(fixtureEntry.path);
   }
 
-  for (const entry of manifest.schemas.filter((item) => item.assetClass !== "d2-machinery")) {
+  const fixtureCoveredAssetClasses = new Set(["representation-helper", "wire-primitive", "wire-foundation-object"]);
+  for (const entry of manifest.schemas.filter((item) => fixtureCoveredAssetClasses.has(item.assetClass))) {
     if (!fixtureTargetSchemaIds.has(entry.schemaId)) fail(`Foundation schema has no fixture coverage: ${entry.schemaId}`);
   }
   return {

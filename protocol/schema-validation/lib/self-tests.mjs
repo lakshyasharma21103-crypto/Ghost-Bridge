@@ -399,59 +399,56 @@ export function runRegistryExactSetSelfTests({ registry, validateRegistry }) {
       "order independence",
       (label) => {
         const candidate = structuredClone(registry);
-        candidate.facets.reverse();
-        candidate.authenticationProfiles.reverse();
+        candidate.registryArtifacts.reverse();
         expectTrue(label, validateRegistry(candidate) === true);
       },
     ],
     [
-      "wrong facet",
+      "wrong registry class",
       (label) => {
         const candidate = structuredClone(registry);
-        candidate.facets[0].id = "gb.facet.tool-self-test-wrong";
+        candidate.registryArtifacts[0].registryClass = "gb.registry.tool-self-test-wrong";
         rejects(label, candidate);
       },
     ],
     [
-      "extra facet",
+      "extra registry class",
       (label) => {
         const candidate = structuredClone(registry);
-        candidate.facets.push({ ...candidate.facets[0], id: "gb.facet.tool-self-test-extra" });
+        candidate.registryArtifacts.push({ ...candidate.registryArtifacts[0], registryClass: "gb.registry.tool-self-test-extra" });
         rejects(label, candidate);
       },
     ],
     [
-      "missing facet",
+      "missing registry class",
       (label) => {
         const candidate = structuredClone(registry);
-        candidate.facets.pop();
+        candidate.registryArtifacts.pop();
         rejects(label, candidate);
       },
     ],
     [
-      "wrong authentication profile",
+      "duplicate registry class",
       (label) => {
         const candidate = structuredClone(registry);
-        candidate.authenticationProfiles[0].id = "gb.auth.tool-self-test-wrong";
+        candidate.registryArtifacts[1] = structuredClone(candidate.registryArtifacts[0]);
         rejects(label, candidate);
       },
     ],
     [
-      "extra authentication profile",
+      "wrong typed artifact field",
       (label) => {
         const candidate = structuredClone(registry);
-        candidate.authenticationProfiles.push({
-          ...candidate.authenticationProfiles[0],
-          id: "gb.auth.tool-self-test-extra",
-        });
+        candidate.registryArtifacts[0].directionalBindingArtifact = candidate.registryArtifacts[0].sourceClaimAuthorityArtifact;
+        delete candidate.registryArtifacts[0].sourceClaimAuthorityArtifact;
         rejects(label, candidate);
       },
     ],
     [
-      "missing authentication profile",
+      "wrong artifact schema",
       (label) => {
         const candidate = structuredClone(registry);
-        candidate.authenticationProfiles.pop();
+        candidate.registryArtifacts[0].artifactSchema = candidate.registryArtifacts[1].artifactSchema;
         rejects(label, candidate);
       },
     ],

@@ -1,0 +1,1051 @@
+{
+  "artifactSchema": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "registryClass": "gb.registry.facet-property",
+  "facetPropertyArtifact": "urn:uuid:aef799c0-6fd3-4e3d-a0bd-c804e137661f",
+  "facets": [
+    {
+      "id": "gb.facet.host.core",
+      "revision": 1,
+      "code": "HC"
+    },
+    {
+      "id": "gb.facet.agent.core",
+      "revision": 1,
+      "code": "AC"
+    },
+    {
+      "id": "gb.facet.trust-verification.core",
+      "revision": 1,
+      "code": "TC"
+    },
+    {
+      "id": "gb.facet.host.governed-execution",
+      "revision": 1,
+      "code": "HG"
+    },
+    {
+      "id": "gb.facet.agent.governed-execution",
+      "revision": 1,
+      "code": "AG"
+    }
+  ],
+  "failureCodes": [
+    {
+      "code": "FI",
+      "meaning": "a missing, false, unknown, or contradicted invariant makes the applicable facet false and candidate incompatible, without fallback"
+    },
+    {
+      "code": "FA",
+      "meaning": "deny the operation before authority, state, or effect creation; quarantine or recover ambiguous partial state fail-closed"
+    },
+    {
+      "code": "FH",
+      "meaning": "preserve immutable committed history and reject rollback, mutation, or mutable reinterpretation"
+    },
+    {
+      "code": "FP",
+      "meaning": "emit only the applicable disclosure-safe H-12 outcome"
+    },
+    {
+      "code": "FN",
+      "meaning": "narrowing may affect only the exact capability/version and may never widen or waive a shared invariant"
+    }
+  ],
+  "invariantProperties": [
+    {
+      "token": "release-identity-and-status",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Exact canonical release identity is the sole protocol compatibility identity; status and history cannot be inferred or rewritten",
+      "roles": "Each participant role",
+      "failure": [
+        "FI",
+        "FH"
+      ]
+    },
+    {
+      "token": "participant-release-support",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Each participant owns its supported-release metadata; bilateral candidates are exact intersection plus H-03 evidence",
+      "roles": "Participant supplying or verifying release metadata",
+      "failure": [
+        "FI"
+      ]
+    },
+    {
+      "token": "deterministic-release-negotiation",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Client and Agent apply REQ-VERS-0014 with no second channel or fallback",
+      "roles": "Client/Host and Agent only; Trust Core is excluded",
+      "failure": [
+        "FI"
+      ]
+    },
+    {
+      "token": "immutable-negotiated-result",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "The complete REQ-VERS-0016 result is committed atomically and remains immutable",
+      "roles": "Host and Agent",
+      "failure": [
+        "FI",
+        "FH"
+      ]
+    },
+    {
+      "token": "facet-claim-boundary",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "A facet proves only its registered invariants; it grants no arbitrary capability or action authority",
+      "roles": "Claimant and verifier",
+      "failure": [
+        "FI"
+      ]
+    },
+    {
+      "token": "source-claim-intersection",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Atomic registered claims narrow monotonically; derived results are not claims",
+      "roles": "Host and Agent negotiation",
+      "failure": [
+        "FI",
+        "FN"
+      ]
+    },
+    {
+      "token": "discovery-observation",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Discovery is current candidate observation, never authority by itself",
+      "roles": "Discovery producer/consumer",
+      "failure": [
+        "FI",
+        "FA"
+      ]
+    },
+    {
+      "token": "lifecycle-ordering",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Operations and authority are admitted only in their accepted lifecycle order",
+      "roles": "Applicable participant",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "installation-redemption",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Grant, consent, intent, replay, and Connection creation retain separate authority boundaries",
+      "roles": "Host and Agent",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "connection-authority-lifecycle",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Connection authority, scope, states, replacement, recovery, and terminality are exact",
+      "roles": "Host owner and Agent enforcer",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "authorization-floor",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "Authentication, policy, consent, Connection, capability, Approval, and other gates remain separate; Agent is final enforcement point",
+      "roles": "Host defense-in-depth; Agent final enforcement",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "compatibility-identity",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Compatibility uses exact immutable directed evidence and never becomes alternate negotiation",
+      "roles": "Every release participant",
+      "failure": [
+        "FI",
+        "FH"
+      ]
+    },
+    {
+      "token": "compatibility-evolution",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Unknown Core, schema change, errata, support state, stored-object pinning, and legacy history follow D1",
+      "roles": "Every release participant",
+      "failure": [
+        "FI",
+        "FH"
+      ]
+    },
+    {
+      "token": "extension-openness",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "Core is closed except at registered locations; unknown/forwarded extension behavior is class-specific",
+      "roles": "Every applicable object processor",
+      "failure": [
+        "FI",
+        "FP"
+      ]
+    },
+    {
+      "token": "extension-selection",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "Required, optional, selected, and occurring sets and finite dependencies are exact; experiments remain separate",
+      "roles": "Every selecting/processing role",
+      "failure": [
+        "FI",
+        "FN"
+      ]
+    },
+    {
+      "token": "transport-origin-routing",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Exact Origin, request target, release route, DNS/SSRF, and redirect rules apply",
+      "roles": "Networked participant",
+      "failure": [
+        "FA",
+        "FP"
+      ]
+    },
+    {
+      "token": "transport-http-envelope",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Accepted methods/resources, media, UTF-8, finite JSON, headers, TLS, and framing are exact",
+      "roles": "Networked participant",
+      "failure": [
+        "FA",
+        "FP"
+      ]
+    },
+    {
+      "token": "transport-retry-time-budget",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Abort, ambiguity, retry class, Retry-After, and monotonic budgets remain distinct from protocol outcomes",
+      "roles": "Networked participant",
+      "failure": [
+        "FA",
+        "FP"
+      ]
+    },
+    {
+      "token": "transport-parser-resource-limits",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Accepted size, depth, parser, framing, and emission limits fail closed",
+      "roles": "Networked participant",
+      "failure": [
+        "FA",
+        "FP"
+      ]
+    },
+    {
+      "token": "transport-intermediary-boundary",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC"
+      ],
+      "meaning": "Caches, proxies, browsers, redirects, intermediaries, and credentials cannot alter authority",
+      "roles": "Networked participant",
+      "failure": [
+        "FA",
+        "FP"
+      ]
+    },
+    {
+      "token": "error-outcome-separation",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "Transport, protocol, authority, and resource outcomes and stable error classes remain distinct",
+      "roles": "Producer and consumer",
+      "failure": [
+        "FP"
+      ]
+    },
+    {
+      "token": "error-precedence-and-privacy",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "Exactly one primary public error follows accepted precedence and privacy collapse",
+      "roles": "Producer and consumer",
+      "failure": [
+        "FP"
+      ]
+    },
+    {
+      "token": "security-floor",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "Deployment policy, dependencies, profiles, extensions, and implementation choices cannot weaken D1 security",
+      "roles": "Every role",
+      "failure": [
+        "FI",
+        "FA"
+      ]
+    },
+    {
+      "token": "privacy-minimization",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC",
+        "TC",
+        "HG",
+        "AG"
+      ],
+      "meaning": "Purpose limitation, recursive allowlist redaction, telemetry limits, retention, and audit separation apply",
+      "roles": "Every role and surface",
+      "failure": [
+        "FA",
+        "FP",
+        "FH"
+      ]
+    },
+    {
+      "token": "authentication-authority-separation",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Authentication proves identity, not authority",
+      "roles": "Host and Agent",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "authentication-profile-selection",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "One exact eligible profile is Host-selected and Agent-verified; no fallback",
+      "roles": "Host selects; Agent verifies",
+      "failure": [
+        "FI",
+        "FA"
+      ]
+    },
+    {
+      "token": "authentication-production-floor",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Production authentication satisfies the exact selected eligible profile and D2R-027 floor",
+      "roles": "Host and Agent",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "authentication-result-binding",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Common secret-free result binds exact profile, evidence identities, principal, audience, limitations, and time",
+      "roles": "Producer and consumer",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "principal-audience-binding",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Principal derivation and audience/target separation are exact",
+      "roles": "Host and Agent",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "credential-reference-safety",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Reusable credentials remain out of protocol bodies, logs, and authority-unsafe references",
+      "roles": "Credential presenter/verifier",
+      "failure": [
+        "FA",
+        "FP"
+      ]
+    },
+    {
+      "token": "current-request-proof",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Each applicable request carries current selected-profile proof within exact bounds",
+      "roles": "Presenter/verifier",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "authentication-lifecycle",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Freshness, rotation, recovery, revocation, compromise, replacement, and terminal loss remain distinct",
+      "roles": "Presenter/verifier/store owner",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "authentication-failure-boundary",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Missing, stale, wrong-purpose, substituted, revoked, or compromised evidence follows exact terminal/recoverable consequences",
+      "roles": "Presenter/verifier",
+      "failure": [
+        "FA",
+        "FP"
+      ]
+    },
+    {
+      "token": "trust-result-consumption",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HC",
+        "AC"
+      ],
+      "meaning": "Only a bounded applicable Trust result can satisfy a Trust gate; references are not validity",
+      "roles": "Host/Agent Trust consumer",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "trust-verification",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "TC"
+      ],
+      "meaning": "Current and historical validity, anchors, snapshots, status, purposes, sequence, freshness, compromise, and classifications are evaluated exactly",
+      "roles": "Trust-verification role",
+      "failure": [
+        "FI",
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "trust-continuity-history",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "TC"
+      ],
+      "meaning": "Continuity domains, floors, forks, crash recovery, retention, and legacy evidence cannot reset or rewrite history",
+      "roles": "Trust-verification role",
+      "failure": [
+        "FH"
+      ]
+    },
+    {
+      "token": "trust-key-revocation",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "TC"
+      ],
+      "meaning": "Key identity/purpose, rotation, revocation, fencing, and subject consequences are exact",
+      "roles": "Trust-verification role",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "invocation-admission",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Invocation claims remain untrusted until exact serialized admission, identity, scope, deadline, idempotency, and policy checks complete",
+      "roles": "Host requester; Agent final admission",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "approval-concept-separation",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Challenge, Decision, Approval authority, Invocation acceptance, and Task are distinct",
+      "roles": "Host participant and Agent",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "approval-challenge-issuance",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "AG",
+        "HG"
+      ],
+      "meaning": "Agent may independently authorize and issue an exact open Challenge; issuance creates no Approval authority or Task",
+      "roles": "Agent issuer/enforcer; Host requester where applicable",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "approval-decision-integrity",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "An eligible Approver issues one immutable Decision; Agent verifies, stores, and converges exact retries without acquiring Approver authority",
+      "roles": "Approver issues; Host presents; Agent verifies/stores",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "approval-action-binding",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Decision and Challenge bind exact actor, beneficiary, capability/version, target, effect, limits, tenant, release, and evidence",
+      "roles": "Host/Approver presentation; Agent comparison",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "approval-authority-lifecycle",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "AG",
+        "HG"
+      ],
+      "meaning": "Agent maintains exactly available, consumed, expired, or revoked; only an approved Decision creates availability",
+      "roles": "Agent state owner/enforcer; Host only where role coverage applies",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "approval-consumption",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Consumption occurs only in the atomic Invocation-acceptance/Task-creation commit",
+      "roles": "Host supplies evidence; Agent commits",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "approval-history",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Restart, recovery, tombstones, ambiguity, historical meaning, and post-acceptance boundaries are immutable",
+      "roles": "Host and Agent according to role coverage",
+      "failure": [
+        "FH",
+        "FP"
+      ]
+    },
+    {
+      "token": "task-admission-and-birth",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Task birth is exactly the final accepted Invocation commit; no pre-Task placeholder is authoritative",
+      "roles": "Host observes/retries; Agent creates",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "task-state-lifecycle",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Closed Task states, transitions, attempts, fencing, progress, deadlines, cancellation races, and terminal winner are exact",
+      "roles": "Host and Agent according to role coverage",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "result-terminal-truth",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "One immutable Result commits atomically with terminal Task truth and preserves real effect classification",
+      "roles": "Host reads; Agent creates",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "task-history-recovery",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Polling, disclosure, retention, restart, split-brain, recovery, and historical meaning cannot rewrite committed truth",
+      "roles": "Host and Agent according to role coverage",
+      "failure": [
+        "FA",
+        "FH",
+        "FP"
+      ]
+    },
+    {
+      "token": "receipt-policy",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG",
+        "TC"
+      ],
+      "meaning": "Receipt disposition is fixed at terminal commit; Receipt remains downstream evidence",
+      "roles": "Applicable producer/consumer/verifier according to role coverage",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "receipt-semantic-integrity",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG",
+        "TC"
+      ],
+      "meaning": "Receipt identity, immutable projection, H-10 domains, and bounded effect evidence are exact",
+      "roles": "Producer/consumer/verifier according to role coverage",
+      "failure": [
+        "FA",
+        "FH"
+      ]
+    },
+    {
+      "token": "receipt-proof-eligibility",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "AG"
+      ],
+      "meaning": "Proof creation is a separately eligible purpose-scoped signing act",
+      "roles": "Agent signer",
+      "failure": [
+        "FA"
+      ]
+    },
+    {
+      "token": "receipt-verification",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG",
+        "TC"
+      ],
+      "meaning": "Verification is ordered and fail-closed and separates live retrieval from offline historical verification",
+      "roles": "Applicable verifier according to role coverage",
+      "failure": [
+        "FA",
+        "FP",
+        "FH"
+      ]
+    },
+    {
+      "token": "governed-extension-boundary",
+      "revision": 1,
+      "classification": "invariant",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Governed Core remains closed; only registered exact extensions may occur",
+      "roles": "Host and Agent",
+      "failure": [
+        "FI",
+        "FN"
+      ]
+    }
+  ],
+  "capabilityNarrowableProperties": [
+    {
+      "token": "requester-cancellation-support",
+      "revision": 1,
+      "classification": "capability-narrowable",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Declares whether an accepted exact capability supports authorized requester cancellation and the applicable bounded cancellation handoff/checkpoint behavior",
+      "applicableSources": [
+        "Passport/manifest ceiling",
+        "Discovery availability",
+        "Offer/Grant restriction",
+        "Host requirement or optional interest",
+        "Consent",
+        "Policy narrowing"
+      ],
+      "capabilityLocalReason": "A capability may safely expose less cancellation support than the governed-facet maximum",
+      "noWidenNoWaiver": "Cannot add cancellation support, bypass authorization, invent rollback, weaken terminal/effect truth, a shared invariant, or a stricter applicable requirement",
+      "conflictFailure": "Host-required unsupported value fails the candidate; isolated optional exclusion is allowed only by the exact accepted rule; contradiction or unsafe semantics fail closed"
+    },
+    {
+      "token": "effect-retry-permission",
+      "revision": 1,
+      "classification": "capability-narrowable",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Declares the exact capability-local permission for internal execution/effect retry while preserving one Task, idempotency, fencing, checkpoints, and real effect truth",
+      "applicableSources": [
+        "Passport/manifest ceiling",
+        "Discovery availability",
+        "Offer/Grant restriction",
+        "Host requirement/interest",
+        "Consent",
+        "Policy"
+      ],
+      "capabilityLocalReason": "A capability may prohibit or further restrict retries based on external-effect risk",
+      "noWidenNoWaiver": "Cannot authorize a new Task, duplicate an external effect, permit blind retry after ambiguity, treat compensation as retry, weaken a shared invariant, or weaken a stricter applicable requirement",
+      "conflictFailure": "Unsafe or contradictory retry semantics fail the exact capability or candidate under REQ-VERS-0013; ambiguity never defaults to retry permission"
+    },
+    {
+      "token": "capability-approval-requirement",
+      "revision": 1,
+      "classification": "capability-narrowable",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Fixes whether the exact capability/version requires a valid exact-action Approval before acceptance and any capability-local stricter Approval limitation",
+      "applicableSources": [
+        "Passport/manifest ceiling",
+        "Discovery",
+        "Offer/Grant restriction",
+        "Host requirement",
+        "Consent",
+        "Policy"
+      ],
+      "capabilityLocalReason": "Capability semantics may require Approval even when the broad governed facet does not require it for every action",
+      "noWidenNoWaiver": "Cannot waive Approval required by a stronger source, reuse consumed authority, transfer Approver authority, weaken a shared invariant, or weaken a stricter applicable requirement",
+      "conflictFailure": "An attempted waiver fails closed; a missing required Approval denies Invocation acceptance"
+    },
+    {
+      "token": "capability-receipt-disposition",
+      "revision": 1,
+      "classification": "capability-narrowable",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Fixes exact capability/version Receipt production subject to terminal truth, signing eligibility, disclosure, and retention rules",
+      "applicableSources": [
+        "Passport/manifest ceiling",
+        "Discovery",
+        "Offer/Grant restriction",
+        "Host requirement/interest",
+        "Consent",
+        "Policy"
+      ],
+      "capabilityLocalReason": "Capability-local risk and evidence rules may require or prohibit Receipt materialization",
+      "noWidenNoWaiver": "Cannot make a Receipt authority, rewrite a Result, bypass signing eligibility, permit disclosure beyond current authority, or weaken any stronger applicable requirement",
+      "conflictFailure": "A conflict with a stricter applicable Receipt requirement fails the exact capability or candidate under REQ-VERS-0013; required but unavailable also fails; no Receipt may be fabricated",
+      "values": [
+        "required",
+        "permitted",
+        "prohibited"
+      ],
+      "optionalIsAlias": false,
+      "stricterRequirementSources": [
+        "accepted Task policy",
+        "Host requirement",
+        "Consent",
+        "Policy",
+        "another governing source"
+      ]
+    },
+    {
+      "token": "capability-extension-requirements",
+      "revision": 1,
+      "classification": "capability-narrowable",
+      "facets": [
+        "HG",
+        "AG"
+      ],
+      "meaning": "Supplies the exact required/optional extension identities and finite dependency closure for one capability/version",
+      "applicableSources": [
+        "Passport/manifest ceiling",
+        "Discovery availability",
+        "Offer/Grant restriction",
+        "Host required/optional declarations",
+        "Consent",
+        "Policy"
+      ],
+      "capabilityLocalReason": "A capability may require a stricter extension subset than the governed-facet baseline",
+      "noWidenNoWaiver": "Extensions cannot redefine Core, authority, Trust, consent, authentication, tenant, revocation, capability identity, a shared invariant, or a stricter applicable requirement",
+      "conflictFailure": "Unknown or unsupported required extension or unsatisfied dependency fails the exact capability/candidate; optional unsupported extension is omitted only where D1 permits"
+    }
+  ],
+  "classificationRules": {
+    "unclassifiedPropertyDisposition": "fail-as-invariant",
+    "narrowingScope": "exact-capability-key-and-exact-capability-version-only",
+    "canWeakenSharedInvariant": false,
+    "canWeakenStrongerApplicableRequirement": false,
+    "canWeakenConsent": false,
+    "canWeakenPolicy": false,
+    "canWeakenSecurityFloor": false,
+    "canWeakenHostRequiredCondition": false
+  },
+  "releaseSelectionRoles": {
+    "bilateralSelectors": [
+      "Client/Host Core",
+      "Agent Core"
+    ],
+    "trustCoreBilateralSelector": false,
+    "trustCoreMayValidateApplicableReleaseBoundEvidence": true,
+    "trustCoreCandidateSelectionAuthority": false,
+    "trustCoreSelectedReleaseCommitAuthority": false,
+    "trustCoreFallbackAuthority": false
+  },
+  "approvalRoleAssignments": {
+    "agentGovernedCoverage": "REQ-APPR-0001 through REQ-APPR-0040",
+    "agentChallengeAuthority": "Agent may independently authorize and issue Challenge under REQ-APPR-0002",
+    "decisionIssuer": "eligible Approver only",
+    "agentDecisionRole": "validates, commits, stores, and converges under REQ-APPR-0005 through REQ-APPR-0008 without acquiring Approver authority",
+    "approvalLifecycleOwner": "Agent under REQ-APPR-0022",
+    "hostGovernedCoverage": "REQ-APPR-0001, 0005, 0009-0016, 0020, 0021, 0023, 0024, 0027-0030, 0033, 0036-0040",
+    "hostNotApplicable": "REQ-APPR-0002-0004, 0006-0008, 0017-0019, 0022, 0025, 0026, 0031, 0032, 0034, 0035",
+    "trustCoreApprovalRole": "not-applicable"
+  },
+  "taskRoleAssignments": {
+    "agentGovernedCoverage": "REQ-TASK-0001 through REQ-TASK-0040",
+    "hostGovernedCoverage": "REQ-TASK-0003-0006, 0009, 0012, 0013, 0015-0017, 0020-0022, 0027-0031, 0035, 0037-0040",
+    "hostNotApplicable": "REQ-TASK-0001, 0002, 0007, 0008, 0010, 0011, 0014, 0018, 0019, 0023-0026, 0032-0034, 0036",
+    "trustCoreTaskRole": "not-applicable"
+  },
+  "receiptRoleAssignments": {
+    "hostGovernedCoverage": "REQ-RCPT-0001, 0003-0005, 0008-0010",
+    "hostNotApplicable": "REQ-RCPT-0002, 0006, 0007",
+    "agentGovernedCoverage": "REQ-RCPT-0001-0007, 0009, 0010",
+    "agentReqRcpt0008": "not-applicable unless Agent separately claims Trust role",
+    "trustCoreCoverage": "REQ-RCPT-0001, 0003-0005, 0008-0010",
+    "trustCoreNotApplicable": "REQ-RCPT-0002, 0006, 0007"
+  }
+}

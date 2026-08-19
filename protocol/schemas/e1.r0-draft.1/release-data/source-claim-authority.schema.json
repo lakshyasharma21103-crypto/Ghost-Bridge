@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
+  "title": "Source Claim Authority Registry",
+  "type": "object",
+  "required": ["artifactSchema", "protocolRelease", "registryClass", "sourceClaimAuthorityArtifact", "claimSemantics", "dimensions", "contextSupplyObligations", "requiredConsistencyDimensions", "derivedOnlyDimensions", "separationRules"],
+  "properties": {
+    "artifactSchema": { "const": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "registryClass": { "const": "gb.registry.source-claim-authority" },
+    "sourceClaimAuthorityArtifact": { "$ref": "#/$defs/artifactIdentity" },
+    "claimSemantics": {
+      "type": "object",
+      "required": ["R", "P", "optionalAbsence", "unlistedSource", "omissionDefault", "absenceAsDenial", "wildcard", "inheritance", "coercion", "atomicBySemanticDimension", "bindingIsClaimAuthority", "derivedValueIsSourceClaim"],
+      "properties": {
+        "R": { "const": "required-when-source-instance-and-dimension-are-applicable" },
+        "P": { "const": "permitted-optional-claim" },
+        "optionalAbsence": { "const": "no-claim" },
+        "unlistedSource": { "const": "unauthorized-no-authority" },
+        "omissionDefault": { "const": false },
+        "absenceAsDenial": { "const": false },
+        "wildcard": { "const": false },
+        "inheritance": { "const": false },
+        "coercion": { "const": false },
+        "atomicBySemanticDimension": { "const": true },
+        "bindingIsClaimAuthority": { "const": false },
+        "derivedValueIsSourceClaim": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 81,
+      "maxItems": 81,
+      "items": { "$ref": "#/$defs/dimension" }
+    },
+    "contextSupplyObligations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": { "$ref": "#/$defs/contextSupplyObligation" }
+    },
+    "requiredConsistencyDimensions": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "enum": ["client-host-local-preferred-release", "agent-local-preferred-release"] }
+    },
+    "derivedOnlyDimensions": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,127}$" }
+    },
+    "separationRules": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "artifactIdentity": { "type": "string", "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "claim": {
+      "type": "object",
+      "required": ["source", "presence", "qualification"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "presence": { "enum": ["R", "P"] },
+        "qualification": { "type": "string", "minLength": 1, "maxLength": 300 }
+      },
+      "additionalProperties": false
+    },
+    "contextSupplyObligation": {
+      "type": "object",
+      "required": ["dimensionId", "supplier", "applicability", "meaning", "authorizesClaim"],
+      "properties": {
+        "dimensionId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,127}$" },
+        "supplier": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "applicability": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "meaning": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "authorizesClaim": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "required": ["id", "label", "authorizedClaims"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,127}$" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "authorizedClaims": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/claim" } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

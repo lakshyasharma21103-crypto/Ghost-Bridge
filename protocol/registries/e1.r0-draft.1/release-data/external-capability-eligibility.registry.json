@@ -1,0 +1,79 @@
+{
+  "artifactSchema": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "registryClass": "gb.registry.external-capability-eligibility",
+  "externalCapabilityEligibilityArtifact": "urn:uuid:f8b4e9bf-73de-43d3-88b2-08d349c54b5c",
+  "eligibilityRules": [
+    {
+      "order": 1,
+      "rule": "Each external capability contract is independently published and immutably identified outside the Core allocation"
+    },
+    {
+      "order": 2,
+      "rule": "Passport/manifest authority supplies the maximum eligible capability key, exact version, immutable contract reference, and assigned ceiling or restrictions"
+    },
+    {
+      "order": 3,
+      "rule": "Discovery advertises only the currently deployed subset"
+    },
+    {
+      "order": 4,
+      "rule": "Offer and Grant narrow only to transaction-specific subsets or restrictions"
+    },
+    {
+      "order": 5,
+      "rule": "Host metadata distinguishes required capabilities from optional interests and preferences"
+    },
+    {
+      "order": 6,
+      "rule": "Consent supplies an immutable permitted subset"
+    },
+    {
+      "order": 7,
+      "rule": "Policy may deny or narrow only"
+    },
+    {
+      "order": 8,
+      "rule": "Capability key, capability version, and contract reference agree exactly"
+    },
+    {
+      "order": 9,
+      "rule": "Conflicting key/version/contract mappings are rejected; namespace similarity, latest-version lookup, aliases, and defaults cannot resolve them"
+    },
+    {
+      "order": 10,
+      "rule": "A namespace prevents collisions only and grants no identity, ownership, authenticity, Trust, publication, compatibility, or execution authority"
+    },
+    {
+      "order": 11,
+      "rule": "Historical Connections resolve the exact immutable contract evidence committed at establishment"
+    },
+    {
+      "order": 12,
+      "rule": "Mutable current, latest, package, SDK, network, or deployment lookup cannot replace or rewrite historical capability meaning"
+    },
+    {
+      "order": 13,
+      "rule": "An isolated optional capability conflict may exclude only that exact key/version and only when every REQ-VERS-0013 condition permits it; shared-security or Host-required conflicts fail the candidate"
+    }
+  ],
+  "namespaceAuthority": {
+    "collisionPrevention": true,
+    "identity": false,
+    "ownership": false,
+    "authenticity": false,
+    "trust": false,
+    "publication": false,
+    "compatibility": false,
+    "execution": false
+  },
+  "historicalResolution": {
+    "exactImmutableContractEvidence": true,
+    "mutableCurrent": false,
+    "mutableLatest": false,
+    "packageLookup": false,
+    "sdkLookup": false,
+    "networkLookup": false,
+    "deploymentLookup": false
+  }
+}

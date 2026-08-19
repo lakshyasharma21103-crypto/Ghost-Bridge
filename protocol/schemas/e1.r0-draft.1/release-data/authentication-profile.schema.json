@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c",
+  "title": "Authentication Profile Registry",
+  "type": "object",
+  "required": ["artifactSchema", "protocolRelease", "registryClass", "authenticationProfileArtifact", "profiles", "separationRules"],
+  "properties": {
+    "artifactSchema": { "const": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "registryClass": { "const": "gb.registry.authentication-profile" },
+    "authenticationProfileArtifact": { "$ref": "#/$defs/artifactIdentity" },
+    "profiles": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": { "oneOf": [{ "$ref": "#/$defs/signedRequestPop" }, { "$ref": "#/$defs/noneTestFixture" }] },
+      "allOf": [
+        { "contains": { "$ref": "#/$defs/signedRequestPop" }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "$ref": "#/$defs/noneTestFixture" }, "minContains": 1, "maxContains": 1 }
+      ]
+    },
+    "separationRules": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": { "enum": ["registration != eligibility", "eligibility != selection", "selection != authentication success", "authentication success != authorization"] }
+    }
+  },
+  "$defs": {
+    "artifactIdentity": { "type": "string", "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "securityBounds": {
+      "type": "object",
+      "required": ["credentialMaximumValiditySeconds", "requestProofLifetimeSeconds", "requestProofMaximumAgeSeconds", "expiry", "gracePeriodSeconds"],
+      "properties": {
+        "credentialMaximumValiditySeconds": { "const": 86400 },
+        "requestProofLifetimeSeconds": { "const": 60 },
+        "requestProofMaximumAgeSeconds": { "const": 60 },
+        "expiry": { "const": "exclusive" },
+        "gracePeriodSeconds": { "const": 0 }
+      },
+      "additionalProperties": false
+    },
+    "signedRequestPop": {
+      "type": "object",
+      "required": ["id", "revision", "registration", "semanticEligibility", "eligible", "eligibilityRequires", "implementationQualificationIsEligibilityCondition", "securityBounds", "prohibitedFallbacks", "tlsOrChannelLifetimeExtendsValidity", "requestProofFreshnessIsTrustFreshness", "earlierTerminationReasons"],
+      "properties": {
+        "id": { "const": "gb.auth.signed-request-pop" },
+        "revision": { "const": 1 },
+        "registration": { "const": "registered" },
+        "semanticEligibility": { "const": "pending-complete-immutable-profile-and-required-d2-evidence" },
+        "eligible": { "const": false },
+        "eligibilityRequires": { "type": "array", "minItems": 5, "maxItems": 5, "uniqueItems": true, "items": { "enum": ["contract", "schema", "security-parameters", "proof-semantics", "required-d2-evidence"] } },
+        "implementationQualificationIsEligibilityCondition": { "const": false },
+        "securityBounds": { "$ref": "#/$defs/securityBounds" },
+        "prohibitedFallbacks": { "type": "array", "minItems": 6, "maxItems": 6, "uniqueItems": true, "items": { "enum": ["authentication-profile", "bearer-for-proof-of-possession", "adjacent-profile", "provider-default", "cached-success", "production-fixture-none"] } },
+        "tlsOrChannelLifetimeExtendsValidity": { "const": false },
+        "requestProofFreshnessIsTrustFreshness": { "const": false },
+        "earlierTerminationReasons": { "type": "array", "minItems": 8, "maxItems": 8, "uniqueItems": true, "items": { "enum": ["revocation", "compromise", "key-ineligibility", "Trust-failure", "Connection-state", "authorization", "consent", "policy"] } }
+      },
+      "additionalProperties": false
+    },
+    "noneTestFixture": {
+      "type": "object",
+      "required": ["id", "revision", "registration", "semanticEligibility", "eligible", "production", "productionDefault", "productionFallback", "canCreateProductionConnection", "canRecoverProductionConnection", "canReactivateProductionConnection", "canExerciseProductionConnection", "canSatisfyProductionAuthentication"],
+      "properties": {
+        "id": { "const": "gb.auth.none-test-fixture" },
+        "revision": { "const": 1 },
+        "registration": { "const": "registered" },
+        "semanticEligibility": { "const": "permanently-non-production-test-fixture" },
+        "eligible": { "const": false },
+        "production": { "const": false },
+        "productionDefault": { "const": false },
+        "productionFallback": { "const": false },
+        "canCreateProductionConnection": { "const": false },
+        "canRecoverProductionConnection": { "const": false },
+        "canReactivateProductionConnection": { "const": false },
+        "canExerciseProductionConnection": { "const": false },
+        "canSatisfyProductionAuthentication": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

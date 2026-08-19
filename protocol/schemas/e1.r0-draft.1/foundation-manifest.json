@@ -37,13 +37,128 @@
       "assetClass": "d2-machinery",
       "path": "protocol/schemas/e1.r0-draft.1/machinery/release-registry.schema.json",
       "dependencies": [
-        "urn:uuid:d213d7c9-15da-41f2-b51b-286944581a74",
-        "urn:uuid:735bbcfb-bdd0-4c80-8c40-351ce5e5c93e"
+        "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
       ],
       "provenance": {
-        "h": ["H-04", "H-05", "H-07", "H-11", "H-13"],
+        "h": ["H-03", "H-04", "H-05", "H-07", "H-11", "H-13", "H-14"],
         "req": ["REQ-VERS-0009", "REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0016", "REQ-AUTH-0002", "REQ-AUTH-0003", "REQ-AUTH-0007", "REQ-AUTH-0008", "REQ-AUTH-0009"],
-        "d2r": ["D2R-007", "D2R-026", "D2R-027"]
+        "d2r": ["D2R-004B", "D2R-007", "D2R-026", "D2R-027", "D2R-030"]
+      }
+    },
+    {
+      "logicalName": "ReleaseDataSource",
+      "schemaId": "urn:uuid:377b6b6b-2c73-4309-9df8-343057a56e41",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/release-data-source.schema.json",
+      "dependencies": [
+        "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
+        "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2",
+        "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe",
+        "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46",
+        "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e",
+        "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28",
+        "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c"
+      ],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13", "H-14"],
+        "req": ["REQ-VERS-0009", "REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0016"],
+        "d2r": ["D2R-004B", "D2R-007", "D2R-026", "D2R-027", "D2R-030", "D2R-032"]
+      }
+    },
+    {
+      "logicalName": "SourceClaimAuthorityRegistry",
+      "schemaId": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d",
+      "assetClass": "release-data-registry",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/source-claim-authority.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13", "H-14"],
+        "req": ["REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0013", "REQ-VERS-0014", "REQ-VERS-0016"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "ReleaseDataFixtureCorpus",
+      "schemaId": "urn:uuid:d11fe4f0-85ee-4d0c-9210-778cb3cc4ef9",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/release-data-fixture-corpus.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13", "H-14"],
+        "req": ["REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0013", "REQ-VERS-0016", "REQ-COMP-0007"],
+        "d2r": ["D2R-001", "D2R-004B", "D2R-007", "D2R-032"]
+      }
+    },
+    {
+      "logicalName": "DirectionalBindingRegistry",
+      "schemaId": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2",
+      "assetClass": "release-data-registry",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/directional-binding.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-06", "H-13", "H-14"],
+        "req": ["REQ-INST-0002", "REQ-CONN-0003", "REQ-VERS-0016"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "FacetPropertyRegistry",
+      "schemaId": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe",
+      "assetClass": "release-data-registry",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/facet-property.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-07", "H-08", "H-09", "H-10", "H-11", "H-12", "H-13"],
+        "req": ["REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0013", "REQ-VERS-0014", "REQ-VERS-0016", "REQ-APPR-0022", "REQ-RCPT-0001"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "CoreCapabilityAllocationRegistry",
+      "schemaId": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46",
+      "assetClass": "release-data-registry",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/core-capability-allocation.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-04", "H-13"],
+        "req": ["REQ-VERS-0011", "REQ-VERS-0013"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "ExternalCapabilityEligibilityRegistry",
+      "schemaId": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e",
+      "assetClass": "release-data-registry",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/external-capability-eligibility.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13", "H-14"],
+        "req": ["REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0013", "REQ-VERS-0016"],
+        "d2r": ["D2R-004B", "D2R-007"]
+      }
+    },
+    {
+      "logicalName": "GlobalFeatureAllocationRegistry",
+      "schemaId": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28",
+      "assetClass": "release-data-registry",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/global-feature-allocation.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-04", "H-13"],
+        "req": ["REQ-VERS-0011", "REQ-VERS-0013"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "AuthenticationProfileRegistry",
+      "schemaId": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c",
+      "assetClass": "release-data-registry",
+      "path": "protocol/schemas/e1.r0-draft.1/release-data/authentication-profile.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-04", "H-05", "H-07", "H-11", "H-13"],
+        "req": ["REQ-AUTH-0002", "REQ-AUTH-0003", "REQ-AUTH-0007", "REQ-AUTH-0008", "REQ-AUTH-0009", "REQ-VERS-0012"],
+        "d2r": ["D2R-026", "D2R-027"]
       }
     },
     {
@@ -378,6 +493,34 @@
     {
       "path": "protocol/registries/e1.r0-draft.1/release-registry.json",
       "schemaId": "urn:uuid:927bbd7a-e229-440d-95f1-6ff0ebefe716"
+    },
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-data/source-claim-authority.registry.json",
+      "schemaId": "urn:uuid:85293782-58f5-4c69-aa5b-830dd8aa480d"
+    },
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-data/directional-binding.registry.json",
+      "schemaId": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2"
+    },
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-data/facet-property.registry.json",
+      "schemaId": "urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe"
+    },
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-data/core-capability-allocation.registry.json",
+      "schemaId": "urn:uuid:cfe70791-b8f7-48f7-809f-f7c6872c3c46"
+    },
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-data/external-capability-eligibility.registry.json",
+      "schemaId": "urn:uuid:f901bb9f-46b5-4b04-a2cd-4185e43f560e"
+    },
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-data/global-feature-allocation.registry.json",
+      "schemaId": "urn:uuid:001a31f0-2190-43f8-988d-8d3055450d28"
+    },
+    {
+      "path": "protocol/registries/e1.r0-draft.1/release-data/authentication-profile.registry.json",
+      "schemaId": "urn:uuid:9feb2499-b6f5-4b4b-875a-d6b65b861e3c"
     }
   ],
   "semanticConstraintInventory": {

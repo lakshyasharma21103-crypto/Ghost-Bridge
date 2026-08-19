@@ -1,0 +1,154 @@
+{
+  "artifactSchema": "urn:uuid:e47a0317-4178-4ad3-8238-4c9aadce1cb2",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "registryClass": "gb.registry.directional-binding",
+  "directionalBindingArtifact": "urn:uuid:4a63c5b5-44e0-47f6-ab92-d567b8bc2f93",
+  "bindings": [
+    {
+      "id": "passport-to-agent-identity",
+      "binding": "Passport → Agent identity",
+      "kind": "source-intrinsic",
+      "meaning": "The Passport identifies its Agent; neither value substitutes for the other"
+    },
+    {
+      "id": "passport-issuer-to-passport",
+      "binding": "Passport issuer → Passport",
+      "kind": "source-intrinsic",
+      "meaning": "Issuer identity/evidence binds the exact Passport and version"
+    },
+    {
+      "id": "discovery-to-agent-origin-release-record",
+      "binding": "Discovery → Agent/Origin/release record",
+      "kind": "source-intrinsic",
+      "meaning": "Current advertisement binds its exact target, Origin, release, and immutable artifact references"
+    },
+    {
+      "id": "grant-issuer-to-grant",
+      "binding": "Grant issuer → Grant",
+      "kind": "source-intrinsic",
+      "meaning": "The authenticated issuer binds the exact Grant identity and immutable issuance bounds"
+    },
+    {
+      "id": "grant-to-scope",
+      "binding": "Grant → Agent/Passport/purpose/organization scope/tagged Workspace scope",
+      "kind": "source-intrinsic",
+      "meaning": "Grant scope is immutable and exactly equals the applicable independently authoritative values; tagged Workspace absence is not a wildcard"
+    },
+    {
+      "id": "offer-to-transaction",
+      "binding": "Offer → transaction subset/restrictions",
+      "kind": "source-intrinsic",
+      "meaning": "Offer claims bind the exact transaction object without implying a separate issuer identity"
+    },
+    {
+      "id": "host-metadata-to-host-release",
+      "binding": "Host participant metadata → Host identity/release metadata",
+      "kind": "source-intrinsic",
+      "meaning": "The Host participant claims belong to that exact participant"
+    },
+    {
+      "id": "authentication-evidence-to-result",
+      "binding": "Authentication evidence → authentication result",
+      "kind": "evaluation-comparison",
+      "meaning": "Evidence is verified under the exact selected profile, audience, purpose, principal, and time bounds"
+    },
+    {
+      "id": "trust-reference-to-result-input",
+      "binding": "Trust evidence references → Trust result inputs",
+      "kind": "evaluation-comparison",
+      "meaning": "References identify evidence; only bounded verification produces Trust validity"
+    },
+    {
+      "id": "source-claims-to-candidate",
+      "binding": "Passport/Discovery/Offer/Grant/Host/consent/policy claims → candidate",
+      "kind": "evaluation-comparison",
+      "meaning": "Only same-dimension claims intersect; no source widens another"
+    },
+    {
+      "id": "host-auth-selection-to-derived-set",
+      "binding": "Host exact authentication selection → derived eligible set",
+      "kind": "evaluation-comparison",
+      "meaning": "Selection must be exactly one member and does not author the set"
+    },
+    {
+      "id": "target-to-origin",
+      "binding": "Target identity → Origin",
+      "kind": "evaluation-comparison",
+      "meaning": "Required target/Origin relationships are verified without treating either as the other"
+    },
+    {
+      "id": "organization-to-workspace",
+      "binding": "Organization → Workspace",
+      "kind": "evaluation-comparison",
+      "meaning": "Workspace is checked within the exact Organization relationship but remains a distinct identity"
+    },
+    {
+      "id": "profile-to-facet",
+      "binding": "Profile → facet",
+      "kind": "evaluation-comparison",
+      "meaning": "Applicable registry relationships are checked; equality or substitution is forbidden"
+    },
+    {
+      "id": "capability-key-version-contract",
+      "binding": "Capability key → version → contract reference",
+      "kind": "evaluation-comparison",
+      "meaning": "All three match their immutable evidence independently"
+    },
+    {
+      "id": "extension-to-dependencies",
+      "binding": "Extension → dependencies",
+      "kind": "evaluation-comparison",
+      "meaning": "Exact finite dependency closure resolves without experiment substitution"
+    },
+    {
+      "id": "validated-inputs-to-selected-release",
+      "binding": "Validated inputs → selected release",
+      "kind": "downstream-result-binding",
+      "meaning": "Client and Agent perform H-03 and H-04 deterministic selection to produce one result"
+    },
+    {
+      "id": "selected-release-to-negotiated-result",
+      "binding": "Selected release → negotiated result",
+      "kind": "downstream-result-binding",
+      "meaning": "The result records exact facets, profiles, capabilities, restrictions, extensions, experiments, omissions, and evidence"
+    },
+    {
+      "id": "negotiated-result-to-redemption-intent",
+      "binding": "Negotiated result + authentication result + consent + Grant/Offer bounds → redemption intent",
+      "kind": "downstream-result-binding",
+      "meaning": "Field, value, and presence equality is complete before transaction entry"
+    },
+    {
+      "id": "redemption-intent-to-connection",
+      "binding": "Redemption intent → Connection",
+      "kind": "downstream-result-binding",
+      "meaning": "Only the atomic H-06 commit creates and binds Connection authority"
+    }
+  ],
+  "invariantDistinctions": [
+    "AgentIdentity != PassportIdentity",
+    "Passport issuer != Grant issuer",
+    "Organization != Workspace",
+    "target != Origin",
+    "profile != facet",
+    "capability key != capability version != contract reference",
+    "extension != experiment",
+    "Trust evidence reference != Trust result",
+    "binding != claim authority"
+  ],
+  "prohibitedFutureBindings": [
+    "future-authentication-result",
+    "final-consent",
+    "negotiated-result",
+    "redemption-intent",
+    "connection"
+  ],
+  "dependencyOrder": [
+    "validated-inputs",
+    "deterministic-negotiated-result",
+    "complete-redemption-intent",
+    "atomic-connection-commit"
+  ],
+  "connectionAuthorityCreatedOnlyBy": "atomic-connection-commit",
+  "offerIssuerAsserted": false
+}
