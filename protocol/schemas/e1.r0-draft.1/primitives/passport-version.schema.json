@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:0b0d0f25-d66a-49ed-b5d6-e98044422681",
+  "title": "PassportVersion",
+  "description": "Exact opaque Passport version within one complete PassportIdentity. The text has no ordering, range, latest, or fallback meaning.",
+  "type": "string",
+  "minLength": 1,
+  "maxLength": 64,
+  "pattern": "^[a-z](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+}

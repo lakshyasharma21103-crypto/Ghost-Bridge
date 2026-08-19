@@ -10,6 +10,7 @@ import { loadReleaseDataFiles, validateReleaseDataBundleFoundationRegression } f
 import { assertValidatorImportIsolation, createOfflineSchemaValidator, scanBundleSchemaSafety, validateAssetSchemas } from "./lib/schema-safety.mjs";
 import { runRawJsonParserSelfTests, runSeededValidatorSelfTests } from "./lib/self-tests.mjs";
 import { assertSemanticCheckDeclarations } from "./lib/semantic-checks.mjs";
+import { verifySharedConstraintCoverage } from "./lib/shared-constraint-coverage.mjs";
 
 const require = createRequire(import.meta.url);
 const ajvVersion = require("ajv/package.json").version;
@@ -19,11 +20,18 @@ const repositoryRoot = path.resolve(path.dirname(scriptPath), "../..");
 const paths = Object.freeze({
   manifest: "protocol/schemas/e1.r0-draft.1/foundation-manifest.json",
   schemas: "protocol/schemas/e1.r0-draft.1",
-  fixtures: "protocol/fixtures/wire/e1.r0-draft.1/foundation",
+  fixtures: [
+    "protocol/fixtures/wire/e1.r0-draft.1/foundation",
+    "protocol/fixtures/wire/e1.r0-draft.1/shared",
+  ],
   registries: "protocol/registries/e1.r0-draft.1",
   specification: "protocol/specification/e1.r0-draft.1",
   decisions: "protocol/decisions",
   representationProfile: "docs/protocol/d2-rp-01-e1.r0-draft.1-canonical-representation-profile.md",
+  backgroundDecisions: [
+    "docs/protocol/d2-bg-01-e1.r0-draft.1-identity-capability-representation-decisions.md",
+    "docs/protocol/d2-bg-02-e1.r0-draft.1-release-data-registry-and-facet-decisions.md",
+  ],
   validation: "protocol/schema-validation",
 });
 
@@ -32,7 +40,7 @@ function main() {
     repositoryRoot,
     manifestPath: paths.manifest,
     schemaRoot: paths.schemas,
-    fixtureRoot: paths.fixtures,
+    fixtureRoots: paths.fixtures,
     registryRoot: paths.registries,
   });
   const schemaSafety = scanBundleSchemaSafety(bundle);
@@ -72,6 +80,7 @@ function main() {
     specificationRoot: paths.specification,
     decisionsRoot: paths.decisions,
     representationProfilePath: paths.representationProfile,
+    backgroundDecisionPaths: paths.backgroundDecisions,
   });
   const provenance = verifyBundleProvenance({ manifest: bundle.manifest, inventory, authority });
   const fixtureSchemaIds = new Set(bundle.manifest.fixtures.map((entry) => entry.schemaId));
@@ -84,6 +93,7 @@ function main() {
     assets: loadedAssets.assets,
     ajv,
   });
+  const sharedConstraintCoverage = verifySharedConstraintCoverage(inventory, fixtures.fixtureIds);
   const fixtureProcessing = assertAllDeclaredPathsProcessed(
     "fixture",
     bundle.manifest.fixtures.map((entry) => entry.path),
@@ -109,6 +119,7 @@ function main() {
   console.log("DIRECT_DEPENDENCY_CLOSURE PASS");
   console.log(`PROVENANCE PASS ${authority.requirementIds.size} REQ_IDS ${authority.decisionIds.size} H_IDS`);
   console.log(`SEMANTIC_CONSTRAINTS ${provenance.constraintCount}`);
+  console.log(`SHARED_R1_CONSTRAINTS PASS owned=${sharedConstraintCoverage.owned} later=${sharedConstraintCoverage.later} evidence=${sharedConstraintCoverage.evidence}`);
   console.log(`DEFERRED_TYPES ${bundle.manifest.deferred.length}`);
   console.log(`FIXTURES ${fixtures.fixtureCount}`);
   console.log(`FIXTURE_TARGET_SCHEMAS ${fixtures.fixtureTargetSchemaIds.size}`);
@@ -117,6 +128,7 @@ function main() {
     console.log(`FIXTURE_CLASS ${classification} ${count}`);
   }
   console.log(`SEMANTIC_CHECKS PASS ${fixtures.semanticCount}`);
+  console.log(`RAW_INPUT_FIXTURES PASS ${fixtures.rawCount}`);
   console.log(`SEMANTIC_CHECK_IDENTIFIERS PASS ${semanticCheckDeclarationCount}`);
   console.log(`REGISTRY_EXACT_SET PASS classes=${releaseData.artifactsByClass.size} facets=${releaseData.facetCount} auth=${releaseData.authenticationProfileCount}`);
   console.log(`REGISTRY_PROCESSING_COVERAGE PASS ${registryProcessing.processed}/${registryProcessing.declared}`);
@@ -126,6 +138,7 @@ function main() {
   console.log(`PATH_POLICY_SELF_TESTS PASS ${seededSelfTests.pathCount}`);
   console.log(`REGISTRY_SELF_TESTS PASS ${seededSelfTests.registryCount}`);
   console.log(`ARTIFACT_EXACT_BYTE_SELF_TESTS PASS ${seededSelfTests.artifactCount}`);
+  console.log(`ORIGIN_SYNTAX_SELF_TESTS PASS ${seededSelfTests.originCount}`);
   console.log(`DIRECTORY_ENTRY_SELF_TESTS PASS ${seededSelfTests.directoryEntryCount}`);
   console.log(`ANCESTOR_COMPONENT_SELF_TESTS PASS ${seededSelfTests.ancestorComponentCount}`);
   console.log(`MACHINE_ASSET_COVERAGE_SELF_TESTS PASS ${seededSelfTests.machineAssetCoverageCount}`);

@@ -22,11 +22,18 @@ const repositoryRoot = path.resolve(path.dirname(scriptPath), "../..");
 const paths = Object.freeze({
   manifest: "protocol/schemas/e1.r0-draft.1/foundation-manifest.json",
   schemas: "protocol/schemas/e1.r0-draft.1",
-  fixtures: "protocol/fixtures/wire/e1.r0-draft.1/foundation",
+  fixtures: [
+    "protocol/fixtures/wire/e1.r0-draft.1/foundation",
+    "protocol/fixtures/wire/e1.r0-draft.1/shared",
+  ],
   registries: "protocol/registries/e1.r0-draft.1",
   specification: "protocol/specification/e1.r0-draft.1",
   decisions: "protocol/decisions",
   representationProfile: "docs/protocol/d2-rp-01-e1.r0-draft.1-canonical-representation-profile.md",
+  backgroundDecisions: [
+    "docs/protocol/d2-bg-01-e1.r0-draft.1-identity-capability-representation-decisions.md",
+    "docs/protocol/d2-bg-02-e1.r0-draft.1-release-data-registry-and-facet-decisions.md",
+  ],
   validation: "protocol/schema-validation",
 });
 
@@ -35,7 +42,7 @@ function main() {
     repositoryRoot,
     manifestPath: paths.manifest,
     schemaRoot: paths.schemas,
-    fixtureRoot: paths.fixtures,
+    fixtureRoots: paths.fixtures,
     registryRoot: paths.registries,
   });
   const schemaSafety = scanBundleSchemaSafety(foundation);
@@ -63,6 +70,7 @@ function main() {
     specificationRoot: paths.specification,
     decisionsRoot: paths.decisions,
     representationProfilePath: paths.representationProfile,
+    backgroundDecisionPaths: paths.backgroundDecisions,
   });
   const provenance = verifyBundleProvenance({ manifest: foundation.manifest, inventory, authority });
   const fixtureResult = runReleaseDataFixtures({ repositoryRoot, validatorsBySchema, validateManifest });

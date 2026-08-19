@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:f66e516a-8bbd-415c-953b-6d0dc1a4a6b9",
+  "title": "Origin",
+  "description": "Closed structured origin syntax. Successful validation does not authorize HTTP, DNS results, redirects, proxies, connected targets, or network use.",
+  "type": "object",
+  "required": ["scheme", "host", "port"],
+  "properties": {
+    "scheme": { "enum": ["https", "http"] },
+    "host": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "dns" },
+            "value": { "type": "string", "minLength": 1, "maxLength": 65536, "pattern": "^[a-z0-9-]+(?:\\.[a-z0-9-]+)*$" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "ipv4" },
+            "value": { "type": "string", "minLength": 7, "maxLength": 15, "pattern": "^[0-9]+(?:\\.[0-9]+){3}$" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "ipv6" },
+            "value": { "type": "string", "minLength": 2, "maxLength": 39, "pattern": "^[0-9a-f]*:[0-9a-f:]*$" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+  },
+  "additionalProperties": false
+}

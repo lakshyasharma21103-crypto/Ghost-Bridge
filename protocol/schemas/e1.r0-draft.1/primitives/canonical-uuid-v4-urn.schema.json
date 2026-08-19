@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:df858e18-f63c-46eb-991f-634cb4157372",
+  "title": "CanonicalUuidV4Urn",
+  "description": "Shared lexical helper for a canonical lowercase UUIDv4 URN. It does not merge the semantic identity classes that reuse this representation.",
+  "type": "string",
+  "minLength": 45,
+  "maxLength": 45,
+  "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+}

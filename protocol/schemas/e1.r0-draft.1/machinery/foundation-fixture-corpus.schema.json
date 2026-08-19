@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0",
-  "title": "D2-01A Foundation Fixture Corpus",
-  "description": "Closed D2 validation-fixture machinery. These are foundation cases, not conformance fixtures or cryptographic golden vectors.",
+  "title": "D2-01 Foundation and Shared Fixture Corpus",
+  "description": "Closed D2 validation-fixture machinery. These are foundation and shared-canonical-vocabulary cases, not conformance fixtures or cryptographic golden vectors.",
   "type": "object",
   "required": ["fixtureSchema", "protocolRelease", "classification", "cases"],
   "properties": {
@@ -54,6 +54,7 @@
             "canonical-base64url",
             "canonical-timestamp",
             "time-evidence",
+            "origin-syntax",
             "artifact-byte-integrity",
             "extension-identity"
           ]
@@ -88,10 +89,82 @@
       },
       "additionalProperties": false
     },
+    "rawSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["encoding", "value"],
+          "properties": {
+            "encoding": { "const": "utf8" },
+            "value": { "type": "string", "maxLength": 1048576 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["encoding", "value"],
+          "properties": {
+            "encoding": { "const": "hex" },
+            "value": { "type": "string", "maxLength": 2097152, "pattern": "^(?:[0-9A-Fa-f]{2})*$" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["encoding", "prefix", "value", "count", "suffix"],
+          "properties": {
+            "encoding": { "const": "repeat-utf8" },
+            "prefix": { "type": "string", "maxLength": 1024 },
+            "value": { "type": "string", "maxLength": 1024 },
+            "count": { "type": "integer", "minimum": 0, "maximum": 1048576 },
+            "suffix": { "type": "string", "maxLength": 1024 }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "rawNumberToken": {
+      "type": "object",
+      "required": ["path", "token", "mathematicalInteger"],
+      "properties": {
+        "path": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "oneOf": [
+              { "type": "string", "maxLength": 65536 },
+              { "type": "integer", "minimum": 0, "maximum": 255 }
+            ]
+          }
+        },
+        "token": { "type": "string", "maxLength": 1024 },
+        "mathematicalInteger": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "rawCase": {
+      "type": "object",
+      "required": ["id", "kind", "wireClass", "source", "expected"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^FX-[A-Z0-9-]+$" },
+        "kind": { "const": "raw-json" },
+        "wireClass": { "enum": ["request", "response", "error-response"] },
+        "source": { "$ref": "#/$defs/rawSource" },
+        "expected": { "enum": ["pass", "fail"] },
+        "diagnosticIncludes": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "expectedNumberTokens": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/rawNumberToken" }
+        }
+      },
+      "additionalProperties": false
+    },
     "case": {
       "oneOf": [
         { "$ref": "#/$defs/valueCase" },
-        { "$ref": "#/$defs/equalityCase" }
+        { "$ref": "#/$defs/equalityCase" },
+        { "$ref": "#/$defs/rawCase" }
       ]
     }
   },

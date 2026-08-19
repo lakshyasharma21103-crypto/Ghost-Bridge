@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:c29c1c71-9d2a-4a44-aa05-ab291e99a6e4",
+  "title": "IssuerIdentity",
+  "description": "Exact immutable issuer identity. Equality or possession grants no authority and does not identify a Trust continuity domain.",
+  "$ref": "urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"
+}

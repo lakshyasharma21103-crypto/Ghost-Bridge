@@ -16,6 +16,16 @@ function assertArray(value, label) {
   if (!Array.isArray(value)) fail(`${label} must be an array`);
 }
 
+function normalizeFixtureRoots(fixtureRoot, fixtureRoots) {
+  const roots = fixtureRoots ?? [fixtureRoot];
+  if (!Array.isArray(roots) || roots.length === 0 || roots.includes(undefined)) {
+    fail("At least one canonical fixture root is required");
+  }
+  if (new Set(roots).size !== roots.length) fail("Duplicate canonical fixture root");
+  for (const root of roots) assertCanonicalPosixRelativePath(root, "manifest fixture root");
+  return Object.freeze([...roots]);
+}
+
 export function listRepositoryFiles(repositoryRoot, relativeDirectory) {
   assertCanonicalPosixRelativePath(relativeDirectory, "repository directory");
   const absoluteDirectory = resolveRepositoryFilesystemPath(
@@ -89,7 +99,7 @@ export function assertAllDeclaredPathsProcessed(label, declaredPaths, processedP
   return { declared: count, processed: processedPaths.size ?? [...processedPaths].length };
 }
 
-export function assertMachineAssetCoverage({ manifest, manifestPath, schemaRoot, fixtureRoot, registryRoot, schemaRootFiles, fixtureRootFiles, registryRootFiles }) {
+export function assertMachineAssetCoverage({ manifest, manifestPath, schemaRoot, fixtureRoot, fixtureRoots, registryRoot, schemaRootFiles, fixtureRootFiles, registryRootFiles }) {
   assertArray(manifest.registries, "manifest registries");
   assertArray(manifest.fixtures, "manifest fixtures");
   assertObject(manifest.semanticConstraintInventory, "semantic constraint inventory entry");
@@ -100,7 +110,12 @@ export function assertMachineAssetCoverage({ manifest, manifestPath, schemaRoot,
   assertPathUnderRoot(manifestPath, schemaRoot, "foundation manifest");
   for (const entry of manifest.schemas) assertPathUnderRoot(entry.path, schemaRoot, "manifest schema");
   assertPathUnderRoot(manifest.semanticConstraintInventory.path, schemaRoot, "semantic inventory");
-  for (const entry of manifest.fixtures) assertPathUnderRoot(entry.path, fixtureRoot, "manifest fixture");
+  const acceptedFixtureRoots = normalizeFixtureRoots(fixtureRoot, fixtureRoots);
+  for (const entry of manifest.fixtures) {
+    if (!acceptedFixtureRoots.some((root) => entry.path.startsWith(`${root}/`))) {
+      fail(`manifest fixture is outside canonical roots ${JSON.stringify(acceptedFixtureRoots)}: ${entry.path}`);
+    }
+  }
   for (const entry of manifest.registries) assertPathUnderRoot(entry.path, registryRoot, "manifest registry");
 
   const declaredSchemas = manifest.schemas.map((entry) => entry.path);
@@ -181,18 +196,19 @@ export function assertLoadedSchemaIdentity(entry, schema, loadedSchemaIds) {
   loadedSchemaIds.add(schema.$id);
 }
 
-export function loadFoundationBundle({ repositoryRoot, manifestPath, schemaRoot, fixtureRoot, registryRoot }) {
+export function loadFoundationBundle({ repositoryRoot, manifestPath, schemaRoot, fixtureRoot, fixtureRoots, registryRoot }) {
   const schemaRootFiles = listRepositoryFiles(repositoryRoot, schemaRoot);
   const manifestRecord = readRepositoryJson(repositoryRoot, manifestPath);
   const manifest = manifestRecord.value;
   const declarations = validateManifestDeclarations(manifest);
-  const fixtureRootFiles = listRepositoryFiles(repositoryRoot, fixtureRoot);
+  const acceptedFixtureRoots = normalizeFixtureRoots(fixtureRoot, fixtureRoots);
+  const fixtureRootFiles = acceptedFixtureRoots.flatMap((root) => listRepositoryFiles(repositoryRoot, root)).sort();
   const registryRootFiles = listRepositoryFiles(repositoryRoot, registryRoot);
   const machineAssetCoverage = assertMachineAssetCoverage({
     manifest,
     manifestPath,
     schemaRoot,
-    fixtureRoot,
+    fixtureRoots: acceptedFixtureRoots,
     registryRoot,
     schemaRootFiles,
     fixtureRootFiles,
@@ -219,6 +235,7 @@ export function loadFoundationBundle({ repositoryRoot, manifestPath, schemaRoot,
     onDiskSchemaPaths,
     diskPaths: { schemaRootFiles, fixtureRootFiles, registryRootFiles },
     machineAssetCoverage,
+    fixtureRoots: acceptedFixtureRoots,
     ...declarations,
   };
 }

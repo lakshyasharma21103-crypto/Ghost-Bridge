@@ -35,7 +35,7 @@ import {
 import { loadReleaseDataFiles, validateReleaseDataBundle } from "./lib/release-data-loader.mjs";
 import { verifyReleaseDataConstraintCoverage } from "./lib/release-data-constraint-coverage.mjs";
 import { createOfflineSchemaValidator } from "./lib/schema-safety.mjs";
-import { canonicalBase64url, sha256Base64url } from "./lib/semantic-checks.mjs";
+import { artifactByteIntegrityMatchesBytes, sha256Base64url } from "./lib/semantic-checks.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptPath), "../..");
@@ -45,7 +45,10 @@ const preflightRecords = new WeakMap();
 const validationPaths = Object.freeze({
   manifest: "protocol/schemas/e1.r0-draft.1/foundation-manifest.json",
   schemas: "protocol/schemas/e1.r0-draft.1",
-  fixtures: "protocol/fixtures/wire/e1.r0-draft.1/foundation",
+  fixtures: [
+    "protocol/fixtures/wire/e1.r0-draft.1/foundation",
+    "protocol/fixtures/wire/e1.r0-draft.1/shared",
+  ],
   registries: "protocol/registries/e1.r0-draft.1",
 });
 
@@ -125,7 +128,7 @@ export function loadReleaseDataGenerationContext(root = repositoryRoot) {
     repositoryRoot: root,
     manifestPath: validationPaths.manifest,
     schemaRoot: validationPaths.schemas,
-    fixtureRoot: validationPaths.fixtures,
+    fixtureRoots: validationPaths.fixtures,
     registryRoot: validationPaths.registries,
   });
   const { ajv } = createOfflineSchemaValidator(foundation.schemas);
@@ -272,7 +275,7 @@ export function validateEstablishedReleaseForWrite({ generated, currentBundle, v
     if (!Buffer.isBuffer(record?.bytes)) releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Current artifact is missing: ${definition.path}`);
     validatedCurrentBytes.set(definition.path, Buffer.from(record.bytes));
     const integrity = currentEntry.artifactByteIntegrity;
-    if (integrity?.algorithm !== "sha-256" || !canonicalBase64url(integrity.value, 32, 32) || integrity.byteLength !== record.bytes.byteLength || sha256Base64url(record.bytes) !== integrity.value) {
+    if (!artifactByteIntegrityMatchesBytes(integrity, record.bytes)) {
       releaseDataFail(DIAGNOSTICS.GENERATOR_CURRENT_STATE, `Current artifact integrity does not match its manifest reference: ${definition.registryClass}`);
     }
     let currentArtifact;

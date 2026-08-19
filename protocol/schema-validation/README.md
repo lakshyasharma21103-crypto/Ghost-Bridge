@@ -1,4 +1,4 @@
-# D2-01A foundation validation
+# D2-01 foundation and shared-vocabulary validation
 
 Run the implementation-neutral foundation validator from the repository root:
 
@@ -10,6 +10,8 @@ The harness uses the existing Ajv Draft 2020-12 engine, preloads every schema
 from the immutable UUID mapping in the foundation manifest, prohibits network
 schema retrieval, validates the machinery assets and five fixture categories,
 and runs only the bounded semantic checks transcribed from accepted authority.
+The same command also dispatches the D2-01R1 shared corpus and requires the
+exact owned-versus-later split for the remaining D2-01 semantic constraints.
 
 `validate-foundation.mjs` is a thin deterministic entry point. Focused modules
 under `lib/` own strict JSON-source parsing, canonical repository paths, bundle
@@ -29,6 +31,24 @@ Every run also exercises duplicate-member parsing, strict UTF-8, path-policy,
 registry exact-set/order-independence, exact-byte integrity, and deliberately
 seeded validator corruptions. These are validator self-tests, not D2-05
 conformance cases or D2-03 cryptographic golden vectors.
+
+The shared raw-input layer accepts only one of the three H-12 body classes
+(`request`, `response`, or `error-response`). It enforces that class's byte cap,
+strict UTF-8/no-BOM input, scalar-only/noncharacter-free strings, duplicate
+decoded member rejection, nesting/string/collection/token bounds,
+finite-binary64 source eligibility, safe mathematical integer tokens, and
+negative-zero rejection before ordinary JSON parsing. Its
+bounded chunk collector applies the byte cap while data is received. The parse
+result retains every original number token with a deterministic bounded path of
+object-name and array-index segments, so an owning schema can decide whether a
+noninteger is permitted without relying on a lossy parsed value.
+
+`Origin` validation in this slice is deliberately syntax-only: it validates
+the closed tagged carrier, lowercase IDNA A-label round trips, canonical IPv4,
+canonical RFC-5952-style IPv6, and mapped-address rejection. Acceptance does
+not authorize plain HTTP or any DNS answer, redirect, proxy, rebinding result,
+connected target, loopback context, production use, or Governed authority.
+Those checks remain with the later transport-owned slice.
 
 This tooling is not a conformance runner, a normative oracle, an independent
 implementation, or D2-01 completion evidence. If it disagrees with accepted

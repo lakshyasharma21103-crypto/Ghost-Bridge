@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:26278b9b-c36d-4d82-94a8-37155fb0c475",
+  "title": "CapabilityLocalName",
+  "description": "Exact lowercase ASCII capability-local name.",
+  "type": "string",
+  "minLength": 1,
+  "maxLength": 128,
+  "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$"
+}

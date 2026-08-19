@@ -8,12 +8,7 @@
   "properties": {
     "crv": { "const": "Ed25519" },
     "kty": { "const": "OKP" },
-    "x": {
-      "type": "string",
-      "minLength": 43,
-      "maxLength": 43,
-      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
-    }
+    "x": { "$ref": "urn:uuid:874beb7a-bc2b-45b9-93ef-7609da985fd5" }
   },
   "additionalProperties": false
 }
