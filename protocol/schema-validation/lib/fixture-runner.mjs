@@ -1,36 +1,11 @@
 import path from "node:path";
 
-import { errorMessage, fail } from "./errors.mjs";
-import { WIRE_JSON_LIMITS, parseWireJsonBytes } from "./json-source.mjs";
+import { fail } from "./errors.mjs";
 import { evaluateSemanticCheck } from "./semantic-checks.mjs";
 
 export function assertFixtureClassification(classification, testCase) {
   if (!testCase || typeof testCase !== "object" || Array.isArray(testCase)) fail("Fixture case must be an object");
   const fixtureId = String(testCase.id);
-  if (testCase.kind === "raw-json") {
-    if (testCase.expected === "fail" && typeof testCase.diagnosticIncludes !== "string") {
-      fail(`Failing raw fixture has no diagnostic expectation: ${String(testCase.id)}`);
-    }
-    if (testCase.expected === "fail" && Object.hasOwn(testCase, "expectedNumberTokens")) {
-      fail(`Failing raw fixture has a successful number-token expectation: ${String(testCase.id)}`);
-    }
-    if (testCase.expected === "pass" && Object.hasOwn(testCase, "diagnosticIncludes")) {
-      fail(`Passing raw fixture has a failure diagnostic expectation: ${String(testCase.id)}`);
-    }
-    if (classification === "structural-negative" && testCase.expected !== "fail") {
-      fail(`Misclassified structural-negative raw fixture: ${fixtureId}`);
-    }
-    if (classification === "structural-positive" && testCase.expected !== "pass") {
-      fail(`Misclassified structural-positive raw fixture: ${fixtureId}`);
-    }
-    if (classification === "semantic-negative" || classification === "semantic-positive") {
-      fail(`Raw fixture is not a semantic fixture: ${fixtureId}`);
-    }
-    if (!["structural-negative", "structural-positive", "boundary"].includes(classification)) {
-      fail(`Unknown raw fixture classification: ${String(classification)}`);
-    }
-    return;
-  }
   if (classification === "structural-negative") {
     if (testCase.kind !== "value" || testCase.structuralExpected !== "fail" || testCase.semanticExpected !== "not-applicable" || testCase.semanticCheck !== "none") {
       fail(`Misclassified structural-negative fixture: ${fixtureId}`);
@@ -54,62 +29,10 @@ export function assertFixtureClassification(classification, testCase) {
   }
 }
 
-function materializeRawSource(source, fixtureId, wireClass) {
-  const wireLimit = WIRE_JSON_LIMITS.bodyBytes[wireClass];
-  if (wireLimit === undefined) fail(`Unknown raw fixture wire class: ${fixtureId}`);
-  const maximumFixtureBytes = wireLimit + 1;
-  if (source.encoding === "utf8") {
-    if (Buffer.byteLength(source.value, "utf8") > maximumFixtureBytes) fail(`Raw fixture source is unnecessarily oversized: ${fixtureId}`);
-    return Buffer.from(source.value, "utf8");
-  }
-  if (source.encoding === "hex") {
-    if (source.value.length / 2 > maximumFixtureBytes) fail(`Raw fixture source is unnecessarily oversized: ${fixtureId}`);
-    return Buffer.from(source.value, "hex");
-  }
-  if (source.encoding === "repeat-utf8") {
-    const generatedBytes =
-      Buffer.byteLength(source.prefix, "utf8") +
-      Buffer.byteLength(source.value, "utf8") * source.count +
-      Buffer.byteLength(source.suffix, "utf8");
-    if (!Number.isSafeInteger(generatedBytes) || generatedBytes > maximumFixtureBytes) {
-      fail(`Raw fixture source is unnecessarily oversized: ${fixtureId}`);
-    }
-    return Buffer.from(`${source.prefix}${source.value.repeat(source.count)}${source.suffix}`, "utf8");
-  }
-  fail(`Unknown raw fixture source encoding: ${fixtureId}`);
-}
-
 export function runFixtureCase({ testCase, classification, validateTarget, errorsText = () => "validation failed" }) {
   if (!testCase || typeof testCase !== "object" || Array.isArray(testCase)) fail("Fixture case must be an object");
-  if (classification !== undefined) assertFixtureClassification(classification, testCase);
-
-  if (testCase.kind === "raw-json") {
-    let result;
-    let diagnostic;
-    try {
-      result = parseWireJsonBytes(materializeRawSource(testCase.source, testCase.id, testCase.wireClass), {
-        wireClass: testCase.wireClass,
-        source: `fixture ${String(testCase.id)}`,
-      });
-    } catch (error) {
-      diagnostic = errorMessage(error);
-    }
-    const passed = diagnostic === undefined;
-    if (passed !== (testCase.expected === "pass")) {
-      fail(`Raw expectation mismatch for ${String(testCase.id)}: expected=${testCase.expected} actual=${passed ? "pass" : "fail"}${diagnostic ? `; ${diagnostic}` : ""}`);
-    }
-    if (!passed && !diagnostic.includes(testCase.diagnosticIncludes)) {
-      fail(`Raw fixture ${String(testCase.id)} failed with the wrong diagnostic: ${diagnostic}`);
-    }
-    if (passed && testCase.expectedNumberTokens !== undefined) {
-      if (JSON.stringify(result.numberTokens) !== JSON.stringify(testCase.expectedNumberTokens)) {
-        fail(`Raw number-token evidence mismatch for ${String(testCase.id)}`);
-      }
-    }
-    return { semanticChecks: 0, rawChecks: 1 };
-  }
-
   if (typeof validateTarget !== "function") fail(`Fixture ${String(testCase.id)} has no target validator`);
+  if (classification !== undefined) assertFixtureClassification(classification, testCase);
 
   if (testCase.kind === "value") {
     const hasSemanticInput = Object.hasOwn(testCase, "semanticInput");
@@ -128,7 +51,7 @@ export function runFixtureCase({ testCase, classification, validateTarget, error
       if (testCase.semanticCheck !== "none") {
         fail(`Fixture ${String(testCase.id)} skips a non-none semantic check`);
       }
-      return { semanticChecks: 0, rawChecks: 0 };
+      return { semanticChecks: 0 };
     }
     if (testCase.semanticCheck === "none") {
       fail(`Fixture ${String(testCase.id)} expects an applicable semantic result with no semantic check`);
@@ -139,7 +62,7 @@ export function runFixtureCase({ testCase, classification, validateTarget, error
     if (semanticPass !== expectedSemanticPass) {
       fail(`Semantic expectation mismatch for ${String(testCase.id)}: expected=${testCase.semanticExpected} actual=${semanticPass ? "pass" : "fail"}`);
     }
-    return { semanticChecks: 1, rawChecks: 0 };
+    return { semanticChecks: 1 };
   }
 
   if (testCase.kind === "equality") {
@@ -150,7 +73,7 @@ export function runFixtureCase({ testCase, classification, validateTarget, error
     if (!evaluateSemanticCheck(testCase, { validateTarget })) {
       fail(`Equality expectation mismatch for ${String(testCase.id)}`);
     }
-    return { semanticChecks: 1, rawChecks: 0 };
+    return { semanticChecks: 1 };
   }
 
   fail(`Unknown fixture kind ${String(testCase.kind)} in ${String(testCase.id)}`);
@@ -162,7 +85,6 @@ export function runFoundationFixtures({ manifest, assets, ajv }) {
   const fixtureTargetSchemaIds = new Set();
   let fixtureCount = 0;
   let semanticCount = 0;
-  let rawCount = 0;
   const processedFixturePaths = new Set();
 
   for (const fixtureEntry of [...manifest.fixtures].sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0))) {
@@ -172,16 +94,16 @@ export function runFoundationFixtures({ manifest, assets, ajv }) {
     if (corpus.classification !== filenameClassification) {
       fail(`Fixture classification/path mismatch: ${fixtureEntry.path}`);
     }
-    fixtureCounts.set(corpus.classification, (fixtureCounts.get(corpus.classification) ?? 0) + corpus.cases.length);
+    if (fixtureCounts.has(corpus.classification)) fail(`Duplicate fixture classification: ${corpus.classification}`);
+    fixtureCounts.set(corpus.classification, corpus.cases.length);
 
     for (const testCase of corpus.cases) {
       fixtureCount += 1;
       if (fixtureIds.has(testCase.id)) fail(`Duplicate fixture ID: ${String(testCase.id)}`);
       fixtureIds.add(testCase.id);
-      const isRaw = testCase.kind === "raw-json";
-      if (!isRaw) fixtureTargetSchemaIds.add(testCase.targetSchema);
-      const validateTarget = isRaw ? undefined : ajv.getSchema(testCase.targetSchema);
-      if (!isRaw && !validateTarget) fail(`Fixture target schema is not preloaded: ${String(testCase.targetSchema)}`);
+      fixtureTargetSchemaIds.add(testCase.targetSchema);
+      const validateTarget = ajv.getSchema(testCase.targetSchema);
+      if (!validateTarget) fail(`Fixture target schema is not preloaded: ${String(testCase.targetSchema)}`);
       const result = runFixtureCase({
         testCase,
         classification: corpus.classification,
@@ -189,7 +111,6 @@ export function runFoundationFixtures({ manifest, assets, ajv }) {
         errorsText: () => ajv.errorsText(validateTarget.errors),
       });
       semanticCount += result.semanticChecks;
-      rawCount += result.rawChecks;
     }
     processedFixturePaths.add(fixtureEntry.path);
   }
@@ -202,8 +123,6 @@ export function runFoundationFixtures({ manifest, assets, ajv }) {
     fixtureCounts,
     fixtureCount,
     semanticCount,
-    rawCount,
-    fixtureIds,
     fixtureTargetSchemaIds,
     processedFixturePaths,
   };

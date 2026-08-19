@@ -469,7 +469,7 @@
       "schemaId": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3",
       "assetClass": "wire-foundation-object",
       "path": "protocol/schemas/e1.r0-draft.1/primitives/artifact-byte-integrity-ref.schema.json",
-      "dependencies": ["urn:uuid:874beb7a-bc2b-45b9-93ef-7609da985fd5"],
+      "dependencies": [],
       "provenance": {
         "h": ["H-03", "H-13", "H-14"],
         "req": ["REQ-DISC-0003", "REQ-VERS-0004", "REQ-COMP-0007", "REQ-COMP-0009"],
@@ -481,234 +481,11 @@
       "schemaId": "urn:uuid:803b84c2-c480-40b7-ae73-21ee38e7c3d0",
       "assetClass": "wire-foundation-object",
       "path": "protocol/schemas/e1.r0-draft.1/primitives/ed25519-public-jwk.schema.json",
-      "dependencies": ["urn:uuid:874beb7a-bc2b-45b9-93ef-7609da985fd5"],
+      "dependencies": [],
       "provenance": {
         "h": ["H-10", "H-11"],
         "req": ["REQ-RCPT-0005", "REQ-RCPT-0007", "REQ-RCPT-0008", "REQ-TRUST-0006", "REQ-TRUST-0009"],
         "d2r": ["D2R-019"]
-      }
-    },
-    {
-      "logicalName": "CanonicalUuidV4Urn",
-      "schemaId": "urn:uuid:df858e18-f63c-46eb-991f-634cb4157372",
-      "assetClass": "representation-helper",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/canonical-uuid-v4-urn.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-03", "H-13"],
-        "req": ["REQ-DISC-0003", "REQ-VERS-0004"],
-        "d2r": ["D2R-002", "D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "ProtocolRelease",
-      "schemaId": "urn:uuid:ed21da6d-c103-46d2-9d51-f07e83abc5f9",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/protocol-release.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-03", "H-13"],
-        "req": ["REQ-VERS-0001", "REQ-VERS-0003", "REQ-COMP-0001"],
-        "d2r": ["D2R-003"]
-      }
-    },
-    {
-      "logicalName": "IssuerIdentity",
-      "schemaId": "urn:uuid:c29c1c71-9d2a-4a44-aa05-ab291e99a6e4",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/issuer-identity.schema.json",
-      "dependencies": ["urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"],
-      "provenance": {
-        "h": ["H-03", "H-10", "H-11"],
-        "req": ["REQ-DISC-0003", "REQ-TRUST-0002", "REQ-TRUST-0009"],
-        "d2r": ["D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "AgentIdentity",
-      "schemaId": "urn:uuid:c76e7715-42ed-49ba-9a77-51df141f21ff",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/agent-identity.schema.json",
-      "dependencies": ["urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"],
-      "provenance": {
-        "h": ["H-01", "H-03", "H-11"],
-        "req": ["REQ-DISC-0003", "REQ-DISC-0004", "REQ-VERS-0004"],
-        "d2r": ["D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "PassportLocalIdentifier",
-      "schemaId": "urn:uuid:353e6b52-a1b1-42bb-8b3e-7462b7d690b3",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/passport-local-identifier.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-03", "H-10", "H-13"],
-        "req": ["REQ-DISC-0003", "REQ-DISC-0004", "REQ-VERS-0004"],
-        "d2r": ["D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "PassportIdentity",
-      "schemaId": "urn:uuid:3ff6020f-94b4-43e5-9c82-2a4d5c2f66ce",
-      "assetClass": "wire-foundation-object",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/passport-identity.schema.json",
-      "dependencies": [
-        "urn:uuid:c29c1c71-9d2a-4a44-aa05-ab291e99a6e4",
-        "urn:uuid:353e6b52-a1b1-42bb-8b3e-7462b7d690b3"
-      ],
-      "provenance": {
-        "h": ["H-03", "H-10", "H-11", "H-13"],
-        "req": ["REQ-DISC-0003", "REQ-DISC-0004", "REQ-VERS-0004"],
-        "d2r": ["D2R-022", "D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "PassportVersion",
-      "schemaId": "urn:uuid:0b0d0f25-d66a-49ed-b5d6-e98044422681",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/passport-version.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-03", "H-04", "H-13"],
-        "req": ["REQ-DISC-0003", "REQ-DISC-0004", "REQ-VERS-0004"],
-        "d2r": ["D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "CapabilityNamespaceIdentity",
-      "schemaId": "urn:uuid:7daf4c83-0819-4576-8983-02712f908075",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-namespace-identity.schema.json",
-      "dependencies": ["urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"],
-      "provenance": {
-        "h": ["H-03", "H-04", "H-13"],
-        "req": ["REQ-DISC-0004", "REQ-VERS-0012", "REQ-VERS-0013"],
-        "d2r": ["D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "CapabilityLocalName",
-      "schemaId": "urn:uuid:26278b9b-c36d-4d82-94a8-37155fb0c475",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-local-name.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-03", "H-04", "H-13"],
-        "req": ["REQ-DISC-0004", "REQ-VERS-0012", "REQ-VERS-0013"],
-        "d2r": ["D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "CapabilityKey",
-      "schemaId": "urn:uuid:6b04a426-cc50-43ef-a690-1f0389726ec6",
-      "assetClass": "wire-foundation-object",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-key.schema.json",
-      "dependencies": [
-        "urn:uuid:7daf4c83-0819-4576-8983-02712f908075",
-        "urn:uuid:26278b9b-c36d-4d82-94a8-37155fb0c475"
-      ],
-      "provenance": {
-        "h": ["H-03", "H-04", "H-13"],
-        "req": ["REQ-DISC-0004", "REQ-VERS-0012", "REQ-VERS-0013"],
-        "d2r": ["D2R-022", "D2R-032"],
-        "d2bg": ["D2-BG-01", "D2-BG-02"]
-      }
-    },
-    {
-      "logicalName": "CapabilityVersion",
-      "schemaId": "urn:uuid:14fba3cb-c3a8-4ffb-b9f2-c9a9e14db6e9",
-      "assetClass": "wire-primitive",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-version.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-03", "H-04", "H-13"],
-        "req": ["REQ-DISC-0004", "REQ-VERS-0012", "REQ-VERS-0013"],
-        "d2r": ["D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "ImmutableArtifactIdentity",
-      "schemaId": "urn:uuid:b5a42225-36ea-4767-a669-d6f972e1a884",
-      "assetClass": "representation-helper",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/immutable-artifact-identity.schema.json",
-      "dependencies": ["urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"],
-      "provenance": {
-        "h": ["H-03", "H-13", "H-14"],
-        "req": ["REQ-DISC-0003", "REQ-VERS-0004", "REQ-COMP-0007"],
-        "d2r": ["D2R-004B", "D2R-032"],
-        "d2bg": ["D2-BG-01", "D2-BG-02"]
-      }
-    },
-    {
-      "logicalName": "PassportReference",
-      "schemaId": "urn:uuid:6c2e0a34-c7e9-4c06-a022-de5236ec56b1",
-      "assetClass": "wire-foundation-object",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/passport-reference.schema.json",
-      "dependencies": [
-        "urn:uuid:3ff6020f-94b4-43e5-9c82-2a4d5c2f66ce",
-        "urn:uuid:0b0d0f25-d66a-49ed-b5d6-e98044422681",
-        "urn:uuid:ed21da6d-c103-46d2-9d51-f07e83abc5f9",
-        "urn:uuid:b5a42225-36ea-4767-a669-d6f972e1a884",
-        "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
-      ],
-      "provenance": {
-        "h": ["H-03", "H-04", "H-10", "H-11", "H-13"],
-        "req": ["REQ-DISC-0003", "REQ-DISC-0004", "REQ-VERS-0004"],
-        "d2r": ["D2R-004B", "D2R-022", "D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "CapabilityContractReference",
-      "schemaId": "urn:uuid:63dcbbe0-bbb4-4184-93dc-575fc5835753",
-      "assetClass": "wire-foundation-object",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-contract-reference.schema.json",
-      "dependencies": [
-        "urn:uuid:ed21da6d-c103-46d2-9d51-f07e83abc5f9",
-        "urn:uuid:6b04a426-cc50-43ef-a690-1f0389726ec6",
-        "urn:uuid:14fba3cb-c3a8-4ffb-b9f2-c9a9e14db6e9",
-        "urn:uuid:b5a42225-36ea-4767-a669-d6f972e1a884",
-        "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
-      ],
-      "provenance": {
-        "h": ["H-03", "H-04", "H-10", "H-13"],
-        "req": ["REQ-DISC-0003", "REQ-DISC-0004", "REQ-VERS-0012", "REQ-VERS-0013"],
-        "d2r": ["D2R-004B", "D2R-022", "D2R-032"],
-        "d2bg": ["D2-BG-01"]
-      }
-    },
-    {
-      "logicalName": "Origin",
-      "schemaId": "urn:uuid:f66e516a-8bbd-415c-953b-6d0dc1a4a6b9",
-      "assetClass": "wire-foundation-object",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/origin.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-12", "H-13"],
-        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
-        "d2r": ["D2R-017", "D2R-022", "D2R-032"]
-      }
-    },
-    {
-      "logicalName": "CanonicalBase64url32Octets",
-      "schemaId": "urn:uuid:874beb7a-bc2b-45b9-93ef-7609da985fd5",
-      "assetClass": "representation-helper",
-      "path": "protocol/schemas/e1.r0-draft.1/primitives/canonical-base64url-32-octets.schema.json",
-      "dependencies": [],
-      "provenance": {
-        "h": ["H-03", "H-10", "H-11", "H-13"],
-        "req": ["REQ-DISC-0003", "REQ-RCPT-0005", "REQ-TRUST-0009", "REQ-COMP-0007"],
-        "d2r": ["D2R-004A", "D2R-004B", "D2R-019"]
       }
     }
   ],
@@ -770,26 +547,6 @@
     {
       "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/boundary.json",
       "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
-    },
-    {
-      "path": "protocol/fixtures/wire/e1.r0-draft.1/shared/structural-positive.json",
-      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
-    },
-    {
-      "path": "protocol/fixtures/wire/e1.r0-draft.1/shared/structural-negative.json",
-      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
-    },
-    {
-      "path": "protocol/fixtures/wire/e1.r0-draft.1/shared/semantic-positive.json",
-      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
-    },
-    {
-      "path": "protocol/fixtures/wire/e1.r0-draft.1/shared/semantic-negative.json",
-      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
-    },
-    {
-      "path": "protocol/fixtures/wire/e1.r0-draft.1/shared/boundary.json",
-      "schemaId": "urn:uuid:da99d351-12ed-42b8-8ddd-9fc761e638f0"
     }
   ],
   "deferred": [
@@ -801,6 +558,16 @@
         "h": ["H-10", "H-13"],
         "req": ["REQ-RCPT-0003", "REQ-RCPT-0004", "REQ-RCPT-0005", "REQ-TRUST-0004", "REQ-TRUST-0006", "REQ-TRUST-0028"],
         "d2r": ["D2R-004A", "D2R-018"]
+      }
+    },
+    {
+      "logicalName": "Origin",
+      "reason": "A reusable schema would be only a partial oracle: IDNA2008, canonical IP spelling, loopback-only HTTP context, and H-12 network-target checks require owning-context semantic validation.",
+      "downstreamOwner": "D2-01",
+      "provenance": {
+        "h": ["H-12"],
+        "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
+        "d2r": ["D2R-017"]
       }
     },
     {

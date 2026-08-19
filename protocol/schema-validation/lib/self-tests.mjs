@@ -1,29 +1,13 @@
 import { assertAllDeclaredPathsProcessed, assertLoadedSchemaIdentity, assertMachineAssetCoverage, assertManifestDiskCoverage, assertRegularRepositoryEntry, validateManifestDeclarations } from "./bundle-loader.mjs";
 import { errorMessage, fail } from "./errors.mjs";
 import { assertFixtureClassification, runFixtureCase } from "./fixture-runner.mjs";
-import {
-  WIRE_JSON_LIMITS,
-  assertNoDuplicateObjectKeys,
-  createWireJsonByteCollector,
-  decodeStrictUtf8,
-  inspectJsonNumberToken,
-  parseWireJsonBytes,
-} from "./json-source.mjs";
+import { assertNoDuplicateObjectKeys, decodeStrictUtf8 } from "./json-source.mjs";
 import {
   assertCanonicalPosixRelativePath,
   assertRepositoryPathComponentChain,
 } from "./path-policy.mjs";
 import { assertClosedCoreObjectSchemas, scanSchemaSafety } from "./schema-safety.mjs";
-import {
-  artifactByteIntegrityMatches,
-  artifactByteIntegrityMatchesBytes,
-  canonicalDnsHost,
-  canonicalIpv4Host,
-  canonicalIpv6Host,
-  canonicalOriginSyntax,
-  evaluateSemanticCheck,
-  sha256Base64url,
-} from "./semantic-checks.mjs";
+import { artifactByteIntegrityMatches, evaluateSemanticCheck, sha256Base64url } from "./semantic-checks.mjs";
 
 function expectFailure(label, operation, expectedMessage) {
   try {
@@ -50,17 +34,6 @@ function runGroup(tests) {
 }
 
 export function runRawJsonParserSelfTests() {
-  const bytes = (text) => Buffer.from(text, "utf8");
-  const parse = (text, label, wireClass = "request") =>
-    parseWireJsonBytes(bytes(text), { wireClass, source: label });
-  const arrayOf = (count) => `[${Array(count).fill("0").join(",")}]`;
-  const objectOf = (count) =>
-    `{${Array.from({ length: count }, (_, index) => `${JSON.stringify(`k${index}`)}:0`).join(",")}}`;
-  const tokenBoundaryDocument = (lastArrayLength) => {
-    const properties = Array.from({ length: 63 }, (_, index) => `${JSON.stringify(`a${index}`)}:${arrayOf(256)}`);
-    properties.push(`${JSON.stringify("last")}:${arrayOf(lastArrayLength)}`);
-    return `{${properties.join(",")}}`;
-  };
   return runGroup([
     ["duplicate ordinary property", (label) => expectFailure(label, () => assertNoDuplicateObjectKeys('{"a":1,"a":2}', label), "Duplicate raw JSON member")],
     ["duplicate escaped property", (label) => expectFailure(label, () => assertNoDuplicateObjectKeys('{"a":1,"\\u0061":2}', label), "Duplicate raw JSON member")],
@@ -70,72 +43,6 @@ export function runRawJsonParserSelfTests() {
     ["escaped quote and backslash", (label) => assertNoDuplicateObjectKeys('{"value":"quote: \\" slash: \\\\"}', label)],
     ["malformed JSON", (label) => expectFailure(label, () => assertNoDuplicateObjectKeys('{"a":[1,]}', label), "Trailing comma")],
     ["strict UTF-8", (label) => expectFailure(label, () => decodeStrictUtf8(Uint8Array.from([0xc3, 0x28]), label), "Strict UTF-8")],
-    ["wire duplicate escaped property", (label) => expectFailure(label, () => parse('{"a":1,"\\u0061":2}', label), "Duplicate raw JSON member")],
-    ["wire strict UTF-8", (label) => expectFailure(label, () => parseWireJsonBytes(Uint8Array.from([0xc3, 0x28]), { wireClass: "request", source: label }), "Strict UTF-8")],
-    ["wire BOM", (label) => expectFailure(label, () => parseWireJsonBytes(Uint8Array.from([0xef, 0xbb, 0xbf, 0x7b, 0x7d]), { wireClass: "request", source: label }), "BOM")],
-    ["safe integer maximum", (label) => expectTrue(label, inspectJsonNumberToken("9007199254740991", label).mathematicalInteger)],
-    ["safe negative integer minimum", (label) => expectTrue(label, inspectJsonNumberToken("-9007199254740991", label).mathematicalInteger)],
-    ["safe integer exponent spelling", (label) => expectTrue(label, inspectJsonNumberToken("900719925474099.1e1", label).mathematicalInteger)],
-    ["positive zero exponent spelling", (label) => expectTrue(label, inspectJsonNumberToken("0e999999", label).mathematicalInteger)],
-    ["noninteger binary64", (label) => expectTrue(label, !inspectJsonNumberToken("1.5", label).mathematicalInteger)],
-    ["unsafe positive integer", (label) => expectFailure(label, () => parse("9007199254740992", label), "safe exact range")],
-    ["unsafe negative integer", (label) => expectFailure(label, () => parse("-9007199254740992", label), "safe exact range")],
-    ["unsafe integer exponent spelling", (label) => expectFailure(label, () => parse("9007199254740992e0", label), "safe exact range")],
-    ["unsafe large positive exponent", (label) => expectFailure(label, () => parse("1e17", label), "safe exact range")],
-    ["malformed negative-zero prefix", (label) => expectFailure(label, () => parse("-01", label), "Malformed JSON number")],
-    ["negative zero integer", (label) => expectFailure(label, () => parse("-0", label), "Negative zero")],
-    ["negative zero fraction", (label) => expectFailure(label, () => parse("-0.000", label), "Negative zero")],
-    ["negative zero exponent", (label) => expectFailure(label, () => parse("-0e99", label), "Negative zero")],
-    ["binary64 overflow", (label) => expectFailure(label, () => parse("1.1e400", label), "finite binary64")],
-    ["binary64 underflow", (label) => expectFailure(label, () => parse("1e-400", label), "underflows finite binary64")],
-    ["number-token pointers", (label) => {
-      const parsed = parse('{"a":1.5,"nested":[2]}', label);
-      expectTrue(label, JSON.stringify(parsed.numberTokens) === JSON.stringify([
-        { path: ["a"], token: "1.5", mathematicalInteger: false },
-        { path: ["nested", 0], token: "2", mathematicalInteger: true },
-      ]));
-    }],
-    ["nesting exact boundary", (label) => expectTrue(label, parse(`${"[".repeat(WIRE_JSON_LIMITS.nesting)}0${"]".repeat(WIRE_JSON_LIMITS.nesting)}`, label).value !== undefined)],
-    ["nesting over boundary", (label) => expectFailure(label, () => parse(`${"[".repeat(WIRE_JSON_LIMITS.nesting + 1)}0${"]".repeat(WIRE_JSON_LIMITS.nesting + 1)}`, label), "nesting exceeds")],
-    ["string exact boundary", (label) => expectTrue(label, parse(JSON.stringify("a".repeat(WIRE_JSON_LIMITS.stringBytes)), label, "response").value.length === WIRE_JSON_LIMITS.stringBytes)],
-    ["string over boundary", (label) => expectFailure(label, () => parse(JSON.stringify("a".repeat(WIRE_JSON_LIMITS.stringBytes + 1)), label, "response"), "JSON string exceeds")],
-    ["escaped string exact UTF-8 boundary", (label) => expectTrue(label, parse(`"${"\\u0080".repeat(WIRE_JSON_LIMITS.stringBytes / 2)}"`, label, "response").value.length === WIRE_JSON_LIMITS.stringBytes / 2)],
-    ["escaped string over UTF-8 boundary", (label) => expectFailure(label, () => parse(`"${"\\u0080".repeat(WIRE_JSON_LIMITS.stringBytes / 2 + 1)}"`, label, "response"), "JSON string exceeds")],
-    ["escaped surrogate pair", (label) => expectTrue(label, parse('"\\ud83d\\ude00"', label).value === "😀")],
-    ["unpaired high surrogate", (label) => expectFailure(label, () => parse('"\\ud800"', label), "Unpaired high surrogate")],
-    ["unpaired low surrogate", (label) => expectFailure(label, () => parse('"\\udc00"', label), "Unpaired low surrogate")],
-    ["Unicode noncharacter", (label) => expectFailure(label, () => parse('"\\ufdd0"', label), "Unicode noncharacter")],
-    ["array exact boundary", (label) => expectTrue(label, parse(arrayOf(WIRE_JSON_LIMITS.arrayEntries), label).value.length === WIRE_JSON_LIMITS.arrayEntries)],
-    ["array over boundary", (label) => expectFailure(label, () => parse(arrayOf(WIRE_JSON_LIMITS.arrayEntries + 1), label), "array entries exceed")],
-    ["object exact boundary", (label) => expectTrue(label, Object.keys(parse(objectOf(WIRE_JSON_LIMITS.objectMembers), label).value).length === WIRE_JSON_LIMITS.objectMembers)],
-    ["object over boundary", (label) => expectFailure(label, () => parse(objectOf(WIRE_JSON_LIMITS.objectMembers + 1), label), "object members exceed")],
-    ["token exact boundary", (label) => expectTrue(label, parse(tokenBoundaryDocument(127), label).stats.tokens === WIRE_JSON_LIMITS.tokens)],
-    ["token over boundary", (label) => expectFailure(label, () => parse(tokenBoundaryDocument(128), label), "token count exceeds")],
-    ["error body exact boundary", (label) => expectTrue(label, parse(JSON.stringify("a".repeat(WIRE_JSON_LIMITS.bodyBytes["error-response"] - 2)), label, "error-response").stats.bytes === WIRE_JSON_LIMITS.bodyBytes["error-response"])],
-    ["error body over boundary", (label) => expectFailure(label, () => parse(JSON.stringify("a".repeat(WIRE_JSON_LIMITS.bodyBytes["error-response"] - 1)), label, "error-response"), "byte limit")],
-    ["bounded chunk collector", (label) => {
-      const collector = createWireJsonByteCollector({ wireClass: "request", source: label });
-      collector.append(bytes('{"a":'));
-      collector.append(bytes("1}"));
-      expectTrue(label, collector.finish().value.a === 1);
-    }],
-    ["chunk collector exact byte boundary", (label) => {
-      const collector = createWireJsonByteCollector({ wireClass: "request", source: label });
-      collector.append(bytes("0"));
-      collector.append(Buffer.alloc(WIRE_JSON_LIMITS.bodyBytes.request - 1, 0x20));
-      expectTrue(label, collector.finish().stats.bytes === WIRE_JSON_LIMITS.bodyBytes.request);
-    }],
-    ["chunk collector rejects before over-limit copy", (label) => {
-      const collector = createWireJsonByteCollector({ wireClass: "request", source: label });
-      collector.append(Buffer.alloc(WIRE_JSON_LIMITS.bodyBytes.request, 0x20));
-      expectFailure(label, () => collector.append(Uint8Array.of(0x20)), "byte limit");
-    }],
-    ["collector rejects after finish", (label) => {
-      const collector = createWireJsonByteCollector({ wireClass: "request", source: label });
-      collector.append(bytes("{}"));
-      collector.finish();
-      expectFailure(label, () => collector.append(bytes("{}")), "already finished");
-    }],
   ]);
 }
 
@@ -166,8 +73,6 @@ export function runArtifactExactByteSelfTests() {
   const nonemptyInput = { artifactBytesHex: "00" };
   return runGroup([
     ["empty-byte exact digest", (label) => expectTrue(label, emptyDigest === "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU")],
-    ["neutral byte helper exact match", (label) => expectTrue(label, artifactByteIntegrityMatchesBytes(emptyExact, emptyBytes))],
-    ["neutral byte helper rejects non-bytes", (label) => expectTrue(label, !artifactByteIntegrityMatchesBytes(emptyExact, ""))],
     ["empty-byte exact match", (label) => expectTrue(label, artifactByteIntegrityMatches(emptyExact, emptyInput))],
     ["digest mismatch", (label) => expectTrue(label, !artifactByteIntegrityMatches({ ...emptyExact, value: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, emptyInput))],
     ["byteLength mismatch", (label) => expectTrue(label, !artifactByteIntegrityMatches({ ...emptyExact, byteLength: 1 }, emptyInput))],
@@ -176,31 +81,6 @@ export function runArtifactExactByteSelfTests() {
     ["one-byte exact match", (label) => expectTrue(label, artifactByteIntegrityMatches(nonemptyExact, nonemptyInput))],
     ["one-byte content mismatch", (label) => expectTrue(label, !artifactByteIntegrityMatches(nonemptyExact, { artifactBytesHex: "01" }))],
     ["one-byte length mismatch", (label) => expectTrue(label, !artifactByteIntegrityMatches({ ...nonemptyExact, byteLength: 0 }, nonemptyInput))],
-  ]);
-}
-
-export function runOriginSyntaxSelfTests() {
-  return runGroup([
-    ["plain DNS", (label) => expectTrue(label, canonicalDnsHost("service.example"))],
-    ["IDNA2008 A-label", (label) => expectTrue(label, canonicalDnsHost("xn--bcher-kva.example"))],
-    ["IDNA2008 CONTEXTO valid", (label) => expectTrue(label, canonicalDnsHost("xn--ll-0ea.example"))],
-    ["IDNA2008 CONTEXTO invalid", (label) => expectTrue(label, !canonicalDnsHost("xn--ab-0ea.example"))],
-    ["invalid A-label", (label) => expectTrue(label, !canonicalDnsHost("xn--a.example"))],
-    ["disallowed IDNA symbol", (label) => expectTrue(label, !canonicalDnsHost("xn--ls8h.example"))],
-    ["DNS uppercase", (label) => expectTrue(label, !canonicalDnsHost("Service.example"))],
-    ["DNS trailing dot", (label) => expectTrue(label, !canonicalDnsHost("service.example."))],
-    ["IPv4 minimum", (label) => expectTrue(label, canonicalIpv4Host("0.0.0.0"))],
-    ["IPv4 maximum", (label) => expectTrue(label, canonicalIpv4Host("255.255.255.255"))],
-    ["IPv4 leading zero", (label) => expectTrue(label, !canonicalIpv4Host("192.000.2.1"))],
-    ["IPv4 range", (label) => expectTrue(label, !canonicalIpv4Host("256.0.0.1"))],
-    ["IPv6 all zero", (label) => expectTrue(label, canonicalIpv6Host("::"))],
-    ["IPv6 loopback syntax", (label) => expectTrue(label, canonicalIpv6Host("::1"))],
-    ["IPv6 trailing compression", (label) => expectTrue(label, canonicalIpv6Host("2001:db8::"))],
-    ["IPv6 first tied zero run", (label) => expectTrue(label, canonicalIpv6Host("2001:db8::1:0:0:1"))],
-    ["IPv6 later tied zero run", (label) => expectTrue(label, !canonicalIpv6Host("2001:db8:0:0:1::1"))],
-    ["IPv6 single zero compression", (label) => expectTrue(label, !canonicalIpv6Host("2001:db8::1:2:3:4:5"))],
-    ["IPv6 mapped address", (label) => expectTrue(label, !canonicalIpv6Host("::ffff:c000:201"))],
-    ["HTTP remains syntax-only", (label) => expectTrue(label, canonicalOriginSyntax({ scheme: "http", host: { kind: "ipv4", value: "127.0.0.1" }, port: 8080 }))],
   ]);
 }
 
@@ -252,15 +132,14 @@ export function runAncestorComponentSelfTests() {
 export function runMachineAssetCoverageSelfTests(bundle) {
   const manifestPath = "protocol/schemas/e1.r0-draft.1/foundation-manifest.json";
   const schemaRoot = "protocol/schemas/e1.r0-draft.1";
-  const fixtureRoots = bundle.fixtureRoots;
-  const fixtureRoot = fixtureRoots[0];
+  const fixtureRoot = "protocol/fixtures/wire/e1.r0-draft.1/foundation";
   const registryRoot = "protocol/registries/e1.r0-draft.1";
   const coverage = (manifest, diskOverrides = {}) =>
     assertMachineAssetCoverage({
       manifest,
       manifestPath,
       schemaRoot,
-      fixtureRoots,
+      fixtureRoot,
       registryRoot,
       ...bundle.diskPaths,
       ...diskOverrides,
@@ -722,7 +601,6 @@ export function runSeededValidatorSelfTests({ bundle, registry, validateRegistry
   const pathCount = runPathPolicySelfTests();
   const registryCount = runRegistryExactSetSelfTests({ registry, validateRegistry });
   const artifactCount = runArtifactExactByteSelfTests();
-  const originCount = runOriginSyntaxSelfTests();
   const directoryEntryCount = runDirectoryEntrySelfTests();
   const ancestorComponentCount = runAncestorComponentSelfTests();
   const machineAssetCoverageCount = runMachineAssetCoverageSelfTests(bundle);
@@ -733,7 +611,6 @@ export function runSeededValidatorSelfTests({ bundle, registry, validateRegistry
     pathCount,
     registryCount,
     artifactCount,
-    originCount,
     directoryEntryCount,
     ancestorComponentCount,
     machineAssetCoverageCount,
@@ -744,7 +621,6 @@ export function runSeededValidatorSelfTests({ bundle, registry, validateRegistry
       pathCount +
       registryCount +
       artifactCount +
-      originCount +
       directoryEntryCount +
       ancestorComponentCount +
       machineAssetCoverageCount +

@@ -1,7 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:uuid:b5a42225-36ea-4767-a669-d6f972e1a884",
-  "title": "ImmutableArtifactIdentity",
-  "description": "Shared lexical helper for a typed immutable artifact identity. The owning field supplies the artifact class; equal text never permits cross-class substitution.",
-  "$ref": "urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"
-}

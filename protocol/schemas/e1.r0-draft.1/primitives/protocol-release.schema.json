@@ -1,8 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:uuid:ed21da6d-c103-46d2-9d51-f07e83abc5f9",
-  "title": "ProtocolRelease",
-  "description": "The exact immutable protocol-release identity for this release-bound schema bundle.",
-  "type": "string",
-  "const": "ghostbridge/e1.r0-draft.1"
-}

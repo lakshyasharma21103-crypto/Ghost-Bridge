@@ -1,7 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:uuid:7daf4c83-0819-4576-8983-02712f908075",
-  "title": "CapabilityNamespaceIdentity",
-  "description": "Exact immutable external capability namespace identity. Possession grants no legitimacy, ownership, Trust, or execution authority.",
-  "$ref": "urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"
-}

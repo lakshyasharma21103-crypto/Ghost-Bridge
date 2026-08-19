@@ -13,7 +13,7 @@ function readRepositoryText(repositoryRoot, relativePath) {
   );
 }
 
-export function loadAuthorityIndex({ repositoryRoot, specificationRoot, decisionsRoot, representationProfilePath, backgroundDecisionPaths = [] }) {
+export function loadAuthorityIndex({ repositoryRoot, specificationRoot, decisionsRoot, representationProfilePath }) {
   const specificationText = listRepositoryFiles(repositoryRoot, specificationRoot)
     .filter((item) => item.endsWith(".md"))
     .map((item) => readRepositoryText(repositoryRoot, item))
@@ -34,17 +34,7 @@ export function loadAuthorityIndex({ repositoryRoot, specificationRoot, decision
   const representationIds = new Set(
     [...representationText.matchAll(/\bD2R-[0-9]{3}[A-Z]?\b/gu)].map((match) => match[0]),
   );
-  const backgroundDecisionIds = new Set();
-  for (const backgroundDecisionPath of backgroundDecisionPaths) {
-    const text = readRepositoryText(repositoryRoot, backgroundDecisionPath);
-    const id = text.match(/^# (D2-BG-[0-9]{2})\b/mu)?.[1];
-    if (!id || !/^> \*\*ACCEPTED PHASE 15D\.2 GOVERNANCE RECORD\*\*$/mu.test(text)) {
-      fail(`Background decision is not accepted governance authority: ${backgroundDecisionPath}`);
-    }
-    if (backgroundDecisionIds.has(id)) fail(`Duplicate background decision authority: ${id}`);
-    backgroundDecisionIds.add(id);
-  }
-  return { requirementIds, decisionIds, representationIds, backgroundDecisionIds };
+  return { requirementIds, decisionIds, representationIds };
 }
 
 export function verifyProvenance(provenance, label, authority) {
@@ -55,9 +45,7 @@ export function verifyProvenance(provenance, label, authority) {
     ["h", authority.decisionIds, "H"],
     ["req", authority.requirementIds, "REQ"],
     ["d2r", authority.representationIds, "D2R"],
-    ["d2bg", authority.backgroundDecisionIds, "D2-BG"],
   ]) {
-    if (property === "d2bg" && provenance[property] === undefined) continue;
     if (!Array.isArray(provenance[property])) fail(`Missing ${description} provenance list in ${label}`);
     for (const id of provenance[property]) {
       if (!known.has(id)) fail(`Unknown ${description} provenance ${String(id)} in ${label}`);

@@ -7,7 +7,12 @@
   "required": ["algorithm", "value", "byteLength"],
   "properties": {
     "algorithm": { "const": "sha-256" },
-    "value": { "$ref": "urn:uuid:874beb7a-bc2b-45b9-93ef-7609da985fd5" },
+    "value": {
+      "type": "string",
+      "minLength": 43,
+      "maxLength": 43,
+      "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+    },
     "byteLength": {
       "type": "integer",
       "minimum": 0,

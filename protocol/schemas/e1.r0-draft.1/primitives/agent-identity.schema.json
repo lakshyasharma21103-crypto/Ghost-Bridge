@@ -1,7 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:uuid:c76e7715-42ed-49ba-9a77-51df141f21ff",
-  "title": "AgentIdentity",
-  "description": "Exact immutable logical Agent identity. It remains distinct from IssuerIdentity, PassportIdentity, and every authority or continuity class.",
-  "$ref": "urn:uuid:df858e18-f63c-46eb-991f-634cb4157372"
-}

@@ -46,7 +46,7 @@
         "d2r": ["D2R-021", "D2R-024", "D2R-029", "D2R-032"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-STRICT-UTF8-AND-RAW-BYTE-LIMITS",
@@ -60,7 +60,7 @@
         "d2r": ["D2R-024", "D2R-028", "D2R-029"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "MESSAGE_TOO_LARGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-TIMESTAMP-CALENDAR-VALIDITY",
@@ -116,7 +116,7 @@
         "d2r": ["D2R-014", "D2R-024", "D2R-032"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-NEGATIVE-ZERO-REJECTION",
@@ -130,7 +130,7 @@
         "d2r": ["D2R-014", "D2R-024"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-PATH-DECODE-REENCODE-EQUALITY",
@@ -186,7 +186,7 @@
         "d2r": ["D2R-012"]
       },
       "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-RCPT-0009"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-INTERVAL-NONEMPTY",
@@ -200,63 +200,63 @@
         "d2r": ["D2R-012"]
       },
       "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-RCPT-0009"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-IDNA2008-VALIDATION",
       "validationLayer": "SEMANTIC",
       "affected": ["future Origin DNS host"],
       "predicate": "Accept only validated lowercase IDNA2008 A-label form with the accepted label bounds and round-trip behavior; raw U-label input is invalid.",
-      "structuralCoverage": "PARTIAL",
+      "structuralCoverage": "NONE",
       "provenance": {
         "h": ["H-12"],
         "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
         "d2r": ["D2R-017"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-CANONICAL-IPV4",
       "validationLayer": "SEMANTIC",
       "affected": ["future Origin IPv4 host"],
       "predicate": "Require exactly four decimal octets from 0 through 255 with no leading zero except the literal 0.",
-      "structuralCoverage": "PARTIAL",
+      "structuralCoverage": "NONE",
       "provenance": {
         "h": ["H-12"],
         "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
         "d2r": ["D2R-017"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-CANONICAL-RFC5952-IPV6",
       "validationLayer": "SEMANTIC",
       "affected": ["future Origin IPv6 host"],
       "predicate": "Require canonical lowercase RFC-5952-style text without brackets or a zone identifier.",
-      "structuralCoverage": "PARTIAL",
+      "structuralCoverage": "NONE",
       "provenance": {
         "h": ["H-12"],
         "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
         "d2r": ["D2R-017"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-IPV4-MAPPED-IPV6-REJECTION",
       "validationLayer": "SEMANTIC",
       "affected": ["future Origin IPv6 host"],
       "predicate": "Reject IPv4-mapped IPv6 textual origin representations so they cannot alias the IPv4 branch.",
-      "structuralCoverage": "PARTIAL",
+      "structuralCoverage": "NONE",
       "provenance": {
         "h": ["H-12"],
         "req": ["REQ-TRAN-0002", "REQ-TRAN-0003"],
         "d2r": ["D2R-017"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-HTTP-LOOPBACK-CONTEXT",
@@ -298,7 +298,7 @@
         "d2r": ["D2R-004B"]
       },
       "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-EXTENSION-IDENTITY-BOUNDARIES",
@@ -312,7 +312,7 @@
         "d2r": ["D2R-020", "D2R-021"]
       },
       "failureAuthority": { "status": "existing", "references": ["INVALID_MESSAGE", "REQ-ERR-0003"] },
-      "downstreamOwner": "D2-01R1"
+      "downstreamOwner": "D2-01"
     },
     {
       "id": "FND-SCHEMA-OFFLINE-NETWORK-PROHIBITION",
