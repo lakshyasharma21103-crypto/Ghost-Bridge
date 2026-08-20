@@ -247,8 +247,11 @@ are accepted, and D1-01 through D1-07 are reviewed and integrated. Phase 15D.1
 remains `EXIT_CRITERIA_SATISFIED`; its non-normative evidence is recorded in the
 [Phase 15D.1 exit-gate evidence record](./phase-15d1-exit-gate-evidence.md).
 
-Phase 15D.2 remains `STARTED` and `INCOMPLETE`. D2-RP-01 Revision 3 remains the
-accepted representation authority.
+Phase 15D.2 remains `STARTED` and `INCOMPLETE`. D2-RP-01 Revision 4 is the
+current accepted representation authority. Revision 4 records the explicit
+human acceptance of D2R-029A Option A on 2026-08-20 and resolves only the
+language-neutral executable counting unit for the unchanged H-12/D2R-029 total
+JSON token ceiling.
 
 D2-BG-01 Revision 3 and D2-BG-02 are `ACCEPTED` and integrated. The D2-BG-01
 approval-provenance correction is integrated. D2-BG-02's actual human approval
@@ -272,12 +275,24 @@ requirement for evidence from two genuinely independent Draft 2020-12
 validators remains `SECOND_VALIDATOR_EVIDENCE_PENDING`.
 
 [D2-01R1 Revision 2 — Shared Canonical Wire Vocabulary](./d2-01r1-e1.r0-draft.1-shared-canonical-wire-vocabulary-contract.md)
-is `ACCEPTED` by explicit human approval dated 2026-08-19. Its implementation
-is `NOT YET AUTHORIZED` and `NOT COMPLETE`; D2-01 remains `INCOMPLETE`, and
-second-validator evidence remains pending. The acceptance includes all eight
-binding independent-review corrections recorded in the dedicated contract.
-It closes no `GB-*` gap and establishes no conformance, interoperability,
-release, production-readiness, or Protocol 1.0 claim.
+remains `ACCEPTED` and integrated by explicit human approval dated 2026-08-19.
+Implementation was explicitly authorized on 2026-08-20, strictly within the
+complete accepted Revision 2 contract, including all eight binding
+independent-review corrections and production-engineering requirements.
+
+The first authorized implementation attempt correctly stopped before mutation
+because D2R-029 did not define the total JSON token counting unit. D2R-029A
+Option A was subsequently explicitly accepted on 2026-08-20; D2-RP-01 Revision
+4 is the governance record for that decision. R1 implementation has not been
+completed or integrated and may resume only after this governance record is
+integrated and the implementation branch is rebased or fast-forwarded to that
+integrated authority.
+
+D2-01 remains `INCOMPLETE`, and second-validator evidence remains
+`SECOND_VALIDATOR_EVIDENCE_PENDING`. These governance events close no `GB-*`
+gap and establish no conformance, interoperability, independent implementation,
+external security review, production-readiness, release-readiness, or Protocol
+1.0 claim.
 
 The reconciliation found no current unavoidable semantic-authority blocker.
 That finding does not authorize future implementation to invent semantics.
@@ -289,8 +304,10 @@ accepted semantic meaning.
 D2-02 through D2-05 remain incomplete. Historical labels D2-01C, D2-01D,
 D2-01E, and D2-01F do not currently have durable accepted slice contracts and
 must not be treated as if such contracts already exist. D2-01R1 Revision 2 is
-the accepted bounded contract for the shared canonical wire vocabulary; its
-acceptance does not authorize or establish implementation progress.
+the accepted bounded contract for the shared canonical wire vocabulary.
+Contract acceptance alone did not authorize or establish implementation
+progress; the later explicit implementation authorization likewise does not
+establish completed or integrated implementation progress.
 
 All 60 `GB-*` gaps remain `PENDING`. The candidate remains
 `ghostbridge/e1.r0-draft.1` and remains draft/prerelease.
