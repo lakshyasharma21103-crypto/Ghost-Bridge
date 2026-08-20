@@ -247,11 +247,12 @@ are accepted, and D1-01 through D1-07 are reviewed and integrated. Phase 15D.1
 remains `EXIT_CRITERIA_SATISFIED`; its non-normative evidence is recorded in the
 [Phase 15D.1 exit-gate evidence record](./phase-15d1-exit-gate-evidence.md).
 
-Phase 15D.2 remains `STARTED` and `INCOMPLETE`. D2-RP-01 Revision 4 is the
-current accepted representation authority. Revision 4 records the explicit
-human acceptance of D2R-029A Option A on 2026-08-20 and resolves only the
+Phase 15D.2 remains `STARTED` and `INCOMPLETE`. D2-RP-01 Revision 5 is the
+current accepted representation authority. Revision 4 recorded the explicit
+human acceptance of D2R-029A Option A on 2026-08-20 and resolved only the
 language-neutral executable counting unit for the unchanged H-12/D2R-029 total
-JSON token ceiling.
+JSON token ceiling. Revision 5 records D2R-017A Revision 1 Option A and
+D2R-017B Revision 1 Option A, both explicitly human-accepted on 2026-08-20.
 
 D2-BG-01 Revision 3 and D2-BG-02 are `ACCEPTED` and integrated. The D2-BG-01
 approval-provenance correction is integrated. D2-BG-02's actual human approval
@@ -282,11 +283,18 @@ independent-review corrections and production-engineering requirements.
 
 The first authorized implementation attempt correctly stopped before mutation
 because D2R-029 did not define the total JSON token counting unit. D2R-029A
-Option A was subsequently explicitly accepted on 2026-08-20; D2-RP-01 Revision
-4 is the governance record for that decision. R1 implementation has not been
-completed or integrated and may resume only after this governance record is
-integrated and the implementation branch is rebased or fast-forwarded to that
-integrated authority.
+Option A was subsequently explicitly accepted on 2026-08-20 and recorded by
+D2-RP-01 Revision 4. Independent review of the first substantial R1 candidate
+then identified representation ambiguities in frozen IDNA Unicode/data behavior
+and IPv6 special textual representation. No implementation behavior was allowed
+to decide those questions. D2R-017A Revision 1 Option A and D2R-017B Revision 1
+Option A were explicitly accepted on 2026-08-20 and are recorded by D2-RP-01
+Revision 5.
+
+R1 implementation remains authorized, but the current candidate requires
+revision after independent review. Implementation has not been completed or
+integrated. Implementation repair must wait for integration of Revision 5 and
+must consume that integrated authority.
 
 D2-01 remains `INCOMPLETE`, and second-validator evidence remains
 `SECOND_VALIDATOR_EVIDENCE_PENDING`. These governance events close no `GB-*`
