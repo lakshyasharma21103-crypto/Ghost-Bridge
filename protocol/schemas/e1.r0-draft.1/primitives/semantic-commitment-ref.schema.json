@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:ee29d276-909a-4189-8828-421bbd369735",
+  "title": "SemanticCommitmentRef",
+  "description": "Closed H-10 semantic commitment reference. Every owning schema must further restrict the exact permitted domain.",
+  "type": "object",
+  "required": ["profile", "domain", "value"],
+  "properties": {
+    "profile": { "const": "gb-digest-jcs-sha256-v1" },
+    "domain": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?:[a-z]|[a-z][a-z0-9.-]{0,126}[a-z0-9])$"
+    },
+    "value": { "$ref": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9" }
+  },
+  "additionalProperties": false
+}

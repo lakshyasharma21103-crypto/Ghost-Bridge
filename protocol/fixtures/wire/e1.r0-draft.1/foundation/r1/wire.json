@@ -1,0 +1,1089 @@
+{
+  "fixtureSchema": "urn:uuid:96c77461-15e3-455b-b96c-626f2b060d58",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "cases": [
+    {
+      "id": "R1-WIRE-B64-32-ZERO",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "canonical-base64url-32-octets"
+    },
+    {
+      "id": "R1-WIRE-B64-32-PADDED",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-B64-32-STANDARD-PLUS",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+      "value": "+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-B64-32-STANDARD-SLASH",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+      "value": "/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-B64-32-WHITESPACE",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-B64-32-SHORT",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-B64-32-BAD-TAIL",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-COMMITMENT-CARRIER-VALID",
+      "classification": "structural-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:ee29d276-909a-4189-8828-421bbd369735",
+      "value": {
+        "profile": "gb-digest-jcs-sha256-v1",
+        "domain": "receipt.task.v1",
+        "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "semantic-commitment-ref"
+    },
+    {
+      "id": "R1-WIRE-COMMITMENT-EXTRA",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:ee29d276-909a-4189-8828-421bbd369735",
+      "value": {
+        "profile": "gb-digest-jcs-sha256-v1",
+        "domain": "receipt.task.v1",
+        "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "algorithm": "sha-256"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-COMMITMENT-WRONG-PROFILE",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:ee29d276-909a-4189-8828-421bbd369735",
+      "value": {
+        "profile": "gb-c14n-jcs-ijson-v1",
+        "domain": "receipt.task.v1",
+        "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-COMMITMENT-NULL",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:ee29d276-909a-4189-8828-421bbd369735",
+      "value": null,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-DNS-HTTPS",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "service.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-ALABEL-HTTPS",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--bcher-kva.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-UNICODE17-ALABEL",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--7xb.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-NFC-VALID",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--tda.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-NFC-MISMATCH",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--u-ccb.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-LEADING-MARK-MN-CCC-ZERO",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--g1b" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-LEADING-MARK-MC-CCC-ZERO",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--j1b" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-LEADING-MARK-NONZERO-CCC",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--n3b" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWNJ-VIRAMA",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--11b2ezcs70k" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWNJ-TERMINAL-VIRAMA",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--11b6iv14e" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWNJ-JOINING",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--ngbe199q" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWNJ-TRANSPARENT",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--ngbe1ii3504a" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWNJ-INVALID",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--ab-j1t" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWNJ-FIRST",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--ngbe099q" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWNJ-TERMINAL-NO-VIRAMA",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--ngbe299q" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWJ-VIRAMA",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--11b2ezcw70k" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWJ-TERMINAL-VIRAMA",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--11b6iy14e" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWJ-INVALID",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--ab-m1t" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWJ-FIRST",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--11b378i" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTJ-ZWJ-TERMINAL-NO-VIRAMA",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--11b478i" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-MIDDLE-DOT",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--ll-0ea" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-MIDDLE-DOT-INVALID",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--ab-0ea" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-MIDDLE-DOT-FIRST",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--ll-zea" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-MIDDLE-DOT-LAST",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--ll-1ea" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-GREEK",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--wva4j" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-GREEK-INVALID",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--a-jib" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-GREEK-LAST",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--wva3j" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-HEBREW-GERESH",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--4db4e" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-HEBREW-GERSHAYIM",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--4db6e" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-HEBREW-INVALID",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--a-0jc" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-HEBREW-FIRST",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--4db3e" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-GERSHAYIM-INVALID",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--a-2jc" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-KATAKANA",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--lckyi" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-KATAKANA-INVALID",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--a-iju" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-ARABIC-DIGITS",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "dns", "value": "xn--ngb8id" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-EXTENDED-DIGITS",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--ngb61bd" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-CONTEXTO-MIXED-DIGITS",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--ngb8i1r" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-BIDI-WHOLE-DOMAIN-REJECT",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "1.xn--mgbh0fb" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-BIDI-MIXED-DOMAIN-VALID",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "example.xn--mgbh0fb" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-DNS-LABEL-63",
+      "classification": "boundary",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": {
+          "kind": "dns",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example"
+        },
+        "port": 65535
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV4-HTTPS",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "ipv4", "value": "192.0.2.1" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-HTTPS",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001:db8::1" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-UNSPECIFIED",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "ipv6", "value": "::" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-LOOPBACK",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "ipv6", "value": "::1" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-FULL",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001:db8:1:2:3:4:5:6" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-TIE-FIRST",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001::1:0:0:1:1" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-NONMAPPED-EMBEDDED",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "64:ff9b::c000:201" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-HTTP-STRUCTURE-ONLY",
+      "classification": "structural-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "http", "host": { "kind": "ipv4", "value": "127.0.0.1" }, "port": 8080 },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-INVALID-ALABEL",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--a.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-NONROUNDTRIP-ALABEL",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--aa--bb.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-UTS46-MAPPED-ALABEL",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--mi7c.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-UTS46-IGNORED-ALABEL",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--ab-q8t.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IDNA2008-DEVIATION",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "xn--zca.example" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV4-RANGE",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "ipv4", "value": "256.0.0.1" }, "port": 443 },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-NONCANONICAL",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001:0db8::1" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-MAPPED",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "::ffff:c000:280" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-DOTTED-TAIL",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001:db8::192.0.2.1" },
+        "port": 443
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-UPPERCASE",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001:DB8::1" },
+        "port": 443
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-WRONG-COMPRESSION",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001:db8:0:0:0:0:0:1" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-MULTIPLE-COMPRESSION",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001::db8::1" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-BAD-GROUP-COUNT",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv6", "value": "2001:db8:1:2:3:4:5" },
+        "port": 443
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "origin"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-RAW-ULABEL",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "bücher.example" },
+        "port": 443
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-UPPER-DNS",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "Service.example" },
+        "port": 443
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-TRAILING-DOT",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "service.example." },
+        "port": 443
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-DNS-LABEL-64",
+      "classification": "boundary",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": {
+          "kind": "dns",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example"
+        },
+        "port": 443
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV4-LEADING-ZERO",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "ipv4", "value": "192.168.001.1" },
+        "port": 443
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-BRACKETS",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "ipv6", "value": "[::1]" }, "port": 443 },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-IPV6-ZONE",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": { "scheme": "https", "host": { "kind": "ipv6", "value": "fe80::1%1" }, "port": 443 },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-ORIGIN-PORT-ZERO",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:0e6ccf5f-fbef-41eb-a4b8-dbe1c895d381",
+      "value": {
+        "scheme": "https",
+        "host": { "kind": "dns", "value": "service.example" },
+        "port": 0
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "R1-WIRE-TIME-EQUAL-CLOSED",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964",
+      "value": {
+        "kind": "interval",
+        "lower": { "at": "2026-08-20T00:00:00.000Z", "inclusive": true },
+        "upper": { "at": "2026-08-20T00:00:00.000Z", "inclusive": true }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "time-evidence"
+    },
+    {
+      "id": "R1-WIRE-TIME-EQUAL-OPEN",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:573ee187-8f71-4747-b7d3-c2d3baf86964",
+      "value": {
+        "kind": "interval",
+        "lower": { "at": "2026-08-20T00:00:00.000Z", "inclusive": false },
+        "upper": { "at": "2026-08-20T00:00:00.000Z", "inclusive": true }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "time-evidence"
+    },
+    {
+      "id": "R1-WIRE-ARTIFACT-EXACT",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3",
+      "value": {
+        "algorithm": "sha-256",
+        "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+        "byteLength": 0
+      },
+      "semanticInput": { "artifactBytesHex": "" },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "artifact-byte-integrity"
+    },
+    {
+      "id": "R1-WIRE-ARTIFACT-MISMATCH",
+      "classification": "semantic-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3",
+      "value": {
+        "algorithm": "sha-256",
+        "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "byteLength": 0
+      },
+      "semanticInput": { "artifactBytesHex": "" },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "artifact-byte-integrity"
+    },
+    {
+      "id": "R1-WIRE-EXTENSION-VALID",
+      "classification": "semantic-positive",
+      "kind": "value",
+      "targetSchema": "urn:uuid:ac23dacd-18f3-4920-aa45-15aa695f1234",
+      "value": "com.example/audit.v1",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "extension-identity"
+    },
+    {
+      "id": "R1-WIRE-EXTENSION-EQUAL",
+      "classification": "semantic-positive",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:ac23dacd-18f3-4920-aa45-15aa695f1234",
+      "values": ["com.example/audit.v1", "com.example/audit.v1"],
+      "equalExpected": true,
+      "semanticCheck": "extension-exact-equality"
+    },
+    {
+      "id": "R1-WIRE-EXTENSION-PUNCTUATION-UNEQUAL",
+      "classification": "semantic-positive",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:ac23dacd-18f3-4920-aa45-15aa695f1234",
+      "values": ["com.example/audit-v1", "com.example/audit_v1"],
+      "equalExpected": false,
+      "semanticCheck": "extension-exact-equality"
+    },
+    {
+      "id": "R1-WIRE-EXTENSION-UPPER",
+      "classification": "structural-negative",
+      "kind": "value",
+      "targetSchema": "urn:uuid:ac23dacd-18f3-4920-aa45-15aa695f1234",
+      "value": "com.example/Audit",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    }
+  ]
+}

@@ -13,6 +13,19 @@ const DOCUMENTED_FIXTURE_PATHS = Object.freeze([
   /^gemini-(?:basic-request|basic-response|models-response)\.json$/i,
 ]);
 const MAX_SCANNED_FILE_BYTES = 2 * 1024 * 1024;
+const PUBLIC_DATA_HASH_CHUNK_BYTES = 64 * 1024;
+// These fingerprints are security-scanner classifications only, not Ghost Bridge
+// protocol authority. Each entry authorizes only its exact reviewed path and
+// bytes: it does not authorize future Unicode versions, sibling files, or
+// arbitrary oversized files. A future path, version, or source requires a
+// separately reviewed scanner fingerprint.
+const REVIEWED_PUBLIC_DATA_FINGERPRINTS = Object.freeze([
+  Object.freeze({
+    path: 'protocol/unicode/17.0.0/source/ucd/UnicodeData.txt',
+    byteLength: 2198209,
+    sha256: '2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c',
+  }),
+]);
 // These exact fingerprints classify scanner input only. They are not protocol
 // authority and deliberately do not authorize future paths or structures.
 const FACET_PROPERTY_ARTIFACT_PATH =
@@ -69,6 +82,7 @@ const RECEIPT_NARROWABLE_PROPERTY_KEYS = Object.freeze([
 const FILE_SCAN_BLOCKERS = Object.freeze({
   accessError: 'TRACKED_FILE_SCAN_ERROR',
   changedDuringScan: 'TRACKED_FILE_CHANGED_DURING_SCAN',
+  fingerprintMismatch: 'TRACKED_FILE_FINGERPRINT_MISMATCH',
   oversize: 'TRACKED_FILE_SIZE_LIMIT_EXCEEDED',
   pathOutsideRepository: 'TRACKED_FILE_PATH_OUTSIDE_REPOSITORY',
   symlink: 'TRACKED_SYMBOLIC_LINK_BLOCKED',
@@ -420,6 +434,13 @@ function sameFileIdentity(beforeOpen, afterOpen) {
   );
 }
 
+function reviewedPublicDataFingerprint(relativePath) {
+  const normalized = normalizePath(relativePath);
+  return REVIEWED_PUBLIC_DATA_FINGERPRINTS.find(
+    (fingerprint) => fingerprint.path === normalized,
+  );
+}
+
 function readBoundedFile(fileSystem, descriptor) {
   const bytes = Buffer.allocUnsafe(MAX_SCANNED_FILE_BYTES + 1);
   let byteLength = 0;
@@ -441,7 +462,35 @@ function readBoundedFile(fileSystem, descriptor) {
   return { content: bytes.subarray(0, byteLength).toString('utf8') };
 }
 
-function inspectTrackedFile(absolutePath, fileSystem) {
+function verifyPublicDataFingerprint(fileSystem, descriptor, fingerprint) {
+  const digest = crypto.createHash('sha256');
+  const chunk = Buffer.allocUnsafe(PUBLIC_DATA_HASH_CHUNK_BYTES);
+  let byteLength = 0;
+  while (byteLength < fingerprint.byteLength) {
+    const readLimit = Math.min(chunk.length, fingerprint.byteLength - byteLength);
+    let readLength;
+    try {
+      readLength = fileSystem.readSync(descriptor, chunk, 0, readLimit, null);
+    } catch {
+      return { blocker: FILE_SCAN_BLOCKERS.accessError };
+    }
+    if (!Number.isInteger(readLength) || readLength <= 0 || readLength > readLimit) {
+      return { blocker: FILE_SCAN_BLOCKERS.fingerprintMismatch };
+    }
+    digest.update(chunk.subarray(0, readLength));
+    byteLength += readLength;
+  }
+  if (
+    byteLength !== fingerprint.byteLength ||
+    digest.digest('hex') !== fingerprint.sha256
+  ) {
+    return { blocker: FILE_SCAN_BLOCKERS.fingerprintMismatch };
+  }
+  return { verifiedPublicData: true };
+}
+
+function inspectTrackedFile(absolutePath, relativePath, fileSystem) {
+  const fingerprint = reviewedPublicDataFingerprint(relativePath);
   let entry;
   try {
     entry = fileSystem.lstatSync(absolutePath);
@@ -450,7 +499,13 @@ function inspectTrackedFile(absolutePath, fileSystem) {
   }
   if (entry.isSymbolicLink()) return { blocker: FILE_SCAN_BLOCKERS.symlink };
   if (!entry.isFile()) return { blocker: FILE_SCAN_BLOCKERS.unsupportedType };
-  if (entry.size > MAX_SCANNED_FILE_BYTES) return { blocker: FILE_SCAN_BLOCKERS.oversize };
+  if (fingerprint) {
+    if (entry.size !== fingerprint.byteLength) {
+      return { blocker: FILE_SCAN_BLOCKERS.fingerprintMismatch };
+    }
+  } else if (entry.size > MAX_SCANNED_FILE_BYTES) {
+    return { blocker: FILE_SCAN_BLOCKERS.oversize };
+  }
 
   let descriptor;
   let inspection;
@@ -461,8 +516,20 @@ function inspectTrackedFile(absolutePath, fileSystem) {
     const openedEntry = fileSystem.fstatSync(descriptor);
     if (!sameFileIdentity(entry, openedEntry)) {
       inspection = { blocker: FILE_SCAN_BLOCKERS.changedDuringScan };
-    } else if (openedEntry.size > MAX_SCANNED_FILE_BYTES) {
+    } else if (fingerprint && openedEntry.size !== fingerprint.byteLength) {
+      inspection = { blocker: FILE_SCAN_BLOCKERS.fingerprintMismatch };
+    } else if (!fingerprint && openedEntry.size > MAX_SCANNED_FILE_BYTES) {
       inspection = { blocker: FILE_SCAN_BLOCKERS.oversize };
+    } else if (fingerprint) {
+      inspection = verifyPublicDataFingerprint(fileSystem, descriptor, fingerprint);
+      if (inspection.verifiedPublicData) {
+        const completedEntry = fileSystem.fstatSync(descriptor);
+        if (!sameFileIdentity(entry, completedEntry)) {
+          inspection = { blocker: FILE_SCAN_BLOCKERS.changedDuringScan };
+        } else if (completedEntry.size !== fingerprint.byteLength) {
+          inspection = { blocker: FILE_SCAN_BLOCKERS.fingerprintMismatch };
+        }
+      }
     } else {
       inspection = readBoundedFile(fileSystem, descriptor);
     }
@@ -491,6 +558,7 @@ function scanTrackedFiles(repositoryRoot, options = {}) {
   const files = candidates.filter((file) => !fixtureFiles.includes(file));
   const findings = [];
   let scannedFileCount = 0;
+  let verifiedPublicDataFileCount = 0;
   let blockedFileCount = 0;
   for (const relativePath of files) {
     const absolutePath = path.resolve(repositoryRoot, relativePath);
@@ -499,10 +567,14 @@ function scanTrackedFiles(repositoryRoot, options = {}) {
       blockedFileCount += 1;
       continue;
     }
-    const inspection = inspectTrackedFile(absolutePath, fileSystem);
+    const inspection = inspectTrackedFile(absolutePath, relativePath, fileSystem);
     if (inspection.blocker) {
       findings.push(safeFinding(inspection.blocker, relativePath, null));
       blockedFileCount += 1;
+      continue;
+    }
+    if (inspection.verifiedPublicData) {
+      verifiedPublicDataFileCount += 1;
       continue;
     }
     findings.push(...scanText(inspection.content, relativePath));
@@ -512,6 +584,7 @@ function scanTrackedFiles(repositoryRoot, options = {}) {
     passed: findings.length === 0,
     candidateFileCount: files.length,
     scannedFileCount,
+    verifiedPublicDataFileCount,
     blockedFileCount,
     documentedFixtureFileCount: fixtureFiles.length,
     findings: Object.freeze(findings),

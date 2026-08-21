@@ -1,0 +1,3 @@
+/protocol/unicode/17.0.0/source/** -text -whitespace
+/protocol/unicode/17.0.0/generated/** -text
+/protocol/unicode/17.0.0/test/source/** -text -whitespace

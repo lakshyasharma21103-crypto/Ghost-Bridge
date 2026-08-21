@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -10,6 +11,10 @@ const repositoryRoot = path.resolve(__dirname, '../../..');
 const generatedFacetPath =
   'protocol/registries/e1.r0-draft.1/release-data/facet-property.registry.json';
 const maintainedSourcePath = 'protocol/schema-validation/release-data/e1.r0-draft.1.source.json';
+const unicodeDataPath = 'protocol/unicode/17.0.0/source/ucd/UnicodeData.txt';
+const unicodeDataByteLength = 2198209;
+const unicodeDataSha256 =
+  '2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c';
 const facetSchemaId = 'urn:uuid:876284f1-c7c1-468f-bab6-c679e564c3fe';
 const facetArtifactId = 'urn:uuid:aef799c0-6fd3-4e3d-a0bd-c804e137661f';
 
@@ -106,6 +111,32 @@ function assertPrivacySafe(findings, syntheticValues) {
   }
   const serialized = JSON.stringify(findings);
   for (const value of syntheticValues) assert.equal(serialized.includes(value), false);
+}
+
+function sha256FileInChunks(filePath) {
+  const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY);
+  const digest = crypto.createHash('sha256');
+  const chunk = Buffer.allocUnsafe(64 * 1024);
+  try {
+    while (true) {
+      const readLength = fs.readSync(descriptor, chunk, 0, chunk.length, null);
+      if (readLength === 0) break;
+      digest.update(chunk.subarray(0, readLength));
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return digest.digest('hex');
+}
+
+function regularEntry(size = unicodeDataByteLength, dev = 1, ino = 2) {
+  return {
+    dev,
+    ino,
+    size,
+    isFile: () => true,
+    isSymbolicLink: () => false,
+  };
 }
 
 test('exact facet-property public token positions suppress only generic token assignments', () => {
@@ -252,6 +283,322 @@ test('environment-example and gitignore hygiene remain unchanged', () => {
   assert.equal(security.validateGitignore(repositoryRoot).passed, true);
 });
 
+test('exact reviewed UnicodeData bytes pass only through public-data fingerprint verification', () => {
+  const absolutePath = path.resolve(repositoryRoot, ...unicodeDataPath.split('/'));
+  assert.equal(fs.lstatSync(absolutePath).size, unicodeDataByteLength);
+  assert.equal(sha256FileInChunks(absolutePath), unicodeDataSha256);
+
+  let openCount = 0;
+  let fstatCount = 0;
+  let readByteLength = 0;
+  let maximumReadLength = 0;
+  let closeCount = 0;
+  let openFlags;
+  const result = security.scanTrackedFiles(repositoryRoot, {
+    files: [unicodeDataPath],
+    fileSystem: {
+      lstatSync: fs.lstatSync,
+      openSync(filePath, flags) {
+        openCount += 1;
+        openFlags = flags;
+        return fs.openSync(filePath, flags);
+      },
+      fstatSync(...args) {
+        fstatCount += 1;
+        return fs.fstatSync(...args);
+      },
+      readSync(descriptor, buffer, offset, length, position) {
+        maximumReadLength = Math.max(maximumReadLength, length);
+        const readLength = fs.readSync(descriptor, buffer, offset, length, position);
+        readByteLength += readLength;
+        return readLength;
+      },
+      closeSync(...args) {
+        closeCount += 1;
+        return fs.closeSync(...args);
+      },
+    },
+  });
+  assert.equal(result.passed, true);
+  assert.equal(result.candidateFileCount, 1);
+  assert.equal(result.scannedFileCount, 0);
+  assert.equal(result.verifiedPublicDataFileCount, 1);
+  assert.equal(result.blockedFileCount, 0);
+  assert.equal(result.documentedFixtureFileCount, 0);
+  assert.deepEqual(result.findings, []);
+  assert.equal(openCount, 1);
+  assert.equal(fstatCount, 2);
+  assert.equal(readByteLength, unicodeDataByteLength);
+  assert.ok(maximumReadLength <= 64 * 1024);
+  assert.equal(closeCount, 1);
+  if (typeof fs.constants.O_NOFOLLOW === 'number' && fs.constants.O_NOFOLLOW !== 0) {
+    assert.equal((openFlags & fs.constants.O_NOFOLLOW) === fs.constants.O_NOFOLLOW, true);
+  }
+  assert.equal(
+    result.candidateFileCount,
+    result.scannedFileCount + result.verifiedPublicDataFileCount + result.blockedFileCount,
+  );
+});
+
+test('same UnicodeData path with wrong exact content fails fingerprint verification without regex scanning', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-scanner-unicode-content-'));
+  const absolutePath = path.join(root, ...unicodeDataPath.split('/'));
+  const synthetic = `ghp_${'d'.repeat(36)}`;
+  let openCount = 0;
+  let readCount = 0;
+  try {
+    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+    const descriptor = fs.openSync(absolutePath, 'w');
+    try {
+      fs.writeSync(descriptor, synthetic);
+      fs.ftruncateSync(descriptor, unicodeDataByteLength);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    const fileSystem = {
+      lstatSync: fs.lstatSync,
+      openSync(...args) {
+        openCount += 1;
+        return fs.openSync(...args);
+      },
+      fstatSync: fs.fstatSync,
+      readSync(...args) {
+        readCount += 1;
+        return fs.readSync(...args);
+      },
+      closeSync: fs.closeSync,
+    };
+    const result = security.scanTrackedFiles(root, {
+      files: [unicodeDataPath],
+      fileSystem,
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.scannedFileCount, 0);
+    assert.equal(result.verifiedPublicDataFileCount, 0);
+    assert.equal(result.blockedFileCount, 1);
+    assert.deepEqual(result.findings, [
+      {
+        detector: 'TRACKED_FILE_FINGERPRINT_MISMATCH',
+        filePath: unicodeDataPath,
+        lineNumber: null,
+        redacted: '<redacted:TRACKED_FILE_FINGERPRINT_MISMATCH>',
+      },
+    ]);
+    assert.equal(openCount, 1);
+    assert.ok(readCount > 0);
+    assertPrivacySafe(result.findings, [synthetic]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('same UnicodeData path with any wrong size fails before open and receives no exemption', () => {
+  for (const size of [unicodeDataByteLength - 1, unicodeDataByteLength + 1]) {
+    let openCount = 0;
+    let readCount = 0;
+    const result = security.scanTrackedFiles(repositoryRoot, {
+      files: [unicodeDataPath],
+      fileSystem: {
+        lstatSync() {
+          return regularEntry(size);
+        },
+        openSync() {
+          openCount += 1;
+          throw new Error('Wrong-size fingerprint path must not be opened');
+        },
+        readSync() {
+          readCount += 1;
+          throw new Error('Wrong-size fingerprint path must not be read');
+        },
+      },
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.scannedFileCount, 0);
+    assert.equal(result.verifiedPublicDataFileCount, 0);
+    assert.equal(result.blockedFileCount, 1);
+    assert.equal(result.findings[0].detector, 'TRACKED_FILE_FINGERPRINT_MISMATCH');
+    assert.equal(openCount, 0);
+    assert.equal(readCount, 0);
+  }
+});
+
+test('exact UnicodeData bytes at a different path retain the ordinary oversize rejection', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-scanner-unicode-copy-'));
+  const relativePath = 'protocol/unicode/17.0.0/source/ucd/UnicodeData-copy.txt';
+  const absolutePath = path.join(root, ...relativePath.split('/'));
+  let openCount = 0;
+  let readCount = 0;
+  try {
+    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+    fs.copyFileSync(path.resolve(repositoryRoot, ...unicodeDataPath.split('/')), absolutePath);
+    assert.equal(sha256FileInChunks(absolutePath), unicodeDataSha256);
+    const result = security.scanTrackedFiles(root, {
+      files: [relativePath],
+      fileSystem: {
+        lstatSync: fs.lstatSync,
+        openSync(...args) {
+          openCount += 1;
+          return fs.openSync(...args);
+        },
+        fstatSync: fs.fstatSync,
+        readSync(...args) {
+          readCount += 1;
+          return fs.readSync(...args);
+        },
+        closeSync: fs.closeSync,
+      },
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.scannedFileCount, 0);
+    assert.equal(result.verifiedPublicDataFileCount, 0);
+    assert.equal(result.blockedFileCount, 1);
+    assert.equal(result.findings[0].detector, 'TRACKED_FILE_SIZE_LIMIT_EXCEEDED');
+    assert.equal(openCount, 0);
+    assert.equal(readCount, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('fingerprinted path preserves symlink and non-regular entry rejection before open', () => {
+  const entryCases = [
+    {
+      detector: 'TRACKED_SYMBOLIC_LINK_BLOCKED',
+      entry: {
+        dev: 1,
+        ino: 2,
+        size: unicodeDataByteLength,
+        isFile: () => false,
+        isSymbolicLink: () => true,
+      },
+    },
+    {
+      detector: 'TRACKED_FILE_TYPE_UNSUPPORTED',
+      entry: {
+        dev: 1,
+        ino: 2,
+        size: unicodeDataByteLength,
+        isFile: () => false,
+        isSymbolicLink: () => false,
+      },
+    },
+  ];
+  for (const { detector, entry } of entryCases) {
+    let openCount = 0;
+    const result = security.scanTrackedFiles(repositoryRoot, {
+      files: [unicodeDataPath],
+      fileSystem: {
+        lstatSync() {
+          return entry;
+        },
+        openSync() {
+          openCount += 1;
+          throw new Error('Rejected entry must not be opened');
+        },
+      },
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.verifiedPublicDataFileCount, 0);
+    assert.equal(result.blockedFileCount, 1);
+    assert.equal(result.findings[0].detector, detector);
+    assert.equal(openCount, 0);
+  }
+});
+
+test('fingerprinted path preserves file identity replacement rejection', () => {
+  let readCount = 0;
+  let closeCount = 0;
+  const result = security.scanTrackedFiles(repositoryRoot, {
+    files: [unicodeDataPath],
+    fileSystem: {
+      lstatSync() {
+        return regularEntry(unicodeDataByteLength, 1, 10);
+      },
+      openSync() {
+        return 7;
+      },
+      fstatSync() {
+        return regularEntry(unicodeDataByteLength, 1, 11);
+      },
+      readSync() {
+        readCount += 1;
+        return 0;
+      },
+      closeSync() {
+        closeCount += 1;
+      },
+    },
+  });
+  assert.equal(result.passed, false);
+  assert.equal(result.scannedFileCount, 0);
+  assert.equal(result.verifiedPublicDataFileCount, 0);
+  assert.equal(result.blockedFileCount, 1);
+  assert.equal(result.findings[0].detector, 'TRACKED_FILE_CHANGED_DURING_SCAN');
+  assert.equal(readCount, 0);
+  assert.equal(closeCount, 1);
+});
+
+test('fingerprinted path fails closed on premature EOF and descriptor read errors', () => {
+  let partialReadCount = 0;
+  let partialCloseCount = 0;
+  const partial = security.scanTrackedFiles(repositoryRoot, {
+    files: [unicodeDataPath],
+    fileSystem: {
+      lstatSync() {
+        return regularEntry();
+      },
+      openSync() {
+        return 7;
+      },
+      fstatSync() {
+        return regularEntry();
+      },
+      readSync(descriptor, buffer, offset) {
+        partialReadCount += 1;
+        if (partialReadCount > 1) return 0;
+        buffer.fill(0x61, offset, offset + 17);
+        return 17;
+      },
+      closeSync() {
+        partialCloseCount += 1;
+      },
+    },
+  });
+  assert.equal(partial.passed, false);
+  assert.equal(partial.verifiedPublicDataFileCount, 0);
+  assert.equal(partial.blockedFileCount, 1);
+  assert.equal(partial.findings[0].detector, 'TRACKED_FILE_FINGERPRINT_MISMATCH');
+  assert.equal(partialReadCount, 2);
+  assert.equal(partialCloseCount, 1);
+
+  let errorCloseCount = 0;
+  const readError = security.scanTrackedFiles(repositoryRoot, {
+    files: [unicodeDataPath],
+    fileSystem: {
+      lstatSync() {
+        return regularEntry();
+      },
+      openSync() {
+        return 7;
+      },
+      fstatSync() {
+        return regularEntry();
+      },
+      readSync() {
+        throw new Error('Synthetic descriptor read failure');
+      },
+      closeSync() {
+        errorCloseCount += 1;
+      },
+    },
+  });
+  assert.equal(readError.passed, false);
+  assert.equal(readError.verifiedPublicDataFileCount, 0);
+  assert.equal(readError.blockedFileCount, 1);
+  assert.equal(readError.findings[0].detector, 'TRACKED_FILE_SCAN_ERROR');
+  assert.equal(errorCloseCount, 1);
+});
+
 test('oversize tracked candidates fail closed without content reads or false scan accounting', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'release-scanner-oversize-'));
   const relativePath = 'config/oversize.json';
@@ -280,6 +627,7 @@ test('oversize tracked candidates fail closed without content reads or false sca
     assert.equal(result.passed, false);
     assert.equal(result.candidateFileCount, 1);
     assert.equal(result.scannedFileCount, 0);
+    assert.equal(result.verifiedPublicDataFileCount, 0);
     assert.equal(result.blockedFileCount, 1);
     assert.deepEqual(result.findings, [
       {
@@ -333,6 +681,7 @@ test('tracked symlinks fail closed without opening or reading their targets', ()
   assert.equal(result.passed, false);
   assert.equal(result.candidateFileCount, 1);
   assert.equal(result.scannedFileCount, 0);
+  assert.equal(result.verifiedPublicDataFileCount, 0);
   assert.equal(result.blockedFileCount, 1);
   assert.deepEqual(result.findings, [
     {
@@ -360,6 +709,7 @@ test('filesystem inspection errors and entry replacement remain fail closed', ()
   });
   assert.equal(inaccessible.passed, false);
   assert.equal(inaccessible.scannedFileCount, 0);
+  assert.equal(inaccessible.verifiedPublicDataFileCount, 0);
   assert.equal(inaccessible.blockedFileCount, 1);
   assert.equal(inaccessible.findings[0].detector, 'TRACKED_FILE_SCAN_ERROR');
 
@@ -394,6 +744,7 @@ test('filesystem inspection errors and entry replacement remain fail closed', ()
   });
   assert.equal(changed.passed, false);
   assert.equal(changed.scannedFileCount, 0);
+  assert.equal(changed.verifiedPublicDataFileCount, 0);
   assert.equal(changed.blockedFileCount, 1);
   assert.equal(changed.findings[0].detector, 'TRACKED_FILE_CHANGED_DURING_SCAN');
   assert.equal(readCount, 0);
@@ -412,6 +763,7 @@ test('ordinary tracked regular files remain bounded content-scanning candidates'
     assert.equal(clean.passed, true);
     assert.equal(clean.candidateFileCount, 1);
     assert.equal(clean.scannedFileCount, 1);
+    assert.equal(clean.verifiedPublicDataFileCount, 0);
     assert.equal(clean.blockedFileCount, 0);
 
     const synthetic = `ghp_${'c'.repeat(36)}`;
@@ -419,6 +771,7 @@ test('ordinary tracked regular files remain bounded content-scanning candidates'
     const detected = security.scanTrackedFiles(root, { files: [relativePath] });
     assert.equal(detected.passed, false);
     assert.equal(detected.scannedFileCount, 1);
+    assert.equal(detected.verifiedPublicDataFileCount, 0);
     assert.equal(detected.blockedFileCount, 0);
     assert.ok(detected.findings.some((finding) => finding.detector === 'GITHUB_TOKEN'));
     assertPrivacySafe(detected.findings, [synthetic]);
@@ -436,6 +789,12 @@ test('tracked-file enumeration and scanner results are deterministic', () => {
   const secondScan = security.scanTrackedFiles(repositoryRoot);
   assert.deepEqual(firstScan, secondScan);
   assert.equal(firstScan.passed, true);
-  assert.equal(firstScan.candidateFileCount, firstScan.scannedFileCount);
+  assert.equal(firstScan.verifiedPublicDataFileCount, 1);
+  assert.equal(
+    firstScan.candidateFileCount,
+    firstScan.scannedFileCount +
+      firstScan.verifiedPublicDataFileCount +
+      firstScan.blockedFileCount,
+  );
   assert.equal(firstScan.blockedFileCount, 0);
 });

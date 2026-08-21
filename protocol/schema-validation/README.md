@@ -34,6 +34,57 @@ This tooling is not a conformance runner, a normative oracle, an independent
 implementation, or D2-01 completion evidence. If it disagrees with accepted
 H/REQ/D2-RP authority, the tooling is defective.
 
+## D2-01R1 Revision 2 shared vocabulary
+
+Run the focused R1 validator from the repository root:
+
+```text
+node protocol/schema-validation/validate-r1.mjs
+```
+
+R1 adds immutable schemas for `CanonicalBase64url32Octets`,
+`SemanticCommitmentRef`, and the structured `Origin`. It reuses the existing
+`TimeEvidence`, `ArtifactByteIntegrityRef`, and `ExtensionIdentity` schemas and
+converges their executable predicates into the single semantic-check registry.
+The fixture-schema declarations and executable registry are checked as an
+exact union, and duplicate registrations fail closed.
+
+The protocol raw-input scanner is separate from structural schema validation.
+It accepts an already materialized `Uint8Array` plus a mandatory caller byte
+ceiling, then applies strict UTF-8, BOM rejection, decoded duplicate-member
+detection, Unicode scalar/noncharacter and 64-KiB decoded-string rules,
+source-number and negative-zero rules, nesting 16, 256 array entries, 256
+unique object names, and the accepted D2R-029A 16,384-token ceiling before
+ordinary object parsing. Recognition of token 16,385 rejects immediately.
+The generic scanner does not claim to prevent network or runtime allocation of
+the supplied byte buffer; transport streaming/read enforcement remains later
+H-12 work.
+
+Raw fixtures carry exact bytes as lowercase hexadecimal segments with explicit
+repeat structure. The runner validates shape and repeat counts, performs
+safe-integer arithmetic before loops or allocation, and independently enforces
+a 32-level carrier-depth ceiling, 100,000 logical-work-unit ceiling, and
+2-MiB expanded-byte ceiling. Empty and nested zero-output repeats consume work
+budget. The runner then materializes the byte stream once; it never parses or
+reserializes the carried JSON source.
+The corpus proves the exact 16,383, 16,384, and 16,385 token boundary and keeps
+malformed UTF-8, BOM, duplicate names, escape-equivalent names, and number
+spellings byte-exact.
+
+Origin validation prechecks the wire value as lowercase ASCII and dispatches
+the tagged host before canonical validation. DNS validation consumes only the
+exact-hash-verified generated Unicode 17.0.0 Ghost Bridge artifacts. A-labels
+use the direct `punycode@2.3.1` dependency only for RFC 3492 decode/encode,
+then require scalar validity, custom frozen-data NFC equality, the frozen
+IDNA2008 category, ContextJ, ContextO, exact A-label round trip, and complete-
+domain Bidi validation. No UTS #46 mapping, runtime normalization, Unicode
+property escape, URL parser, ICU, V8, OS table, or dependency IDNA policy can
+alter acceptance. IPv4 and hexadecimal-only IPv6 use parse and canonical
+re-encode equality, with IPv4-mapped IPv6 rejected. `http` is only a
+structurally representable scheme here and creates no Governed-origin or
+transport authority. R1 implements no loopback context, DNS resolution,
+redirect, proxy, rebinding, or connected-target policy.
+
 ## D2-01B release-data assets
 
 Run the atomic release-data validator from the repository root:
