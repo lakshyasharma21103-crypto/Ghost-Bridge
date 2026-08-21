@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:d62d6621-999a-43f1-bf80-08c253750ac9",
+  "title": "CanonicalBase64url32Octets",
+  "description": "Exactly 32 octets encoded as canonical unpadded base64url.",
+  "type": "string",
+  "minLength": 43,
+  "maxLength": 43,
+  "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$"
+}

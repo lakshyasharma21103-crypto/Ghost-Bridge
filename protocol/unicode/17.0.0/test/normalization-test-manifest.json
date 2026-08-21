@@ -1,0 +1,14 @@
+{
+  "format": "ghostbridge-unicode-normalization-test-evidence-v1",
+  "unicodeVersion": "17.0.0",
+  "path": "test/source/NormalizationTest.txt",
+  "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/NormalizationTest.txt",
+  "byteLength": 2827429,
+  "sha256": "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db",
+  "role": "comparison/test-only",
+  "propertyAuthority": false,
+  "normalRuntimeRead": false,
+  "recordCount": 20034,
+  "versionEvidence": "The first line is # NormalizationTest-17.0.0.txt and the immutable provenance URL is versioned to Unicode 17.0.0.",
+  "licenseBinding": "Unicode License v3 as preserved at source/license/Unicode-License-v3.txt; the exact upstream copyright and terms notice remains in the acquired bytes."
+}

@@ -1,0 +1,175 @@
+{
+  "format": "ghostbridge-unicode-source-manifest-v1",
+  "unicodeVersion": "17.0.0",
+  "acquiredOn": "2026-08-20",
+  "authority": "Unicode Consortium immutable versioned Unicode 17.0.0 release data",
+  "sourceSetDigest": {
+    "algorithm": "sha-256",
+    "canonicalInput": "For each source entry in manifest order: logicalName, NUL, decimal byteLength, NUL, lowercase sha256, LF; concatenate as UTF-8.",
+    "byteLength": 863,
+    "value": "d290a34d75c1ddeefb728594e421b9a74b1424d64181b0788e49da5d96665d9b"
+  },
+  "networkPolicy": {
+    "acquisition": "one-time-from-listed-unicode-consortium-provenance",
+    "generation": "offline-only",
+    "normalValidation": "offline-only",
+    "mutableAliasAuthority": false
+  },
+  "files": [
+    {
+      "path": "source/idna/Idna2008.txt",
+      "logicalName": "idna/Idna2008.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/idna/Idna2008.txt",
+      "byteLength": 208627,
+      "sha256": "e4a7526a8a37539c0defa4da25f5dbf77d0212a14d4762d455cadea608a8921c",
+      "role": "authoritative-input",
+      "purpose": "Primary frozen Unicode-version-specific RFC 5892 IDNA Derived Property (PVALID, CONTEXTJ, CONTEXTO, DISALLOWED, UNASSIGNED).",
+      "versionEvidence": "The first line is # Idna2008-17.0.0.txt and the versioned directory ReadMe binds the file to 17.0.0.",
+      "license": "Unicode License v3; the upstream copyright and terms notice is preserved in the exact source bytes."
+    },
+    {
+      "path": "source/idna/ReadMe.txt",
+      "logicalName": "idna/ReadMe.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/idna/ReadMe.txt",
+      "byteLength": 597,
+      "sha256": "626a5adbd460a740e02078f09ded01b5b4183459a171fd69843d0163c1318fc0",
+      "role": "provenance-material",
+      "purpose": "Binds the final versioned IDNA directory and Idna2008.txt property listing to Unicode 17.0.0.",
+      "versionEvidence": "States that the directory contains final data files for version 17.0.0 and that Idna2008.txt matches RFC 5892.",
+      "license": "Unicode License v3; the upstream copyright and terms notice is preserved in the exact source bytes."
+    },
+    {
+      "path": "source/license/Unicode-License-v3.txt",
+      "logicalName": "license/Unicode-License-v3.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/license.txt",
+      "byteLength": 1995,
+      "sha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+      "role": "license-material",
+      "purpose": "Exact acquired text of the Unicode License v3 applicable to the frozen Unicode data files.",
+      "versionEvidence": "License material is not a Unicode property version; this exact digest-bound Unicode License v3 text applies to the listed 17.0.0 inputs.",
+      "license": "Unicode License v3."
+    },
+    {
+      "path": "source/ucd/DerivedNormalizationProps.txt",
+      "logicalName": "ucd/DerivedNormalizationProps.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/DerivedNormalizationProps.txt",
+      "byteLength": 1377582,
+      "sha256": "71fd6a206a2c0cdd41feb6b7f656aa31091db45e9cedc926985d718397f9e488",
+      "role": "authoritative-input",
+      "purpose": "NFC_Quick_Check and Full_Composition_Exclusion inputs for offline NFC validation data.",
+      "versionEvidence": "The first line is # DerivedNormalizationProps-17.0.0.txt.",
+      "license": "Unicode License v3; the upstream copyright and terms notice is preserved in the exact source bytes."
+    },
+    {
+      "path": "source/ucd/ReadMe.txt",
+      "logicalName": "ucd/ReadMe.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/ReadMe.txt",
+      "byteLength": 740,
+      "sha256": "9fe1a90bd32659d7953616283dc2bffaa165518aae9ace026040c42c559ba606",
+      "role": "provenance-material",
+      "purpose": "Binds headerless UCD members such as UnicodeData.txt to the final Unicode Character Database 17.0.0 directory.",
+      "versionEvidence": "States that the directory contains final UCD data files for Version 17.0.0.",
+      "license": "Unicode License v3; the upstream copyright and terms notice is preserved in the exact source bytes."
+    },
+    {
+      "path": "source/ucd/Scripts.txt",
+      "logicalName": "ucd/Scripts.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/Scripts.txt",
+      "byteLength": 192460,
+      "sha256": "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf",
+      "role": "authoritative-input",
+      "purpose": "Script property input for the Greek, Hebrew, Hiragana, Katakana, and Han CONTEXTO checks.",
+      "versionEvidence": "The first line is # Scripts-17.0.0.txt.",
+      "license": "Unicode License v3; the upstream copyright and terms notice is preserved in the exact source bytes."
+    },
+    {
+      "path": "source/ucd/UnicodeData.txt",
+      "logicalName": "ucd/UnicodeData.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/UnicodeData.txt",
+      "byteLength": 2198209,
+      "sha256": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
+      "role": "authoritative-input",
+      "purpose": "General_Category Mark values from field 2 for the leading-combining-mark predicate, plus canonical decomposition mappings and combining classes for offline NFC and Virama/CONTEXTJ data.",
+      "versionEvidence": "UnicodeData.txt has no version header; the immutable /Public/17.0.0/ucd/ path and exact ucd/ReadMe.txt bind it to final UCD 17.0.0.",
+      "license": "Unicode License v3; UnicodeData.txt has no comment header, so the preserved UCD ReadMe and license file carry the notice."
+    },
+    {
+      "path": "source/ucd/extracted/DerivedBidiClass.txt",
+      "logicalName": "ucd/extracted/DerivedBidiClass.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedBidiClass.txt",
+      "byteLength": 173433,
+      "sha256": "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
+      "role": "authoritative-input",
+      "purpose": "Complete Bidi_Class input, including specialized unassigned defaults, for whole-domain RFC 5893 evaluation.",
+      "versionEvidence": "The first line is # DerivedBidiClass-17.0.0.txt.",
+      "license": "Unicode License v3; the upstream copyright and terms notice is preserved in the exact source bytes."
+    },
+    {
+      "path": "source/ucd/extracted/DerivedJoiningType.txt",
+      "logicalName": "ucd/extracted/DerivedJoiningType.txt",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/extracted/DerivedJoiningType.txt",
+      "byteLength": 40635,
+      "sha256": "f39ebe974825d6736aee15582250307aa532b2cfab3caf3f86bd23fddc9c5c4d",
+      "role": "authoritative-input",
+      "purpose": "Joining_Type input for the transparent-skipping and joining-neighbor branches of CONTEXTJ.",
+      "versionEvidence": "The first line is # DerivedJoiningType-17.0.0.txt.",
+      "license": "Unicode License v3; the upstream copyright and terms notice is preserved in the exact source bytes."
+    }
+  ],
+  "generated": [
+    {
+      "path": "generated/idna-properties.json",
+      "byteLength": 349619,
+      "sha256": "5291042234cb645162fc20ef5dc3a4d763302c7441428d3f0293975403679c8d",
+      "purpose": "Implementation-neutral General_Category Mark, NFC, ContextJ, ContextO, joining-type, script, and complete Bidi property tables."
+    },
+    {
+      "path": "generated/idna2008-ranges.json",
+      "byteLength": 171782,
+      "sha256": "83840db50200fc686ff850d4c156c47910054f118c50ea27a66d8c0ec2e17fb4",
+      "purpose": "Complete implementation-neutral partition of all Unicode code points by the frozen IDNA2008 category."
+    }
+  ],
+  "comparisonOnlySources": [
+    {
+      "logicalName": "ucd/NormalizationTest.txt",
+      "path": "test/source/NormalizationTest.txt",
+      "metadataPath": "test/normalization-test-manifest.json",
+      "unicodeVersion": "17.0.0",
+      "upstreamProvenance": "https://www.unicode.org/Public/17.0.0/ucd/NormalizationTest.txt",
+      "byteLength": 2827429,
+      "sha256": "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db",
+      "role": "comparison/test-only",
+      "propertyAuthority": false,
+      "normalRuntimeRead": false,
+      "license": "Unicode License v3; the exact upstream copyright and terms notice is preserved in the acquired bytes."
+    }
+  ],
+  "explicitlyExcludedSources": [
+    {
+      "logicalName": "idna/IdnaMappingTable.txt",
+      "reason": "UTS #46 mapping is not Ghost Bridge IDNA2008 acceptance authority and no comparison-only table is required by this source-foundation task."
+    },
+    {
+      "logicalName": "ucd/CompositionExclusions.txt",
+      "reason": "The required full composition-exclusion property is already present as Full_Composition_Exclusion in DerivedNormalizationProps.txt."
+    },
+    {
+      "logicalName": "ucd/extracted/DerivedCombiningClass.txt",
+      "reason": "Canonical_Combining_Class is already present in UnicodeData.txt field 3, which is also required for canonical decomposition mappings."
+    },
+    {
+      "logicalName": "ucd/ScriptExtensions.txt",
+      "reason": "The applicable RFC 5892 CONTEXTO rules consume the Script property, not Script_Extensions."
+    }
+  ]
+}

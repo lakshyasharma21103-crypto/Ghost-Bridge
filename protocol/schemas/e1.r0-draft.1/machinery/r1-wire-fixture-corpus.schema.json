@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:96c77461-15e3-455b-b96c-626f2b060d58",
+  "title": "D2-01R1 Revision 2 Wire Fixture Corpus",
+  "description": "Closed R1 structural and semantic evidence. It is not conformance evidence or cryptographic golden-vector authority.",
+  "type": "object",
+  "required": ["fixtureSchema", "protocolRelease", "cases"],
+  "properties": {
+    "fixtureSchema": { "const": "urn:uuid:96c77461-15e3-455b-b96c-626f2b060d58" },
+    "protocolRelease": { "const": "ghostbridge/e1.r0-draft.1" },
+    "cases": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/case" } }
+  },
+  "$defs": {
+    "uuidUrn": {
+      "type": "string",
+      "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "classification": {
+      "enum": [
+        "structural-positive",
+        "structural-negative",
+        "semantic-positive",
+        "semantic-negative",
+        "boundary"
+      ]
+    },
+    "artifactSemanticInput": {
+      "type": "object",
+      "required": ["artifactBytesHex"],
+      "properties": { "artifactBytesHex": { "type": "string", "maxLength": 2097152 } },
+      "additionalProperties": false
+    },
+    "valueCase": {
+      "type": "object",
+      "required": [
+        "id",
+        "classification",
+        "kind",
+        "targetSchema",
+        "value",
+        "structuralExpected",
+        "semanticExpected",
+        "semanticCheck"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^R1-WIRE-[A-Z0-9-]+$" },
+        "classification": { "$ref": "#/$defs/classification" },
+        "kind": { "const": "value" },
+        "targetSchema": { "$ref": "#/$defs/uuidUrn" },
+        "value": true,
+        "semanticInput": { "$ref": "#/$defs/artifactSemanticInput" },
+        "structuralExpected": { "enum": ["pass", "fail"] },
+        "semanticExpected": { "enum": ["pass", "fail", "not-applicable"] },
+        "semanticCheck": {
+          "enum": [
+            "none",
+            "canonical-base64url-32-octets",
+            "semantic-commitment-ref",
+            "origin",
+            "time-evidence",
+            "artifact-byte-integrity",
+            "extension-identity"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "equalityCase": {
+      "type": "object",
+      "required": [
+        "id",
+        "classification",
+        "kind",
+        "targetSchema",
+        "values",
+        "equalExpected",
+        "semanticCheck"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^R1-WIRE-[A-Z0-9-]+$" },
+        "classification": { "$ref": "#/$defs/classification" },
+        "kind": { "const": "equality" },
+        "targetSchema": { "$ref": "#/$defs/uuidUrn" },
+        "values": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "string" } },
+        "equalExpected": { "type": "boolean" },
+        "semanticCheck": { "enum": ["extension-exact-equality"] }
+      },
+      "additionalProperties": false
+    },
+    "case": { "oneOf": [{ "$ref": "#/$defs/valueCase" }, { "$ref": "#/$defs/equalityCase" }] }
+  },
+  "additionalProperties": false
+}
