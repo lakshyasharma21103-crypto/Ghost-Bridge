@@ -213,11 +213,13 @@ is an engineering sequencing observation, not new protocol law.
 This is an engineering and reproducibility finding. It is not a semantic
 failure and is not a current-R1-validity failure.
 
-The protocol schema-validation tooling imports Ajv, but the root
-`package.json` does not directly declare Ajv. The backend workspace declares
-`ajv: ^8.17.1`, and the current lock/install resolves the working engine to Ajv
-`8.20.0`. The current protocol-validation toolchain therefore depends on
-workspace dependency/hoisting behavior for its primary validator.
+At the recorded post-R1 state, the protocol schema-validation tooling imported
+Ajv, but the root `package.json` did not directly declare it. Both the backend
+workspace and `@ghostbridge/protocol-core` independently declared compatible
+`ajv: ^8.17.1` ranges for legitimate runtime use. The current npm installation
+topology hoisted their compatible dependency to the repository-root
+`node_modules`, where the working engine resolved to Ajv `8.20.0`. Neither
+runtime workspace owned Ajv on behalf of `protocol/schema-validation`.
 
 | Item                                 | Classification                             |
 | ------------------------------------ | ------------------------------------------ |
@@ -227,9 +229,10 @@ workspace dependency/hoisting behavior for its primary validator.
 | Engineering/reproducibility debt     | `YES`                                      |
 | Required before final D2-01 evidence | `YES`                                      |
 
-This record does not solve the finding or choose a dependency-packaging
-mechanism. Possible later engineering choices include an explicit tooling/root
-dependency or a dedicated validation workspace, but neither is accepted here.
+The authorized engineering repair adds exact root development/tooling ownership
+of Ajv `8.20.0`. This is a factual engineering-bookkeeping correction and does
+not alter protocol semantics or either workspace's independent runtime
+ownership.
 
 ## KeyThumbprintReference correction
 

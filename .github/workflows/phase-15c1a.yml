@@ -86,6 +86,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Verify primary validator provenance and D2 executable evidence
+        run: npm run verify:d2-executable-evidence
+
       - name: Typecheck
         run: npm run typecheck
 

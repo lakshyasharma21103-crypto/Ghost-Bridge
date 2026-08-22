@@ -100,6 +100,14 @@
     "verify:phase-15c1a-r1-ci-contract": "node scripts/verifyPhase15c1aR1.mjs ci-contract",
     "verify:phase-15c1a-r1-mongo-store-contract": "node backend/scripts/verifyPhase15c1aR1MongoStoreContract.js",
     "verify:ghostbridge-phase-15c1a-r1": "node scripts/verifyPhase15c1aR1.mjs all",
+    "verify:protocol-validator-dependency-provenance": "node scripts/verifyProtocolValidatorDependencyProvenance.mjs",
+    "verify:protocol-schema-foundation": "node protocol/schema-validation/validate-foundation.mjs",
+    "verify:protocol-schema-r1": "node protocol/schema-validation/validate-r1.mjs",
+    "verify:protocol-release-data-generation": "node protocol/schema-validation/generate-release-data.mjs --check",
+    "verify:protocol-release-data": "node protocol/schema-validation/validate-release-data.mjs",
+    "verify:protocol-unicode-17-generation": "node protocol/unicode/17.0.0/generate.mjs --check",
+    "test:protocol-unicode-17": "node --test protocol/unicode/17.0.0/test/unicode-data.test.mjs",
+    "verify:d2-executable-evidence": "npm run verify:protocol-validator-dependency-provenance && npm run verify:protocol-schema-foundation && npm run verify:protocol-schema-r1 && npm run verify:protocol-release-data-generation && npm run verify:protocol-release-data && npm run verify:protocol-unicode-17-generation && npm run test:protocol-unicode-17",
     "verify:phase-15c2-platform-native-client": "node scripts/verifyPhase15c2.mjs platform-native-client",
     "verify:phase-15c2-platform-discovery": "node scripts/verifyPhase15c2.mjs discovery",
     "verify:phase-15c2-platform-invocation": "node scripts/verifyPhase15c2.mjs invocation",
@@ -137,6 +145,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.1.0",
+    "ajv": "8.20.0",
     "concurrently": "^9.2.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2"
