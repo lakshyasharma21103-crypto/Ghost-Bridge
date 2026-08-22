@@ -64,7 +64,7 @@ function main() {
   if (!releaseManifestEntry) fail('No declared release-data manifest was found');
   const validateRegistry = ajv.getSchema(releaseManifestEntry.schemaId);
   const validatorsBySchema = new Map(
-    bundle.schemaIds.values().map((schemaId) => [schemaId, ajv.getSchema(schemaId)]),
+    Array.from(bundle.schemaIds, (schemaId) => [schemaId, ajv.getSchema(schemaId)]),
   );
   const releaseDataBundle = loadReleaseDataFiles(repositoryRoot);
   const releaseData = validateReleaseDataBundleFoundationRegression({
@@ -81,13 +81,12 @@ function main() {
 
   const processedRegistryPaths = new Set([
     releaseManifestEntry.path,
-    ...releaseData.artifactsByClass
-      .values()
-      .map(
-        (artifact) =>
-          bundle.manifest.registries.find((entry) => entry.schemaId === artifact.artifactSchema)
-            ?.path,
-      ),
+    ...Array.from(
+      releaseData.artifactsByClass.values(),
+      (artifact) =>
+        bundle.manifest.registries.find((entry) => entry.schemaId === artifact.artifactSchema)
+          ?.path,
+    ),
   ]);
   if (processedRegistryPaths.has(undefined))
     fail('A loaded release-data artifact has no foundation-manifest entry');
