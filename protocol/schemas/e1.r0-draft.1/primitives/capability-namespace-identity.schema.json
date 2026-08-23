@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+  "title": "CapabilityNamespaceIdentity",
+  "description": "Canonical lowercase UUIDv4 URN used only for external capability collision separation. It grants no ownership, Trust, eligibility, or execution authority.",
+  "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+  "title": "CapabilityContractReference",
+  "description": "Exact immutable historical capability-contract reference. No current, latest, nearest, or fallback resolution is permitted.",
+  "type": "object",
+  "required": [
+    "protocolRelease",
+    "capabilityKey",
+    "capabilityVersion",
+    "capabilityContractArtifact",
+    "artifactByteIntegrity"
+  ],
+  "properties": {
+    "protocolRelease": {
+      "const": "ghostbridge/e1.r0-draft.1"
+    },
+    "capabilityKey": {
+      "$ref": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29"
+    },
+    "capabilityVersion": {
+      "$ref": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f"
+    },
+    "capabilityContractArtifact": {
+      "$ref": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5"
+    },
+    "artifactByteIntegrity": {
+      "$ref": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
+    }
+  },
+  "additionalProperties": false
+}

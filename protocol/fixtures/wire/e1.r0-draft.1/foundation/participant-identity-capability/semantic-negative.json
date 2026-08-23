@@ -1,0 +1,565 @@
+{
+  "fixtureSchema": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "semantic-negative",
+  "cases": [
+    {
+      "id": "PIC-SEMNEG-PASSPORT-ISSUER-MISMATCH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "fixture.passport"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "passport-issuer-match",
+      "semanticInput": {
+        "separateIssuer": "urn:uuid:87654321-4321-4abc-8def-abcdef012345"
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-TYPED-IDENTITY-SAME-CLASS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "typed-identity-separation",
+      "semanticInput": {
+        "typedIdentityComparison": {
+          "valueType": "IssuerIdentity",
+          "otherType": "IssuerIdentity",
+          "otherValue": "urn:uuid:12345678-1234-4123-8123-123456789abc"
+        }
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-TYPED-ARTIFACT-SAME-CLASS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "typed-artifact-separation",
+      "semanticInput": {
+        "typedArtifactComparison": {
+          "valueClass": "passportArtifact",
+          "otherClass": "passportArtifact",
+          "otherValue": "urn:uuid:12345678-1234-4123-a123-123456789abc"
+        }
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-ARTIFACT-REPOINT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "artifact-history-consistency",
+      "semanticInput": {
+        "artifactHistory": [
+          {
+            "artifactClass": "passportArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          },
+          {
+            "artifactClass": "passportArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-PASSPORT-MAPPING-ARTIFACT-CONFLICT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.passport"
+            },
+            "passportVersion": "v1",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-PASSPORT-MAPPING-INTEGRITY-CONFLICT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.passport"
+            },
+            "passportVersion": "v1",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-CAPABILITY-DUPLICATE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.core"
+            },
+            "capabilityVersion": "v1",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-CAPABILITY-ARTIFACT-CONFLICT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.core"
+            },
+            "capabilityVersion": "v1",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-CAPABILITY-INTEGRITY-CONFLICT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.core"
+            },
+            "capabilityVersion": "v1",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-CAPABILITY-CONFLICT-REVERSE-ORDER",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.core"
+            },
+            "capabilityVersion": "v1",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-PASSPORT-CROSS-VERSION-ARTIFACT-REPOINT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.passport"
+            },
+            "passportVersion": "v2",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-PASSPORT-CROSS-VERSION-ARTIFACT-REPOINT-REVERSED",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v2",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+          "byteLength": 1
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.passport"
+            },
+            "passportVersion": "v1",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-PASSPORT-CROSS-IDENTITY-ARTIFACT-REPOINT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.other"
+            },
+            "passportVersion": "v1",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-CAPABILITY-CROSS-VERSION-ARTIFACT-REPOINT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.core"
+            },
+            "capabilityVersion": "v2",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-CAPABILITY-CROSS-VERSION-ARTIFACT-REPOINT-REVERSED",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v2",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+          "byteLength": 1
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.core"
+            },
+            "capabilityVersion": "v1",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEMNEG-CAPABILITY-CROSS-KEY-ARTIFACT-REPOINT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "fail",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.other"
+            },
+            "capabilityVersion": "v1",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

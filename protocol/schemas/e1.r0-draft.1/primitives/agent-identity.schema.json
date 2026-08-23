@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+  "title": "AgentIdentity",
+  "description": "Canonical lowercase UUIDv4 URN identifying one logical Agent. This semantic type is not interchangeable with other UUID-backed identities.",
+  "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"
+}

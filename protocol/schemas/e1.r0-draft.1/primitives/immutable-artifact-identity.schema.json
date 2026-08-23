@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+  "title": "ImmutableArtifactIdentity",
+  "description": "Canonical lowercase UUIDv4 URN whose semantic artifact class is supplied by its owning field. It is not a digest, provenance claim, object identity, or authority grant.",
+  "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"
+}

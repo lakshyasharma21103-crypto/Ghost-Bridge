@@ -9,6 +9,12 @@ import {
 } from './lib/bundle-loader.mjs';
 import { errorMessage, fail } from './lib/errors.mjs';
 import { FOUNDATION_FIXTURE_SCHEMA_ID, runFoundationFixtures } from './lib/fixture-runner.mjs';
+import { runIdentityCapabilitySelfTests } from './lib/identity-capability-self-tests.mjs';
+import {
+  PARTICIPANT_IDENTITY_CAPABILITY_FIXTURE_SCHEMA_ID,
+  participantFixtureCheckContractIds,
+  runParticipantIdentityCapabilityFixtures,
+} from './lib/participant-identity-capability-fixture-runner.mjs';
 import { loadAuthorityIndex, verifyBundleProvenance } from './lib/provenance.mjs';
 import {
   loadReleaseDataFiles,
@@ -30,6 +36,7 @@ import {
 import {
   assertSemanticCheckDeclarations,
   assertSemanticRegistryCoverage,
+  declaredSemanticCheckIds,
 } from './lib/semantic-checks.mjs';
 
 const require = createRequire(import.meta.url);
@@ -108,7 +115,9 @@ function main() {
       .map((entry) => entry.schemaId)
       .filter(
         (schemaId) =>
-          schemaId === FOUNDATION_FIXTURE_SCHEMA_ID || schemaId === R1_WIRE_FIXTURE_SCHEMA_ID,
+          schemaId === FOUNDATION_FIXTURE_SCHEMA_ID ||
+          schemaId === R1_WIRE_FIXTURE_SCHEMA_ID ||
+          schemaId === PARTICIPANT_IDENTITY_CAPABILITY_FIXTURE_SCHEMA_ID,
       ),
   );
   let semanticCheckDeclarationCount = 0;
@@ -119,6 +128,32 @@ function main() {
     semanticCheckDeclarationCount += assertSemanticCheckDeclarations(fixtureSchema);
   }
   const semanticRegistryCoverage = assertSemanticRegistryCoverage(semanticFixtureSchemas);
+  const participantFixtureSchema = bundle.schemas.get(
+    PARTICIPANT_IDENTITY_CAPABILITY_FIXTURE_SCHEMA_ID,
+  );
+  const declaredParticipantCheckIds = declaredSemanticCheckIds(participantFixtureSchema);
+  if (
+    JSON.stringify(declaredParticipantCheckIds) !==
+    JSON.stringify(participantFixtureCheckContractIds)
+  ) {
+    fail(
+      `Participant fixture check contract mismatch: declared=${JSON.stringify(declaredParticipantCheckIds)} contracted=${JSON.stringify(participantFixtureCheckContractIds)}`,
+    );
+  }
+  const neutralIdentityCarrierId = 'urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5';
+  const immutableArtifactIdentityId = 'urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5';
+  const participantFixtureManifestEntry = bundle.manifest.schemas.find(
+    (entry) => entry.schemaId === PARTICIPANT_IDENTITY_CAPABILITY_FIXTURE_SCHEMA_ID,
+  );
+  if (
+    participantFixtureSchema?.$defs?.typedIdentityComparison?.properties?.otherValue?.$ref !==
+      neutralIdentityCarrierId ||
+    !participantFixtureManifestEntry?.dependencies.includes(neutralIdentityCarrierId) ||
+    !participantFixtureManifestEntry.dependencies.includes(immutableArtifactIdentityId)
+  ) {
+    fail('Participant typed-identity comparison does not use the neutral UUID carrier');
+  }
+  const directNamedProofs = new Set(['TYPED_IDENTITY_COMPARISON_NEUTRAL_CARRIER']);
   const fixtures = runFoundationFixtures({
     manifest: bundle.manifest,
     assets: loadedAssets.assets,
@@ -129,9 +164,15 @@ function main() {
     assets: loadedAssets.assets,
     ajv,
   });
+  const participantIdentityCapabilityFixtures = runParticipantIdentityCapabilityFixtures({
+    manifest: bundle.manifest,
+    assets: loadedAssets.assets,
+    ajv,
+  });
   const processedFixturePaths = new Set([
     ...fixtures.processedFixturePaths,
     ...r1Fixtures.processedFixturePaths,
+    ...participantIdentityCapabilityFixtures.processedFixturePaths,
   ]);
   const fixtureProcessing = assertAllDeclaredPathsProcessed(
     'fixture',
@@ -141,7 +182,15 @@ function main() {
   const allFixtureTargetSchemaIds = new Set([
     ...fixtures.fixtureTargetSchemaIds,
     ...r1Fixtures.fixtureTargetSchemaIds,
+    ...participantIdentityCapabilityFixtures.fixtureTargetSchemaIds,
   ]);
+  const combinedFixtureCounts = new Map(fixtures.fixtureCounts);
+  for (const [classification, count] of participantIdentityCapabilityFixtures.fixtureCounts) {
+    combinedFixtureCounts.set(
+      classification,
+      (combinedFixtureCounts.get(classification) ?? 0) + count,
+    );
+  }
   const fixtureCoveredAssetClasses = new Set([
     'representation-helper',
     'wire-primitive',
@@ -158,11 +207,51 @@ function main() {
   const rawJsonSelfTests = runRawJsonParserSelfTests();
   const rawCarrierSelfTests = runRawFixtureCarrierSelfTests();
   const r1SemanticSelfTests = runR1SemanticPredicateSelfTests();
+  const participantIdentityCapabilitySelfTests = runIdentityCapabilitySelfTests({
+    schemas: bundle.schemas,
+    manifest: bundle.manifest,
+  });
   const seededSelfTests = runSeededValidatorSelfTests({
     bundle,
     registry: releaseDataBundle.manifest,
     validateRegistry,
   });
+  const completedNamedProofs = new Set([
+    ...participantIdentityCapabilitySelfTests.namedProofs,
+    ...seededSelfTests.namedProofs,
+    ...directNamedProofs,
+  ]);
+  const requiredEvidenceProofIds = Object.freeze([
+    'PASSPORT_CROSS_COORDINATE_ARTIFACT_REPOINT_REJECT',
+    'PASSPORT_CROSS_COORDINATE_ARTIFACT_REPOINT_REVERSED_REJECT',
+    'CAPABILITY_CROSS_COORDINATE_ARTIFACT_REPOINT_REJECT',
+    'CAPABILITY_CROSS_COORDINATE_ARTIFACT_REPOINT_REVERSED_REJECT',
+    'SAME_TYPED_ARTIFACT_SAME_INTEGRITY_CROSS_COORDINATE',
+    'SEMANTIC_REGISTRY_EXACT_COVERAGE',
+    'TYPED_IDENTITY_COMPARISON_NEUTRAL_CARRIER',
+    'EXTERNAL_SCHEMA_FRAGMENT_SAFETY',
+    'LEXICAL_CARRIER_THREE_DEFS',
+    'VERSION_NOMINAL_SEPARATION',
+    'PARTICIPANT_SEMANTIC_TARGET_BINDING',
+    'PARTICIPANT_SEMANTIC_INPUT_BINDING',
+    'PARTICIPANT_RAW_TARGET_BINDING',
+    'RELEASE_DATA_EXTRACTION_BASELINE_VECTORS',
+    'RELEASE_DATA_SHARED_PREDICATE_OWNER',
+  ]);
+  for (const proofId of requiredEvidenceProofIds) {
+    if (!completedNamedProofs.has(proofId))
+      fail(`Mandatory named proof did not execute: ${proofId}`);
+  }
+  completedNamedProofs.add('REQUIRED_NAMED_PROOF_BINDING');
+  const namedProofOutputIds = Object.freeze([
+    ...requiredEvidenceProofIds,
+    'REQUIRED_NAMED_PROOF_BINDING',
+  ]);
+  const printNamedProof = (proofId) => {
+    if (!completedNamedProofs.has(proofId))
+      fail(`Named PASS output is not evidence-bound: ${proofId}`);
+    console.log(`${proofId} PASS`);
+  };
 
   console.log(`VALIDATOR Ajv ${ajvVersion} Draft 2020-12`);
   console.log(`SCHEMAS ${bundle.schemas.size}`);
@@ -182,21 +271,43 @@ function main() {
   );
   console.log(`SEMANTIC_CONSTRAINTS ${provenance.constraintCount}`);
   console.log(`DEFERRED_TYPES ${bundle.manifest.deferred.length}`);
-  console.log(`FIXTURES ${fixtures.fixtureCount + r1Fixtures.fixtureCount}`);
+  console.log(
+    `FIXTURES ${
+      fixtures.fixtureCount +
+      r1Fixtures.fixtureCount +
+      participantIdentityCapabilityFixtures.fixtureCount
+    }`,
+  );
   console.log(`FIXTURE_TARGET_SCHEMAS ${allFixtureTargetSchemaIds.size}`);
   console.log(
     `FIXTURE_EXECUTION_COVERAGE PASS ${fixtureProcessing.processed}/${fixtureProcessing.declared}`,
   );
-  for (const [classification, count] of [...fixtures.fixtureCounts.entries()].sort(
+  for (const [classification, count] of [...combinedFixtureCounts.entries()].sort(
     ([left], [right]) => (left < right ? -1 : left > right ? 1 : 0),
   )) {
     console.log(`FIXTURE_CLASS ${classification} ${count}`);
   }
   console.log(`R1_WIRE_FIXTURES PASS ${r1Fixtures.wireCount}`);
   console.log(`R1_RAW_FIXTURES PASS ${r1Fixtures.rawCount}`);
-  console.log(`SEMANTIC_CHECKS PASS ${fixtures.semanticCount + r1Fixtures.semanticCount}`);
+  console.log(
+    `PARTICIPANT_IDENTITY_CAPABILITY_FIXTURES PASS ${participantIdentityCapabilityFixtures.fixtureCount}`,
+  );
+  console.log(
+    `PARTICIPANT_IDENTITY_CAPABILITY_RAW_FIXTURES PASS ${participantIdentityCapabilityFixtures.rawCount}`,
+  );
+  console.log(
+    `PARTICIPANT_IDENTITY_CAPABILITY_SEMANTIC_CHECKS PASS ${participantIdentityCapabilityFixtures.semanticCount}`,
+  );
+  console.log(
+    `SEMANTIC_CHECKS PASS ${
+      fixtures.semanticCount +
+      r1Fixtures.semanticCount +
+      participantIdentityCapabilityFixtures.semanticCount
+    }`,
+  );
   console.log(`SEMANTIC_CHECK_IDENTIFIERS PASS ${semanticCheckDeclarationCount}`);
   console.log(`SEMANTIC_REGISTRY_COVERAGE PASS ${semanticRegistryCoverage}`);
+  for (const proofId of namedProofOutputIds) printNamedProof(proofId);
   console.log(
     `REGISTRY_EXACT_SET PASS classes=${releaseData.artifactsByClass.size} facets=${releaseData.facetCount} auth=${releaseData.authenticationProfileCount}`,
   );
@@ -208,6 +319,9 @@ function main() {
   console.log(`RAW_JSON_PARSER_SELF_TESTS PASS ${rawJsonSelfTests}`);
   console.log(`RAW_FIXTURE_CARRIER_SELF_TESTS PASS ${rawCarrierSelfTests}`);
   console.log(`R1_SEMANTIC_PREDICATE_SELF_TESTS PASS ${r1SemanticSelfTests}`);
+  console.log(
+    `PARTICIPANT_IDENTITY_CAPABILITY_SELF_TESTS PASS ${participantIdentityCapabilitySelfTests.count}`,
+  );
   console.log(`PATH_POLICY_SELF_TESTS PASS ${seededSelfTests.pathCount}`);
   console.log(`REGISTRY_SELF_TESTS PASS ${seededSelfTests.registryCount}`);
   console.log(`ARTIFACT_EXACT_BYTE_SELF_TESTS PASS ${seededSelfTests.artifactCount}`);
@@ -219,6 +333,9 @@ function main() {
   console.log(`CLOSED_CORE_SELF_TESTS PASS ${seededSelfTests.closedCoreCount}`);
   console.log(
     `FIXTURE_CLASSIFICATION_SELF_TESTS PASS ${seededSelfTests.fixtureClassificationCount}`,
+  );
+  console.log(
+    `EXTERNAL_SCHEMA_FRAGMENT_SELF_TESTS PASS ${seededSelfTests.externalSchemaFragmentSafetyCount}`,
   );
   console.log(`SEEDED_VALIDATOR_SELF_TESTS PASS ${seededSelfTests.totalCount}`);
   console.log(`VALIDATOR_SOURCE_FILES ${importIsolation.scannedFiles}`);

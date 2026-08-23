@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+  "title": "PassportIdentity",
+  "description": "Closed issuer/local tuple identifying one Passport independently of Agent identity and Passport version.",
+  "type": "object",
+  "required": ["issuer", "local"],
+  "properties": {
+    "issuer": {
+      "$ref": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c"
+    },
+    "local": {
+      "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5#/$defs/localIdentifier1To128"
+    }
+  },
+  "additionalProperties": false
+}

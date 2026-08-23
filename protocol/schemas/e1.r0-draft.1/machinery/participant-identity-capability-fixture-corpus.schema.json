@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79",
+  "title": "Participant Identity and Capability Foundation Fixture Corpus",
+  "description": "Closed slice-local D2 evidence machinery. Its bounds and field names are nonnormative and are not Ghost Bridge wire semantics or conformance fixtures.",
+  "type": "object",
+  "required": ["fixtureSchema", "protocolRelease", "classification", "cases"],
+  "properties": {
+    "fixtureSchema": {
+      "const": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79"
+    },
+    "protocolRelease": {
+      "const": "ghostbridge/e1.r0-draft.1"
+    },
+    "classification": {
+      "enum": [
+        "structural-positive",
+        "structural-negative",
+        "semantic-positive",
+        "semantic-negative",
+        "boundary"
+      ]
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "uuidUrn": {
+      "type": "string",
+      "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "valueCase": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "targetSchema",
+        "value",
+        "structuralExpected",
+        "semanticExpected",
+        "semanticCheck"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PIC-[A-Z0-9-]+$"
+        },
+        "kind": {
+          "const": "value"
+        },
+        "targetSchema": {
+          "$ref": "#/$defs/uuidUrn"
+        },
+        "value": true,
+        "semanticInput": {
+          "$ref": "#/$defs/semanticInput"
+        },
+        "structuralExpected": {
+          "enum": ["pass", "fail"]
+        },
+        "semanticExpected": {
+          "enum": ["pass", "fail", "not-applicable"]
+        },
+        "semanticCheck": {
+          "enum": [
+            "none",
+            "issuer-identity",
+            "agent-identity",
+            "passport-identity",
+            "passport-issuer-match",
+            "passport-version",
+            "capability-namespace-identity",
+            "capability-key",
+            "capability-version",
+            "immutable-artifact-identity",
+            "typed-identity-separation",
+            "typed-artifact-separation",
+            "artifact-identity-integrity-separation",
+            "artifact-history-consistency",
+            "passport-reference-history-consistency",
+            "capability-contract-reference-history-consistency"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "equalityCase": {
+      "type": "object",
+      "required": ["id", "kind", "targetSchema", "values", "equalExpected", "semanticCheck"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PIC-[A-Z0-9-]+$"
+        },
+        "kind": {
+          "const": "equality"
+        },
+        "targetSchema": {
+          "$ref": "#/$defs/uuidUrn"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": true
+        },
+        "equalExpected": {
+          "type": "boolean"
+        },
+        "semanticCheck": {
+          "enum": [
+            "issuer-identity-exact-equality",
+            "agent-identity-exact-equality",
+            "passport-identity-equality",
+            "passport-version-exact-equality",
+            "capability-namespace-exact-equality",
+            "capability-key-equality",
+            "capability-version-exact-equality",
+            "immutable-artifact-exact-equality",
+            "passport-reference-coordinate-equality",
+            "capability-contract-reference-coordinate-equality"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "rawSourceCase": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "targetSchema",
+        "source",
+        "rawExpected",
+        "structuralExpected",
+        "expectedDiagnostic"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^PIC-[A-Z0-9-]+$"
+        },
+        "kind": {
+          "const": "raw-source"
+        },
+        "targetSchema": {
+          "$ref": "#/$defs/uuidUrn"
+        },
+        "source": {
+          "description": "Exact UTF-8 JSON source text. The maximum is fixture-machinery-only and is not a wire limit.",
+          "type": "string",
+          "maxLength": 262144
+        },
+        "rawExpected": {
+          "const": "fail"
+        },
+        "structuralExpected": {
+          "const": "not-applicable"
+        },
+        "expectedDiagnostic": {
+          "const": "DUPLICATE_MEMBER"
+        }
+      },
+      "additionalProperties": false
+    },
+    "semanticInput": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["separateIssuer"],
+          "properties": {
+            "separateIssuer": {
+              "$ref": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["typedIdentityComparison"],
+          "properties": {
+            "typedIdentityComparison": {
+              "$ref": "#/$defs/typedIdentityComparison"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["typedArtifactComparison"],
+          "properties": {
+            "typedArtifactComparison": {
+              "$ref": "#/$defs/typedArtifactComparison"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["artifactIntegrity"],
+          "properties": {
+            "artifactIntegrity": {
+              "$ref": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["artifactHistory"],
+          "properties": {
+            "artifactHistory": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/artifactHistoryRecord"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["passportReferenceHistory"],
+          "properties": {
+            "passportReferenceHistory": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "$ref": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["capabilityContractReferenceHistory"],
+          "properties": {
+            "capabilityContractReferenceHistory": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "$ref": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "typedIdentityComparison": {
+      "type": "object",
+      "required": ["valueType", "otherType", "otherValue"],
+      "properties": {
+        "valueType": {
+          "enum": [
+            "IssuerIdentity",
+            "AgentIdentity",
+            "CapabilityNamespaceIdentity",
+            "ImmutableArtifactIdentity"
+          ]
+        },
+        "otherType": {
+          "enum": [
+            "IssuerIdentity",
+            "AgentIdentity",
+            "CapabilityNamespaceIdentity",
+            "ImmutableArtifactIdentity"
+          ]
+        },
+        "otherValue": {
+          "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"
+        }
+      },
+      "additionalProperties": false
+    },
+    "typedArtifactComparison": {
+      "type": "object",
+      "required": ["valueClass", "otherClass", "otherValue"],
+      "properties": {
+        "valueClass": {
+          "enum": ["passportArtifact", "capabilityContractArtifact"]
+        },
+        "otherClass": {
+          "enum": ["passportArtifact", "capabilityContractArtifact"]
+        },
+        "otherValue": {
+          "$ref": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifactHistoryRecord": {
+      "type": "object",
+      "required": ["artifactClass", "artifactIdentity", "artifactByteIntegrity"],
+      "properties": {
+        "artifactClass": {
+          "enum": ["passportArtifact", "capabilityContractArtifact"]
+        },
+        "artifactIdentity": {
+          "$ref": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5"
+        },
+        "artifactByteIntegrity": {
+          "$ref": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
+        }
+      },
+      "additionalProperties": false
+    },
+    "case": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/valueCase"
+        },
+        {
+          "$ref": "#/$defs/equalityCase"
+        },
+        {
+          "$ref": "#/$defs/rawSourceCase"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

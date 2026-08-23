@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+  "title": "CapabilityVersion",
+  "description": "Opaque exact version token meaningful only with one complete CapabilityKey. It has no ordering, range, latest, nearest, or fallback behavior.",
+  "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5#/$defs/versionToken1To64"
+}

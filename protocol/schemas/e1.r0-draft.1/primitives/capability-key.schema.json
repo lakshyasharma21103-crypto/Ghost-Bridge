@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+  "title": "CapabilityKey",
+  "description": "Closed Core or External capability identity. Intrinsic validity does not consult release allocation or eligibility registries.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["namespaceClass", "name"],
+      "properties": {
+        "namespaceClass": { "const": "core" },
+        "name": {
+          "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5#/$defs/localIdentifier1To128"
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["namespaceClass", "namespace", "name"],
+      "properties": {
+        "namespaceClass": { "const": "external" },
+        "namespace": {
+          "$ref": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd"
+        },
+        "name": {
+          "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5#/$defs/localIdentifier1To128"
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

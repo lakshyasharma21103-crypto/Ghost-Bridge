@@ -1,0 +1,935 @@
+{
+  "fixtureSchema": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "semantic-positive",
+  "cases": [
+    {
+      "id": "PIC-SEM-ISSUER-VALID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "issuer-identity"
+    },
+    {
+      "id": "PIC-SEM-ISSUER-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "values": [
+        "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "urn:uuid:12345678-1234-4123-8123-123456789abc"
+      ],
+      "equalExpected": true,
+      "semanticCheck": "issuer-identity-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-ISSUER-UNEQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "values": [
+        "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "urn:uuid:12345678-1234-4123-9123-123456789abc"
+      ],
+      "equalExpected": false,
+      "semanticCheck": "issuer-identity-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-AGENT-VALID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "value": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "agent-identity"
+    },
+    {
+      "id": "PIC-SEM-AGENT-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "values": [
+        "urn:uuid:12345678-1234-4123-9123-123456789abc",
+        "urn:uuid:12345678-1234-4123-9123-123456789abc"
+      ],
+      "equalExpected": true,
+      "semanticCheck": "agent-identity-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-AGENT-UNEQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "values": [
+        "urn:uuid:12345678-1234-4123-9123-123456789abc",
+        "urn:uuid:87654321-4321-4abc-8def-abcdef012345"
+      ],
+      "equalExpected": false,
+      "semanticCheck": "agent-identity-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-VALID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "fixture.passport"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "passport-identity"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-ORDER",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "values": [
+        {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        {
+          "local": "fixture.passport",
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc"
+        }
+      ],
+      "equalExpected": true,
+      "semanticCheck": "passport-identity-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-DIFFERENT-ISSUER",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "values": [
+        {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        {
+          "issuer": "urn:uuid:87654321-4321-4abc-8def-abcdef012345",
+          "local": "fixture.passport"
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "passport-identity-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-DIFFERENT-LOCAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "values": [
+        {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.other"
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "passport-identity-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-ISSUER-MATCH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "fixture.passport"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "passport-issuer-match",
+      "semanticInput": {
+        "separateIssuer": "urn:uuid:12345678-1234-4123-8123-123456789abc"
+      }
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-VERSION-VALID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "v1",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "passport-version"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-VERSION-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "values": ["v1", "v1"],
+      "equalExpected": true,
+      "semanticCheck": "passport-version-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-VERSION-NO-NORMALIZATION",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "values": ["v1", "v01"],
+      "equalExpected": false,
+      "semanticCheck": "passport-version-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-VERSION-LATEST-OPAQUE",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "values": ["latest", "latest"],
+      "equalExpected": true,
+      "semanticCheck": "passport-version-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-VERSION-SEMVER-OPAQUE",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "values": ["v1.2", "v1.10"],
+      "equalExpected": false,
+      "semanticCheck": "passport-version-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-NAMESPACE-VALID-WITHOUT-AUTHORITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+      "value": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "capability-namespace-identity"
+    },
+    {
+      "id": "PIC-SEM-NAMESPACE-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+      "values": [
+        "urn:uuid:12345678-1234-4123-9123-123456789abc",
+        "urn:uuid:12345678-1234-4123-9123-123456789abc"
+      ],
+      "equalExpected": true,
+      "semanticCheck": "capability-namespace-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-NAMESPACE-UNEQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+      "values": [
+        "urn:uuid:12345678-1234-4123-9123-123456789abc",
+        "urn:uuid:87654321-4321-4abc-8def-abcdef012345"
+      ],
+      "equalExpected": false,
+      "semanticCheck": "capability-namespace-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-CORE-VALID-WITH-EMPTY-ALLOCATION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "fixture.core"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "capability-key"
+    },
+    {
+      "id": "PIC-SEM-CORE-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "values": [
+        {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        {
+          "name": "fixture.core",
+          "namespaceClass": "core"
+        }
+      ],
+      "equalExpected": true,
+      "semanticCheck": "capability-key-equality"
+    },
+    {
+      "id": "PIC-SEM-CORE-DIFFERENT-NAME",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "values": [
+        {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        {
+          "namespaceClass": "core",
+          "name": "fixture.other"
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "capability-key-equality"
+    },
+    {
+      "id": "PIC-SEM-EXTERNAL-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "values": [
+        {
+          "namespaceClass": "external",
+          "namespace": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+          "name": "fixture.external"
+        },
+        {
+          "name": "fixture.external",
+          "namespace": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+          "namespaceClass": "external"
+        }
+      ],
+      "equalExpected": true,
+      "semanticCheck": "capability-key-equality"
+    },
+    {
+      "id": "PIC-SEM-EXTERNAL-DIFFERENT-NAMESPACE",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "values": [
+        {
+          "namespaceClass": "external",
+          "namespace": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+          "name": "fixture.external"
+        },
+        {
+          "namespaceClass": "external",
+          "namespace": "urn:uuid:87654321-4321-4abc-8def-abcdef012345",
+          "name": "fixture.external"
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "capability-key-equality"
+    },
+    {
+      "id": "PIC-SEM-CORE-EXTERNAL-SAME-NAME",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "values": [
+        {
+          "namespaceClass": "core",
+          "name": "shared.name"
+        },
+        {
+          "namespaceClass": "external",
+          "namespace": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+          "name": "shared.name"
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "capability-key-equality"
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-VERSION-VALID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "v1",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "capability-version"
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-VERSION-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "values": ["v1", "v1"],
+      "equalExpected": true,
+      "semanticCheck": "capability-version-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-VERSION-DISTINCT",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "values": ["v1", "v01"],
+      "equalExpected": false,
+      "semanticCheck": "capability-version-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-VALID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "immutable-artifact-identity"
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "values": [
+        "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "urn:uuid:12345678-1234-4123-a123-123456789abc"
+      ],
+      "equalExpected": true,
+      "semanticCheck": "immutable-artifact-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-UNEQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "values": [
+        "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "urn:uuid:87654321-4321-4abc-8def-abcdef012345"
+      ],
+      "equalExpected": false,
+      "semanticCheck": "immutable-artifact-exact-equality"
+    },
+    {
+      "id": "PIC-SEM-TYPE-ISSUER-AGENT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "typed-identity-separation",
+      "semanticInput": {
+        "typedIdentityComparison": {
+          "valueType": "IssuerIdentity",
+          "otherType": "AgentIdentity",
+          "otherValue": "urn:uuid:12345678-1234-4123-8123-123456789abc"
+        }
+      }
+    },
+    {
+      "id": "PIC-SEM-TYPE-AGENT-NAMESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "value": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "typed-identity-separation",
+      "semanticInput": {
+        "typedIdentityComparison": {
+          "valueType": "AgentIdentity",
+          "otherType": "CapabilityNamespaceIdentity",
+          "otherValue": "urn:uuid:12345678-1234-4123-9123-123456789abc"
+        }
+      }
+    },
+    {
+      "id": "PIC-SEM-TYPE-ARTIFACT-ISSUER",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "typed-identity-separation",
+      "semanticInput": {
+        "typedIdentityComparison": {
+          "valueType": "ImmutableArtifactIdentity",
+          "otherType": "IssuerIdentity",
+          "otherValue": "urn:uuid:12345678-1234-4123-a123-123456789abc"
+        }
+      }
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-CLASS-SEPARATION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "typed-artifact-separation",
+      "semanticInput": {
+        "typedArtifactComparison": {
+          "valueClass": "passportArtifact",
+          "otherClass": "capabilityContractArtifact",
+          "otherValue": "urn:uuid:12345678-1234-4123-a123-123456789abc"
+        }
+      }
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-DIGEST-SEPARATION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "artifact-identity-integrity-separation",
+      "semanticInput": {
+        "artifactIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      }
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-HISTORY-STABLE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "artifact-history-consistency",
+      "semanticInput": {
+        "artifactHistory": [
+          {
+            "artifactClass": "passportArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          },
+          {
+            "artifactClass": "passportArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-HISTORY-CHANGED-BYTES-NEW-ID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "artifact-history-consistency",
+      "semanticInput": {
+        "artifactHistory": [
+          {
+            "artifactClass": "passportArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          },
+          {
+            "artifactClass": "passportArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEM-ARTIFACT-HISTORY-CROSS-CLASS-SAME-ID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "artifact-history-consistency",
+      "semanticInput": {
+        "artifactHistory": [
+          {
+            "artifactClass": "passportArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          },
+          {
+            "artifactClass": "capabilityContractArtifact",
+            "artifactIdentity": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-REF-COORDINATE-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "values": [
+        {
+          "passportIdentity": {
+            "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+            "local": "fixture.passport"
+          },
+          "passportVersion": "v1",
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        },
+        {
+          "passportIdentity": {
+            "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+            "local": "fixture.passport"
+          },
+          "passportVersion": "v1",
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        }
+      ],
+      "equalExpected": true,
+      "semanticCheck": "passport-reference-coordinate-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-REF-COORDINATE-DIFFERENT-VERSION",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "values": [
+        {
+          "passportIdentity": {
+            "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+            "local": "fixture.passport"
+          },
+          "passportVersion": "v1",
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        },
+        {
+          "passportIdentity": {
+            "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+            "local": "fixture.passport"
+          },
+          "passportVersion": "v2",
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "passport-reference-coordinate-equality"
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-HISTORY-IDENTICAL-REPETITION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.passport"
+            },
+            "passportVersion": "v1",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-HISTORY-DIFFERENT-COORDINATE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.passport"
+            },
+            "passportVersion": "v2",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs",
+              "byteLength": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEM-PASSPORT-HISTORY-SAME-ARTIFACT-SAME-INTEGRITY-CROSS-COORDINATE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "passport-reference-history-consistency",
+      "semanticInput": {
+        "passportReferenceHistory": [
+          {
+            "passportIdentity": {
+              "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+              "local": "fixture.passport"
+            },
+            "passportVersion": "v2",
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-REF-COORDINATE-EQUAL",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "values": [
+        {
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "capabilityKey": {
+            "namespaceClass": "core",
+            "name": "fixture.core"
+          },
+          "capabilityVersion": "v1",
+          "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        },
+        {
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "capabilityKey": {
+            "namespaceClass": "core",
+            "name": "fixture.core"
+          },
+          "capabilityVersion": "v1",
+          "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        }
+      ],
+      "equalExpected": true,
+      "semanticCheck": "capability-contract-reference-coordinate-equality"
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-REF-COORDINATE-DIFFERENT-KEY",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "values": [
+        {
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "capabilityKey": {
+            "namespaceClass": "core",
+            "name": "fixture.core"
+          },
+          "capabilityVersion": "v1",
+          "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        },
+        {
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "capabilityKey": {
+            "namespaceClass": "core",
+            "name": "fixture.other"
+          },
+          "capabilityVersion": "v1",
+          "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "capability-contract-reference-coordinate-equality"
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-REF-COORDINATE-DIFFERENT-VERSION",
+      "kind": "equality",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "values": [
+        {
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "capabilityKey": {
+            "namespaceClass": "core",
+            "name": "fixture.core"
+          },
+          "capabilityVersion": "v1",
+          "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        },
+        {
+          "protocolRelease": "ghostbridge/e1.r0-draft.1",
+          "capabilityKey": {
+            "namespaceClass": "core",
+            "name": "fixture.core"
+          },
+          "capabilityVersion": "v2",
+          "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+          "artifactByteIntegrity": {
+            "algorithm": "sha-256",
+            "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+            "byteLength": 0
+          }
+        }
+      ],
+      "equalExpected": false,
+      "semanticCheck": "capability-contract-reference-coordinate-equality"
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-HISTORY-DIFFERENT-VERSION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.core"
+            },
+            "capabilityVersion": "v2",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "PIC-SEM-CAPABILITY-HISTORY-DIFFERENT-KEY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "pass",
+      "semanticCheck": "capability-contract-reference-history-consistency",
+      "semanticInput": {
+        "capabilityContractReferenceHistory": [
+          {
+            "protocolRelease": "ghostbridge/e1.r0-draft.1",
+            "capabilityKey": {
+              "namespaceClass": "core",
+              "name": "fixture.other"
+            },
+            "capabilityVersion": "v1",
+            "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+            "artifactByteIntegrity": {
+              "algorithm": "sha-256",
+              "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+              "byteLength": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
