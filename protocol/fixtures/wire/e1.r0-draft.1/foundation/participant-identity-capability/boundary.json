@@ -1,0 +1,169 @@
+{
+  "fixtureSchema": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "boundary",
+  "cases": [
+    {
+      "id": "PIC-BND-UUID-VARIANT-8",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-UUID-VARIANT-9",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "value": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-UUID-VARIANT-A",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-UUID-VARIANT-B",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-PASSPORT-LOCAL-1",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "a"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-PASSPORT-LOCAL-128",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbz"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-PASSPORT-LOCAL-129",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbz"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-CAPABILITY-NAME-1",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "a"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-CAPABILITY-NAME-128",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbz"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-CAPABILITY-NAME-129",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbz"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-PASSPORT-VERSION-1",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "a",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-PASSPORT-VERSION-64",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-PASSPORT-VERSION-65",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-CAPABILITY-VERSION-1",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "a",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-CAPABILITY-VERSION-64",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-BND-CAPABILITY-VERSION-65",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    }
+  ]
+}

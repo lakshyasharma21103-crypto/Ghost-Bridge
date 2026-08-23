@@ -1,0 +1,1437 @@
+{
+  "fixtureSchema": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "structural-negative",
+  "cases": [
+    {
+      "id": "PIC-SN-UUID-UPPERCASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789ABC",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-UPPERCASE-PREFIX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "URN:UUID:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-WRONG-VERSION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-5123-8123-123456789abc",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-WRONG-VARIANT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-7123-123456789abc",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-MISSING-PREFIX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-BRACES",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:{12345678-1234-4123-8123-123456789abc}",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-WHITESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": " urn:uuid:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-TRAILING",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abcx",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-MALFORMED-GROUP",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:1234567-1234-4123-8123-123456789abc",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-UNICODE-LOOKALIKE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abс",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-UUID-PERCENT-ENCODED",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn%3Auuid%3A12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-AGENT-WRONG-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "value": 123,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-NAMESPACE-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+      "value": null,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-ARTIFACT-ARRAY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": ["urn:uuid:12345678-1234-4123-8123-123456789abc"],
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-EMPTY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": ""
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-129",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbz"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-LEADING-PUNCT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": ".abc"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-TRAILING-PUNCT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "abc-"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-UPPERCASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "Abc"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-SLASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "a/b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-BACKSLASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "a\\b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-COLON",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "a:b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-WHITESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "a b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-UNICODE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "café"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-WRONG-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": 1
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-LOCAL-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": null
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-MISSING-ISSUER",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "local": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-MISSING-LOCAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-EXTRA",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "fixture.passport",
+        "extra": false
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": null,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-ARRAY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": [
+        {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        }
+      ],
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-WRONG-ISSUER-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": 1,
+        "local": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-WRONG-LOCAL-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": {}
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-EMPTY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-65",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-DIGIT-FIRST",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "1v",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-PUNCT-FIRST",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": ".v1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-PUNCT-FINAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "v1.",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-UPPERCASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "V1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-WHITESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "v 1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-UNICODE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "vé",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": null,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-VERSION-WRONG-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": 1,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-EMPTY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": ""
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-129",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbz"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-LEADING-PUNCT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "_abc"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-TRAILING-PUNCT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "abc."
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-UPPERCASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "Abc"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-SLASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "a/b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-BACKSLASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "a\\b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-COLON",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "a:b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-WHITESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "a b"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-UNICODE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "café"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-WRONG-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": 1
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NAME-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": null
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-UNKNOWN-CLASS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "other",
+        "name": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-CORE-WITH-NAMESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "namespace": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+        "name": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-EXTERNAL-MISSING-NAMESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "external",
+        "name": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-EXTERNAL-MALFORMED-NAMESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "external",
+        "namespace": "invalid",
+        "name": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-MISSING-NAME",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-EXTRA",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "fixture.core",
+        "extra": true
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": null,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-ARRAY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": [
+        {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        }
+      ],
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-WRONG-CLASS-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": 1,
+        "name": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-WRONG-NAMESPACE-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "external",
+        "namespace": 1,
+        "name": "fixture"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-EMPTY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-65",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-DIGIT-FIRST",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "1v",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-PUNCT-FIRST",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "-v",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-PUNCT-FINAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "v-",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-UPPERCASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "V1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-WHITESPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "v 1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-UNICODE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "vα",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": null,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-VERSION-WRONG-TYPE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": {},
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MISSING-PASSPORT-IDENTITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MISSING-PASSPORT-VERSION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MISSING-PROTOCOL-RELEASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MISSING-PASSPORT-ARTIFACT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MISSING-ARTIFACT-BYTE-INTEGRITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MISSING-PROTOCOL-RELEASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MISSING-CAPABILITY-KEY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MISSING-CAPABILITY-VERSION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MISSING-CAPABILITY-CONTRACT-ARTIFACT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MISSING-ARTIFACT-BYTE-INTEGRITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc"
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-EXTRA",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        },
+        "extra": true
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-EXTRA",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        },
+        "extra": true
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-WRONG-RELEASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.2",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-WRONG-RELEASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.2",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MALFORMED-IDENTITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": ""
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MALFORMED-KEY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "UPPER"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MALFORMED-VERSION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "V1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MALFORMED-VERSION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "V1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MALFORMED-ARTIFACT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "invalid",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MALFORMED-ARTIFACT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "invalid",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-MALFORMED-INTEGRITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "invalid",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-MALFORMED-INTEGRITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": -1
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-PASSPORT-REF-NULL-FIELD",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": null,
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SN-CAPABILITY-REF-NULL-FIELD",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": null,
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-ISSUER-LITERAL",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "source": "{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"issuer\":\"urn:uuid:12345678-1234-4123-9123-123456789abc\",\"local\":\"fixture\"}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-ISSUER-ESCAPED",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "source": "{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"\\u0069ssuer\":\"urn:uuid:12345678-1234-4123-9123-123456789abc\",\"local\":\"fixture\"}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-LOCAL-LITERAL",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "source": "{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"local\":\"a\",\"local\":\"b\"}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-LOCAL-ESCAPED",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "source": "{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"local\":\"a\",\"loc\\u0061l\":\"b\"}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-CAPABILITY-CLASS-ESCAPED",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "source": "{\"namespaceClass\":\"external\",\"namespace\\u0043lass\":\"external\",\"namespace\":\"urn:uuid:12345678-1234-4123-9123-123456789abc\",\"name\":\"fixture\"}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-CAPABILITY-NAMESPACE-LITERAL",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "source": "{\"namespaceClass\":\"external\",\"namespace\":\"urn:uuid:12345678-1234-4123-9123-123456789abc\",\"namespace\":\"urn:uuid:12345678-1234-4123-a123-123456789abc\",\"name\":\"fixture\"}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-CAPABILITY-NAME-ESCAPED",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "source": "{\"namespaceClass\":\"core\",\"name\":\"a\",\"n\\u0061me\":\"b\"}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-REF-PROTOCOL",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "source": "{\"passportIdentity\":{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"local\":\"fixture\"},\"passportVersion\":\"v1\",\"protocolRelease\":\"ghostbridge/e1.r0-draft.1\",\"protocol\\u0052elease\":\"ghostbridge/e1.r0-draft.1\",\"passportArtifact\":\"urn:uuid:12345678-1234-4123-a123-123456789abc\",\"artifactByteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU\",\"byteLength\":0}}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-REF-VERSION",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "source": "{\"passportIdentity\":{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"local\":\"fixture\"},\"passportVersion\":\"v1\",\"passport\\u0056ersion\":\"v2\",\"protocolRelease\":\"ghostbridge/e1.r0-draft.1\",\"passportArtifact\":\"urn:uuid:12345678-1234-4123-a123-123456789abc\",\"artifactByteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU\",\"byteLength\":0}}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-REF-ARTIFACT",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "source": "{\"passportIdentity\":{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"local\":\"fixture\"},\"passportVersion\":\"v1\",\"protocolRelease\":\"ghostbridge/e1.r0-draft.1\",\"passportArtifact\":\"urn:uuid:12345678-1234-4123-a123-123456789abc\",\"passport\\u0041rtifact\":\"urn:uuid:12345678-1234-4123-b123-123456789abc\",\"artifactByteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU\",\"byteLength\":0}}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-PASSPORT-REF-INTEGRITY",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "source": "{\"passportIdentity\":{\"issuer\":\"urn:uuid:12345678-1234-4123-8123-123456789abc\",\"local\":\"fixture\"},\"passportVersion\":\"v1\",\"protocolRelease\":\"ghostbridge/e1.r0-draft.1\",\"passportArtifact\":\"urn:uuid:12345678-1234-4123-a123-123456789abc\",\"artifactByteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU\",\"byteLength\":0},\"artifact\\u0042yteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs\",\"byteLength\":1}}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-CAPABILITY-REF-VERSION",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "source": "{\"protocolRelease\":\"ghostbridge/e1.r0-draft.1\",\"capabilityKey\":{\"namespaceClass\":\"core\",\"name\":\"fixture.core\"},\"capabilityVersion\":\"v1\",\"capability\\u0056ersion\":\"v2\",\"capabilityContractArtifact\":\"urn:uuid:12345678-1234-4123-b123-123456789abc\",\"artifactByteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU\",\"byteLength\":0}}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-CAPABILITY-REF-ARTIFACT",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "source": "{\"protocolRelease\":\"ghostbridge/e1.r0-draft.1\",\"capabilityKey\":{\"namespaceClass\":\"core\",\"name\":\"fixture.core\"},\"capabilityVersion\":\"v1\",\"capabilityContractArtifact\":\"urn:uuid:12345678-1234-4123-b123-123456789abc\",\"capabilityContract\\u0041rtifact\":\"urn:uuid:12345678-1234-4123-a123-123456789abc\",\"artifactByteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU\",\"byteLength\":0}}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    },
+    {
+      "id": "PIC-RAW-CAPABILITY-REF-INTEGRITY",
+      "kind": "raw-source",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "source": "{\"protocolRelease\":\"ghostbridge/e1.r0-draft.1\",\"capabilityKey\":{\"namespaceClass\":\"core\",\"name\":\"fixture.core\"},\"capabilityVersion\":\"v1\",\"capabilityContractArtifact\":\"urn:uuid:12345678-1234-4123-b123-123456789abc\",\"artifactByteIntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU\",\"byteLength\":0},\"artifactByte\\u0049ntegrity\":{\"algorithm\":\"sha-256\",\"value\":\"ypeBEsobvcr6wjGzmiPcTaeG7_gUfE5yuYB3ha_uSLs\",\"byteLength\":1}}",
+      "rawExpected": "fail",
+      "structuralExpected": "not-applicable",
+      "expectedDiagnostic": "DUPLICATE_MEMBER"
+    }
+  ]
+}

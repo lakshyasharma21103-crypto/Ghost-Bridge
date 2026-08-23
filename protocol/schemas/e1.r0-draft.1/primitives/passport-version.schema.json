@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+  "title": "PassportVersion",
+  "description": "Opaque exact version token meaningful only with one complete PassportIdentity. It has no ordering, range, latest, nearest, or fallback behavior.",
+  "$ref": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5#/$defs/versionToken1To64"
+}

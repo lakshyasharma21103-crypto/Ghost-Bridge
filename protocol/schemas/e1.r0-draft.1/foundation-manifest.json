@@ -663,6 +663,205 @@
         ],
         "d2r": ["D2R-019"]
       }
+    },
+    {
+      "logicalName": "IdentityCapabilityLexicalCarriers",
+      "schemaId": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5",
+      "assetClass": "representation-helper",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/identity-capability-lexical-carriers.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13"],
+        "req": [
+          "REQ-DISC-0003",
+          "REQ-VERS-0003",
+          "REQ-VERS-0011",
+          "REQ-VERS-0013",
+          "REQ-COMP-0007",
+          "REQ-COMP-0009"
+        ],
+        "d2r": ["D2R-001"]
+      }
+    },
+    {
+      "logicalName": "IssuerIdentity",
+      "schemaId": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/issuer-identity.schema.json",
+      "dependencies": ["urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"],
+      "provenance": {
+        "h": ["H-02", "H-03", "H-04", "H-13"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0013", "REQ-COMP-0009"],
+        "d2r": ["D2R-001"]
+      }
+    },
+    {
+      "logicalName": "AgentIdentity",
+      "schemaId": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/agent-identity.schema.json",
+      "dependencies": ["urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"],
+      "provenance": {
+        "h": ["H-02", "H-03", "H-04", "H-13"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0013", "REQ-COMP-0009"],
+        "d2r": ["D2R-001"]
+      }
+    },
+    {
+      "logicalName": "PassportIdentity",
+      "schemaId": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/passport-identity.schema.json",
+      "dependencies": [
+        "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5",
+        "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c"
+      ],
+      "provenance": {
+        "h": ["H-02", "H-03", "H-04", "H-13"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0013", "REQ-COMP-0009"],
+        "d2r": ["D2R-001"]
+      }
+    },
+    {
+      "logicalName": "PassportVersion",
+      "schemaId": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/passport-version.schema.json",
+      "dependencies": ["urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0011", "REQ-VERS-0013", "REQ-COMP-0009"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "CapabilityNamespaceIdentity",
+      "schemaId": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-namespace-identity.schema.json",
+      "dependencies": ["urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13"],
+        "req": ["REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0013"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "CapabilityKey",
+      "schemaId": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-key.schema.json",
+      "dependencies": [
+        "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5",
+        "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd"
+      ],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0011", "REQ-VERS-0012", "REQ-VERS-0013"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "CapabilityVersion",
+      "schemaId": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-version.schema.json",
+      "dependencies": ["urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13"],
+        "req": ["REQ-DISC-0003", "REQ-VERS-0011", "REQ-VERS-0013", "REQ-COMP-0009"],
+        "d2r": ["D2R-007"]
+      }
+    },
+    {
+      "logicalName": "ImmutableArtifactIdentity",
+      "schemaId": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/immutable-artifact-identity.schema.json",
+      "dependencies": ["urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5"],
+      "provenance": {
+        "h": ["H-03", "H-13", "H-14"],
+        "req": [
+          "REQ-DISC-0003",
+          "REQ-VERS-0003",
+          "REQ-VERS-0004",
+          "REQ-COMP-0007",
+          "REQ-COMP-0009"
+        ],
+        "d2r": ["D2R-003", "D2R-004B"]
+      }
+    },
+    {
+      "logicalName": "PassportReference",
+      "schemaId": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/passport-reference.schema.json",
+      "dependencies": [
+        "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+        "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+        "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+        "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
+      ],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13", "H-14"],
+        "req": [
+          "REQ-DISC-0003",
+          "REQ-VERS-0004",
+          "REQ-VERS-0013",
+          "REQ-COMP-0007",
+          "REQ-COMP-0009"
+        ],
+        "d2r": ["D2R-003", "D2R-004B", "D2R-007"]
+      }
+    },
+    {
+      "logicalName": "CapabilityContractReference",
+      "schemaId": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "assetClass": "wire-foundation-object",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/capability-contract-reference.schema.json",
+      "dependencies": [
+        "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+        "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+        "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+        "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
+      ],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13", "H-14"],
+        "req": [
+          "REQ-DISC-0003",
+          "REQ-VERS-0004",
+          "REQ-VERS-0011",
+          "REQ-VERS-0013",
+          "REQ-COMP-0007",
+          "REQ-COMP-0009"
+        ],
+        "d2r": ["D2R-003", "D2R-004B", "D2R-007"]
+      }
+    },
+    {
+      "logicalName": "ParticipantIdentityCapabilityFixtureCorpus",
+      "schemaId": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/machinery/participant-identity-capability-fixture-corpus.schema.json",
+      "dependencies": [
+        "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5",
+        "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+        "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+        "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+        "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+        "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
+      ],
+      "provenance": {
+        "h": ["H-03", "H-04", "H-13", "H-14"],
+        "req": [
+          "REQ-DISC-0003",
+          "REQ-VERS-0011",
+          "REQ-VERS-0013",
+          "REQ-COMP-0007",
+          "REQ-COMP-0009"
+        ],
+        "d2r": ["D2R-001", "D2R-004B", "D2R-007", "D2R-032"]
+      }
     }
   ],
   "registries": [
@@ -731,6 +930,26 @@
     {
       "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/r1/raw-input.json",
       "schemaId": "urn:uuid:19b7f64a-9159-4a07-ac71-7404a64546e3"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/participant-identity-capability/structural-positive.json",
+      "schemaId": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/participant-identity-capability/structural-negative.json",
+      "schemaId": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/participant-identity-capability/semantic-positive.json",
+      "schemaId": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/participant-identity-capability/semantic-negative.json",
+      "schemaId": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/participant-identity-capability/boundary.json",
+      "schemaId": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79"
     }
   ],
   "deferred": [

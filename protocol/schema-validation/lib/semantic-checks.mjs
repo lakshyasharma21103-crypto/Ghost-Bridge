@@ -2,6 +2,33 @@ import { createHash } from 'node:crypto';
 
 import { fail } from './errors.mjs';
 import { canonicalDnsName } from './idna2008.mjs';
+import {
+  agentIdentitiesEqual,
+  artifactHistoryIsConsistent,
+  artifactIdentityIsDistinctFromIntegrityDigest,
+  capabilityContractReferenceCoordinatesEqual,
+  capabilityContractReferenceHistoryIsConsistent,
+  capabilityKeysEqual,
+  capabilityNamespaceIdentitiesEqual,
+  capabilityVersionsEqual,
+  immutableArtifactIdentitiesEqual,
+  isAgentIdentity,
+  isCapabilityKey,
+  isCapabilityNamespaceIdentity,
+  isCapabilityVersion,
+  isImmutableArtifactIdentity,
+  isIssuerIdentity,
+  isPassportIdentity,
+  isPassportVersion,
+  issuerIdentitiesEqual,
+  passportIdentitiesEqual,
+  passportIssuerMatches,
+  passportReferenceCoordinatesEqual,
+  passportReferenceHistoryIsConsistent,
+  passportVersionsEqual,
+  typedArtifactIdentitiesAreSeparated,
+  typedIdentityValuesAreSeparated,
+} from './identity-capability-semantics.mjs';
 
 export { canonicalDnsName } from './idna2008.mjs';
 
@@ -203,9 +230,179 @@ const semanticChecks = createSemanticCheckRegistry([
   ],
   ['semantic-commitment-ref', (testCase) => semanticCommitmentRef(testCase.value)],
   ['origin', (testCase) => semanticOrigin(testCase.value)],
+  ['issuer-identity', (testCase) => isIssuerIdentity(testCase.value)],
+  ['agent-identity', (testCase) => isAgentIdentity(testCase.value)],
+  ['passport-identity', (testCase) => isPassportIdentity(testCase.value)],
+  [
+    'passport-issuer-match',
+    (testCase) => passportIssuerMatches(testCase.value, testCase.semanticInput?.separateIssuer),
+  ],
+  ['passport-version', (testCase) => isPassportVersion(testCase.value)],
+  ['capability-namespace-identity', (testCase) => isCapabilityNamespaceIdentity(testCase.value)],
+  ['capability-key', (testCase) => isCapabilityKey(testCase.value)],
+  ['capability-version', (testCase) => isCapabilityVersion(testCase.value)],
+  ['immutable-artifact-identity', (testCase) => isImmutableArtifactIdentity(testCase.value)],
+  [
+    'typed-identity-separation',
+    (testCase, context) => {
+      const comparison = testCase.semanticInput?.typedIdentityComparison;
+      return (
+        comparison !== undefined &&
+        typeof context?.participantIdentityType === 'string' &&
+        comparison.valueType === context.participantIdentityType &&
+        typedIdentityValuesAreSeparated(
+          context.participantIdentityType,
+          testCase.value,
+          comparison.otherType,
+          comparison.otherValue,
+        )
+      );
+    },
+  ],
+  [
+    'typed-artifact-separation',
+    (testCase) => {
+      const comparison = testCase.semanticInput?.typedArtifactComparison;
+      return (
+        comparison !== undefined &&
+        typedArtifactIdentitiesAreSeparated(
+          comparison.valueClass,
+          testCase.value,
+          comparison.otherClass,
+          comparison.otherValue,
+        )
+      );
+    },
+  ],
+  [
+    'artifact-identity-integrity-separation',
+    (testCase) =>
+      artifactIdentityIsDistinctFromIntegrityDigest(
+        testCase.value,
+        testCase.semanticInput?.artifactIntegrity,
+      ),
+  ],
+  [
+    'artifact-history-consistency',
+    (testCase) => artifactHistoryIsConsistent(testCase.semanticInput?.artifactHistory),
+  ],
+  [
+    'passport-reference-history-consistency',
+    (testCase) => {
+      const history = testCase.semanticInput?.passportReferenceHistory;
+      return (
+        Array.isArray(history) && passportReferenceHistoryIsConsistent([testCase.value, ...history])
+      );
+    },
+  ],
+  [
+    'capability-contract-reference-history-consistency',
+    (testCase) => {
+      const history = testCase.semanticInput?.capabilityContractReferenceHistory;
+      return (
+        Array.isArray(history) &&
+        capabilityContractReferenceHistoryIsConsistent([testCase.value, ...history])
+      );
+    },
+  ],
+  [
+    'issuer-identity-exact-equality',
+    (testCase) =>
+      issuerIdentitiesEqual(testCase.values[0], testCase.values[1]) === testCase.equalExpected,
+  ],
+  [
+    'agent-identity-exact-equality',
+    (testCase) =>
+      agentIdentitiesEqual(testCase.values[0], testCase.values[1]) === testCase.equalExpected,
+  ],
+  [
+    'passport-identity-equality',
+    (testCase) =>
+      passportIdentitiesEqual(testCase.values[0], testCase.values[1]) === testCase.equalExpected,
+  ],
+  [
+    'passport-version-exact-equality',
+    (testCase) =>
+      passportVersionsEqual(testCase.values[0], testCase.values[1]) === testCase.equalExpected,
+  ],
+  [
+    'capability-namespace-exact-equality',
+    (testCase) =>
+      capabilityNamespaceIdentitiesEqual(testCase.values[0], testCase.values[1]) ===
+      testCase.equalExpected,
+  ],
+  [
+    'capability-key-equality',
+    (testCase) =>
+      capabilityKeysEqual(testCase.values[0], testCase.values[1]) === testCase.equalExpected,
+  ],
+  [
+    'capability-version-exact-equality',
+    (testCase) =>
+      capabilityVersionsEqual(testCase.values[0], testCase.values[1]) === testCase.equalExpected,
+  ],
+  [
+    'immutable-artifact-exact-equality',
+    (testCase) =>
+      immutableArtifactIdentitiesEqual(testCase.values[0], testCase.values[1]) ===
+      testCase.equalExpected,
+  ],
+  [
+    'passport-reference-coordinate-equality',
+    (testCase) =>
+      passportReferenceCoordinatesEqual(testCase.values[0], testCase.values[1]) ===
+      testCase.equalExpected,
+  ],
+  [
+    'capability-contract-reference-coordinate-equality',
+    (testCase) =>
+      capabilityContractReferenceCoordinatesEqual(testCase.values[0], testCase.values[1]) ===
+      testCase.equalExpected,
+  ],
 ]);
 
 export const semanticCheckIds = Object.freeze(Object.keys(semanticChecks).sort());
+
+const PARTICIPANT_IDENTITY_CAPABILITY_FIXTURE_SCHEMA_ID =
+  'urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79';
+const PARTICIPANT_IDENTITY_CAPABILITY_SEMANTIC_CHECK_IDS = new Set([
+  'agent-identity',
+  'agent-identity-exact-equality',
+  'artifact-history-consistency',
+  'artifact-identity-integrity-separation',
+  'capability-contract-reference-coordinate-equality',
+  'capability-contract-reference-history-consistency',
+  'capability-key',
+  'capability-key-equality',
+  'capability-namespace-exact-equality',
+  'capability-namespace-identity',
+  'capability-version',
+  'capability-version-exact-equality',
+  'immutable-artifact-exact-equality',
+  'immutable-artifact-identity',
+  'issuer-identity',
+  'issuer-identity-exact-equality',
+  'passport-identity',
+  'passport-identity-equality',
+  'passport-issuer-match',
+  'passport-reference-coordinate-equality',
+  'passport-reference-history-consistency',
+  'passport-version',
+  'passport-version-exact-equality',
+  'typed-artifact-separation',
+  'typed-identity-separation',
+]);
+
+function registeredSemanticCheckIdsFor(fixtureSchemas) {
+  const participantSliceIsPresent = fixtureSchemas.some(
+    (fixtureSchema) => fixtureSchema?.$id === PARTICIPANT_IDENTITY_CAPABILITY_FIXTURE_SCHEMA_ID,
+  );
+  return participantSliceIsPresent
+    ? semanticCheckIds
+    : semanticCheckIds.filter(
+        (identifier) => !PARTICIPANT_IDENTITY_CAPABILITY_SEMANTIC_CHECK_IDS.has(identifier),
+      );
+}
 
 export function declaredSemanticCheckIds(fixtureSchema) {
   const valueIdentifiers = fixtureSchema?.$defs?.valueCase?.properties?.semanticCheck?.enum;
@@ -235,9 +432,10 @@ export function assertSemanticCheckDeclarations(fixtureSchema) {
 
 export function assertSemanticRegistryCoverage(fixtureSchemas) {
   const declared = [...new Set(fixtureSchemas.flatMap(declaredSemanticCheckIds))].sort();
-  if (JSON.stringify(declared) !== JSON.stringify(semanticCheckIds)) {
+  const registered = registeredSemanticCheckIdsFor(fixtureSchemas);
+  if (JSON.stringify(declared) !== JSON.stringify(registered)) {
     fail(
-      `Semantic-check declaration/implementation mismatch: declared=${JSON.stringify(declared)} implemented=${JSON.stringify(semanticCheckIds)}`,
+      `Semantic-check declaration/implementation mismatch: declared=${JSON.stringify(declared)} implemented=${JSON.stringify(registered)}`,
     );
   }
   return declared.length;

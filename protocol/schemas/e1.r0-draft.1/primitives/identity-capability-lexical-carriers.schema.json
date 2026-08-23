@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5",
+  "title": "Participant identity and capability lexical carriers",
+  "description": "Shared participant identity and capability representation machinery only. Public semantic types retain their own nominal schemas and owning contexts.",
+  "$ref": "#/$defs/canonicalUuidV4Urn",
+  "$defs": {
+    "canonicalUuidV4Urn": {
+      "type": "string",
+      "minLength": 45,
+      "maxLength": 45,
+      "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "localIdentifier1To128": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$"
+    },
+    "versionToken1To64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z](?:[a-z0-9._-]{0,62}[a-z0-9])?$"
+    }
+  }
+}

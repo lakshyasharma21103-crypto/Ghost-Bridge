@@ -35,8 +35,35 @@ export function collectExternalReferences(schema) {
   return references;
 }
 
+const EXTERNAL_DEFS_FRAGMENT_PATTERN = /^#\/\$defs\/([A-Za-z][A-Za-z0-9]*)$/u;
+
+function parseExternalSchemaReference(reference) {
+  if (/^https?:/u.test(reference)) fail(`External schema reference is prohibited: ${reference}`);
+  if (reference.startsWith('urn:ghostbridge:'))
+    fail(`External Ghost Bridge schema reference is prohibited: ${reference}`);
+  const fragmentIndex = reference.indexOf('#');
+  const baseSchemaId = fragmentIndex === -1 ? reference : reference.slice(0, fragmentIndex);
+  const fragment = fragmentIndex === -1 ? undefined : reference.slice(fragmentIndex);
+  if (!UUID_URN_PATTERN.test(baseSchemaId)) {
+    fail(`Noncanonical schema reference: ${reference}`);
+  }
+  if (fragment === undefined) return { baseSchemaId, definitionName: undefined };
+  if (fragment === '#') fail(`Empty external schema fragment: ${reference}`);
+  const match = EXTERNAL_DEFS_FRAGMENT_PATTERN.exec(fragment);
+  if (!match) fail(`Unsupported external schema fragment: ${reference}`);
+  return { baseSchemaId, definitionName: match[1] };
+}
+
+export function collectExternalDependencyIds(schema) {
+  return new Set(
+    [...collectExternalReferences(schema)].map(
+      (reference) => parseExternalSchemaReference(reference).baseSchemaId,
+    ),
+  );
+}
+
 export function assertDeclaredDependencies(entry, schema) {
-  const actual = [...collectExternalReferences(schema)].sort();
+  const actual = [...collectExternalDependencyIds(schema)].sort();
   const declared = [...entry.dependencies].sort();
   if (JSON.stringify(actual) !== JSON.stringify(declared)) {
     fail(
@@ -136,20 +163,25 @@ export function assertClosedCoreObjectSchemas(entry, schema) {
   scan(schema, '#', false);
 }
 
-export function scanSchemaSafety({ entry, schema, text, schemaIds }) {
+export function scanSchemaSafety({ entry, schema, text, schemaIds, schemas = undefined }) {
   let referenceCount = 0;
   visitJson(schema, (node, pointer) => {
     if (!node || typeof node !== 'object' || Array.isArray(node)) return;
     if (Object.hasOwn(node, 'default')) fail(`Prohibited default at ${entry.path}${pointer}`);
     if (Object.hasOwn(node, 'nullable')) fail(`Prohibited nullable at ${entry.path}${pointer}`);
+    if (Object.hasOwn(node, '$dynamicRef'))
+      fail(`Prohibited $dynamicRef at ${entry.path}${pointer}`);
     if (typeof node.$ref !== 'string') return;
     referenceCount += 1;
     if (node.$ref.startsWith('#')) return;
-    if (/^https?:/u.test(node.$ref)) fail(`External schema reference is prohibited: ${node.$ref}`);
-    if (node.$ref.startsWith('urn:ghostbridge:'))
-      fail(`External Ghost Bridge schema reference is prohibited: ${node.$ref}`);
-    if (!UUID_URN_PATTERN.test(node.$ref)) fail(`Noncanonical schema reference: ${node.$ref}`);
-    if (!schemaIds.has(node.$ref)) fail(`Unresolved schema reference: ${node.$ref}`);
+    const { baseSchemaId, definitionName } = parseExternalSchemaReference(node.$ref);
+    if (!schemaIds.has(baseSchemaId)) fail(`Unresolved schema reference: ${node.$ref}`);
+    if (definitionName !== undefined) {
+      const referencedSchema = schemas?.get(baseSchemaId);
+      if (!referencedSchema || !Object.hasOwn(referencedSchema.$defs ?? {}, definitionName)) {
+        fail(`Unresolved external schema fragment: ${node.$ref}`);
+      }
+    }
   });
   if (text.includes('urn:ghostbridge:')) fail(`Custom Ghost Bridge URN in ${entry.path}`);
   if (text.includes('0.1-draft')) fail(`Historical schema dependency in ${entry.path}`);
@@ -166,6 +198,7 @@ export function scanBundleSchemaSafety(bundle) {
       schema: bundle.schemas.get(entry.schemaId),
       text: bundle.schemaTexts.get(entry.path),
       schemaIds: bundle.schemaIds,
+      schemas: bundle.schemas,
     });
   }
   return { referenceCount };

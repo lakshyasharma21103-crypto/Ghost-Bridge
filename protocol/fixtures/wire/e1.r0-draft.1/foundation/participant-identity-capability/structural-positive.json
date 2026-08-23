@@ -1,0 +1,266 @@
+{
+  "fixtureSchema": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "structural-positive",
+  "cases": [
+    {
+      "id": "PIC-SP-LEXICAL-UUID",
+      "kind": "value",
+      "targetSchema": "urn:uuid:5cbc8490-c503-4a92-bd28-4a2f3f58f9f5",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-ISSUER-VARIANT-8",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8276cdd7-e089-4a09-851f-7ef6ed23423c",
+      "value": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-AGENT-VARIANT-9",
+      "kind": "value",
+      "targetSchema": "urn:uuid:8c3292ef-716d-4bee-84f8-0ed306d418d8",
+      "value": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-NAMESPACE-VARIANT-A",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c81a421d-70d0-4351-bcc4-d49392803efd",
+      "value": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-ARTIFACT-VARIANT-B",
+      "kind": "value",
+      "targetSchema": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5",
+      "value": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-LOCAL-MIN",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "a"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-LOCAL-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbz"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-PUNCTUATION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+        "local": "a..__--b"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-ORDER",
+      "kind": "value",
+      "targetSchema": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63",
+      "value": {
+        "local": "fixture.order",
+        "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-VERSION-MIN",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "a",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-VERSION-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-VERSION-LATEST",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "latest",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-VERSION-SEMVER-LOOKING",
+      "kind": "value",
+      "targetSchema": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d",
+      "value": "v1.2",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-CORE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "fixture.core"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-CORE-PUNCTUATION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "core",
+        "name": "a..__--b"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-EXTERNAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "namespaceClass": "external",
+        "namespace": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+        "name": "fixture.external"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-EXTERNAL-ORDER",
+      "kind": "value",
+      "targetSchema": "urn:uuid:00086a2a-f7bf-44fb-b41c-71712786dd29",
+      "value": {
+        "name": "fixture.external",
+        "namespace": "urn:uuid:12345678-1234-4123-9123-123456789abc",
+        "namespaceClass": "external"
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-VERSION-MIN",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "a",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-VERSION-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-VERSION-LATEST",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "latest",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-VERSION-SEMVER-LOOKING",
+      "kind": "value",
+      "targetSchema": "urn:uuid:da8bca1b-cfd7-4ef5-8813-9fe72530f51f",
+      "value": "v1.2",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-PASSPORT-REFERENCE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+      "value": {
+        "passportIdentity": {
+          "issuer": "urn:uuid:12345678-1234-4123-8123-123456789abc",
+          "local": "fixture.passport"
+        },
+        "passportVersion": "v1",
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "passportArtifact": "urn:uuid:12345678-1234-4123-a123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    },
+    {
+      "id": "PIC-SP-CAPABILITY-REFERENCE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:efb313d4-9db1-4fb4-b289-f979419c0da3",
+      "value": {
+        "protocolRelease": "ghostbridge/e1.r0-draft.1",
+        "capabilityKey": {
+          "namespaceClass": "core",
+          "name": "fixture.core"
+        },
+        "capabilityVersion": "v1",
+        "capabilityContractArtifact": "urn:uuid:12345678-1234-4123-b123-123456789abc",
+        "artifactByteIntegrity": {
+          "algorithm": "sha-256",
+          "value": "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU",
+          "byteLength": 0
+        }
+      },
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable",
+      "semanticCheck": "none"
+    }
+  ]
+}

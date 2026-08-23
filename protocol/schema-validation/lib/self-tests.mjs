@@ -1,4 +1,5 @@
 import {
+  EXPECTED_DIALECT,
   assertAllDeclaredPathsProcessed,
   assertLoadedSchemaIdentity,
   assertMachineAssetCoverage,
@@ -25,7 +26,14 @@ import {
   assertCanonicalPosixRelativePath,
   assertRepositoryPathComponentChain,
 } from './path-policy.mjs';
-import { assertClosedCoreObjectSchemas, scanSchemaSafety } from './schema-safety.mjs';
+import {
+  assertClosedCoreObjectSchemas,
+  assertDeclaredDependencies,
+  collectExternalDependencyIds,
+  collectExternalReferences,
+  createOfflineSchemaValidator,
+  scanSchemaSafety,
+} from './schema-safety.mjs';
 import {
   artifactByteIntegrityMatches,
   canonicalDnsName,
@@ -1315,6 +1323,246 @@ export function runRegistryExactSetSelfTests({ registry, validateRegistry }) {
   ]);
 }
 
+function runExternalSchemaFragmentSafetySelfTests() {
+  const baseSchemaId = 'urn:uuid:11111111-1111-4111-8111-111111111111';
+  const consumerSchemaId = 'urn:uuid:22222222-2222-4222-8222-222222222222';
+  const manifestId = 'urn:uuid:33333333-3333-4333-8333-333333333333';
+  const existingReference = `${baseSchemaId}#/$defs/existingDefinition`;
+  const secondReference = `${baseSchemaId}#/$defs/secondDefinition`;
+  const baseSchema = {
+    $schema: EXPECTED_DIALECT,
+    $id: baseSchemaId,
+    type: 'string',
+    $defs: {
+      existingDefinition: { type: 'string' },
+      secondDefinition: { type: 'integer' },
+    },
+  };
+  const makeConsumer = (references) => ({
+    $schema: EXPECTED_DIALECT,
+    $id: consumerSchemaId,
+    ...(references.length === 1
+      ? { $ref: references[0] }
+      : { anyOf: references.map((reference) => ({ $ref: reference })) }),
+  });
+  const scanReferences = (references, dependencies = [baseSchemaId]) => {
+    const schema = makeConsumer(references);
+    const schemas = new Map([
+      [baseSchemaId, baseSchema],
+      [consumerSchemaId, schema],
+    ]);
+    return scanSchemaSafety({
+      entry: {
+        logicalName: 'ExternalFragmentConsumerSelfTest',
+        path: 'protocol/tooling/external-fragment-consumer.schema.json',
+        schemaId: consumerSchemaId,
+        dependencies,
+      },
+      schema,
+      text: JSON.stringify(schema),
+      schemaIds: new Set(schemas.keys()),
+      schemas,
+    });
+  };
+
+  const count = runGroup([
+    ['bare UUID external reference', () => scanReferences([baseSchemaId])],
+    ['canonical external $defs reference', () => scanReferences([existingReference])],
+    [
+      'fragment dependency satisfied by bare UUID',
+      (label) => {
+        const schema = makeConsumer([existingReference]);
+        assertDeclaredDependencies({ logicalName: label, dependencies: [baseSchemaId] }, schema);
+      },
+    ],
+    [
+      'two fragments normalize to one dependency',
+      (label) => {
+        const schema = makeConsumer([existingReference, secondReference]);
+        expectTrue(
+          label,
+          collectExternalDependencyIds(schema).size === 1 &&
+            collectExternalDependencyIds(schema).has(baseSchemaId),
+        );
+        scanReferences([existingReference, secondReference]);
+      },
+    ],
+    [
+      'unknown external fragment base',
+      (label) =>
+        expectFailure(
+          label,
+          () =>
+            scanReferences([
+              'urn:uuid:44444444-4444-4444-8444-444444444444#/$defs/existingDefinition',
+            ]),
+          'Unresolved schema reference',
+        ),
+    ],
+    [
+      'nonexistent external $defs member',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences([`${baseSchemaId}#/$defs/missingDefinition`]),
+          'Unresolved external schema fragment',
+        ),
+    ],
+    [
+      'malformed nested external fragment',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences([`${existingReference}/nested`]),
+          'Unsupported external schema fragment',
+        ),
+    ],
+    [
+      'empty external fragment',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences([`${baseSchemaId}#`]),
+          'Empty external schema fragment',
+        ),
+    ],
+    [
+      'non-pointer external anchor',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences([`${baseSchemaId}#existingDefinition`]),
+          'Unsupported external schema fragment',
+        ),
+    ],
+    [
+      'HTTP external fragment',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences(['https://example.invalid/schema#/$defs/existingDefinition']),
+          'External schema reference is prohibited',
+        ),
+    ],
+    [
+      'Ghost Bridge external fragment',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences(['urn:ghostbridge:tooling#/$defs/existingDefinition']),
+          'External Ghost Bridge schema reference',
+        ),
+    ],
+    [
+      'noncanonical UUID fragment base',
+      (label) =>
+        expectFailure(
+          label,
+          () =>
+            scanReferences([
+              'urn:uuid:AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA#/$defs/existingDefinition',
+            ]),
+          'Noncanonical schema reference',
+        ),
+    ],
+    [
+      'fragmented schema identity',
+      (label) =>
+        expectFailure(
+          label,
+          () =>
+            validateManifestDeclarations({
+              bundleId: manifestId,
+              schemas: [
+                {
+                  logicalName: 'FragmentedIdentitySelfTest',
+                  schemaId: `${consumerSchemaId}#/$defs/notAnIdentity`,
+                  path: 'protocol/tooling/fragmented-identity.schema.json',
+                  dependencies: [],
+                },
+              ],
+            }),
+          'Noncanonical schema ID',
+        ),
+    ],
+    [
+      'offline Ajv external $defs compilation',
+      (label) => {
+        const consumer = makeConsumer([existingReference]);
+        const schemas = new Map([
+          [baseSchemaId, baseSchema],
+          [consumerSchemaId, consumer],
+        ]);
+        const { ajv } = createOfflineSchemaValidator(schemas);
+        expectTrue(label, typeof ajv.getSchema(consumerSchemaId) === 'function');
+      },
+    ],
+    [
+      'normalized dependency mismatch',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences([existingReference], []),
+          'Direct dependency mismatch',
+        ),
+    ],
+    [
+      'percent-encoded external fragment',
+      (label) =>
+        expectFailure(
+          label,
+          () => scanReferences([`${baseSchemaId}#/%24defs/existingDefinition`]),
+          'Unsupported external schema fragment',
+        ),
+    ],
+    [
+      'prohibited dynamic reference',
+      (label) => {
+        const schema = {
+          $schema: EXPECTED_DIALECT,
+          $id: consumerSchemaId,
+          $dynamicRef: '#toolingDynamicReference',
+        };
+        expectFailure(
+          label,
+          () =>
+            scanSchemaSafety({
+              entry: {
+                logicalName: label,
+                path: 'protocol/tooling/dynamic-reference.schema.json',
+                schemaId: consumerSchemaId,
+                dependencies: [],
+              },
+              schema,
+              text: JSON.stringify(schema),
+              schemaIds: new Set([consumerSchemaId]),
+              schemas: new Map([[consumerSchemaId, schema]]),
+            }),
+          'Prohibited $dynamicRef',
+        );
+      },
+    ],
+    [
+      'full fragmented references retained for audit',
+      (label) => {
+        const references = collectExternalReferences(
+          makeConsumer([existingReference, secondReference]),
+        );
+        expectTrue(
+          label,
+          references.size === 2 &&
+            references.has(existingReference) &&
+            references.has(secondReference),
+        );
+      },
+    ],
+  ]);
+  if (count !== 18) {
+    throw new Error(`External schema fragment safety self-test count changed: ${count}`);
+  }
+  return { count, namedProofs: new Set(['EXTERNAL_SCHEMA_FRAGMENT_SAFETY']) };
+}
+
 export function runSeededValidatorSelfTests({ bundle, registry, validateRegistry }) {
   const manifest = bundle.manifest;
   const firstEntry = manifest.schemas[0];
@@ -1499,6 +1747,7 @@ export function runSeededValidatorSelfTests({ bundle, registry, validateRegistry
   const machineAssetCoverageCount = runMachineAssetCoverageSelfTests(bundle);
   const closedCoreCount = runClosedCoreSelfTests(bundle);
   const fixtureClassificationCount = runFixtureClassificationSelfTests();
+  const externalSchemaFragmentSafety = runExternalSchemaFragmentSafetySelfTests();
   return {
     coreCount,
     pathCount,
@@ -1509,6 +1758,8 @@ export function runSeededValidatorSelfTests({ bundle, registry, validateRegistry
     machineAssetCoverageCount,
     closedCoreCount,
     fixtureClassificationCount,
+    externalSchemaFragmentSafetyCount: externalSchemaFragmentSafety.count,
+    namedProofs: externalSchemaFragmentSafety.namedProofs,
     totalCount:
       coreCount +
       pathCount +
@@ -1518,6 +1769,7 @@ export function runSeededValidatorSelfTests({ bundle, registry, validateRegistry
       ancestorComponentCount +
       machineAssetCoverageCount +
       closedCoreCount +
-      fixtureClassificationCount,
+      fixtureClassificationCount +
+      externalSchemaFragmentSafety.count,
   };
 }

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:c14ed3c3-22be-4011-a3e8-7a83e53dfb52",
+  "title": "PassportReference",
+  "description": "Exact immutable historical Passport resolution reference. No current, latest, nearest, or fallback resolution is permitted.",
+  "type": "object",
+  "required": [
+    "passportIdentity",
+    "passportVersion",
+    "protocolRelease",
+    "passportArtifact",
+    "artifactByteIntegrity"
+  ],
+  "properties": {
+    "passportIdentity": {
+      "$ref": "urn:uuid:caef0478-5ff8-408b-9b1f-85a2147d6d63"
+    },
+    "passportVersion": {
+      "$ref": "urn:uuid:fb79f48a-3d0e-4e6c-b94f-b7cef193f79d"
+    },
+    "protocolRelease": {
+      "const": "ghostbridge/e1.r0-draft.1"
+    },
+    "passportArtifact": {
+      "$ref": "urn:uuid:2de2d1b9-2293-47ea-9f9a-ae73a2e5f1b5"
+    },
+    "artifactByteIntegrity": {
+      "$ref": "urn:uuid:16534fa9-8aa1-4324-b6b9-a2a1043682f3"
+    }
+  },
+  "additionalProperties": false
+}
