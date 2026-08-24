@@ -1,0 +1,133 @@
+{
+  "fixtureSchema": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "structural-positive",
+  "cases": [
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-FINAL-ZERO",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-FINAL-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r1",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-EXPERIMENTAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-experimental.0",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-DRAFT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft.1",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-ALPHA",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-alpha.2",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-BETA",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-beta.3",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-RC",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-rc.4",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-EXACT-MAXIMUM-LENGTH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e2147483647.r2147483647-experimental.2147483647",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-LEXICAL-EPOCH-MAX-PLUS-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e2147483648.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-LEXICAL-REVISION-MAX-PLUS-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r2147483648",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-LEXICAL-ITERATION-MAX-PLUS-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-rc.2147483648",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-LEXICAL-EPOCH-TEN-DIGIT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e9999999999.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-LEXICAL-REVISION-TEN-DIGIT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r9999999999",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SP-LEXICAL-ITERATION-TEN-DIGIT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-rc.9999999999",
+      "structuralExpected": "pass",
+      "semanticExpected": "not-applicable"
+    }
+  ]
+}

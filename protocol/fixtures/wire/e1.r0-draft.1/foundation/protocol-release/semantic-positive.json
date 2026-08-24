@@ -1,0 +1,115 @@
+{
+  "fixtureSchema": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "semantic-positive",
+  "cases": [
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-FINAL-ZERO",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-EPOCH-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e1.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-REVISION-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r1",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-EPOCH-MAXIMUM",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e2147483647.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-REVISION-MAXIMUM",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r2147483647",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-EXPERIMENTAL-ZERO",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-experimental.0",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-DRAFT-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-draft.1",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-ALPHA-MAXIMUM",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-alpha.2147483647",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-BETA-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-beta.1",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-RC-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-rc.1",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-ALL-MAXIMUM",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e2147483647.r2147483647-experimental.2147483647",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-POS-FINAL-ALL-MAXIMUM",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e2147483647.r2147483647",
+      "structuralExpected": "pass",
+      "semanticExpected": "pass"
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "fixtureSchema": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "semantic-negative",
+  "cases": [
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-EPOCH-MAX-PLUS-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e2147483648.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-EPOCH-OVER-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e2147483649.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-EPOCH-TEN-DIGIT-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e9999999999.r0",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-REVISION-MAX-PLUS-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r2147483648",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-REVISION-OVER-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r2147483649",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-REVISION-TEN-DIGIT-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r9999999999",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-ITERATION-MAX-PLUS-ONE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-draft.2147483648",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-ITERATION-OVER-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-draft.2147483649",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SEM-NEG-ITERATION-TEN-DIGIT-MAX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "validate",
+      "value": "ghostbridge/e0.r0-draft.9999999999",
+      "structuralExpected": "pass",
+      "semanticExpected": "fail"
+    }
+  ]
+}

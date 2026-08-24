@@ -862,6 +862,30 @@
         ],
         "d2r": ["D2R-001", "D2R-004B", "D2R-007", "D2R-032"]
       }
+    },
+    {
+      "logicalName": "ProtocolRelease",
+      "schemaId": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "assetClass": "wire-primitive",
+      "path": "protocol/schemas/e1.r0-draft.1/primitives/protocol-release.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-13"],
+        "req": ["REQ-VERS-0001", "REQ-VERS-0003"],
+        "d2r": ["D2R-001", "D2R-002", "D2R-003", "D2R-031"]
+      }
+    },
+    {
+      "logicalName": "ProtocolReleaseFixtureCorpus",
+      "schemaId": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869",
+      "assetClass": "d2-machinery",
+      "path": "protocol/schemas/e1.r0-draft.1/machinery/protocol-release-fixture-corpus.schema.json",
+      "dependencies": [],
+      "provenance": {
+        "h": ["H-03", "H-13"],
+        "req": ["REQ-VERS-0001", "REQ-VERS-0002", "REQ-VERS-0003"],
+        "d2r": ["D2R-001", "D2R-002", "D2R-003", "D2R-022", "D2R-032"]
+      }
     }
   ],
   "registries": [
@@ -950,6 +974,30 @@
     {
       "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/participant-identity-capability/boundary.json",
       "schemaId": "urn:uuid:9e9d3cdc-2653-43b9-bd4f-06c1877c2c79"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/protocol-release/structural-positive.json",
+      "schemaId": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/protocol-release/structural-negative.json",
+      "schemaId": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/protocol-release/semantic-positive.json",
+      "schemaId": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/protocol-release/semantic-negative.json",
+      "schemaId": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/protocol-release/boundary.json",
+      "schemaId": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869"
+    },
+    {
+      "path": "protocol/fixtures/wire/e1.r0-draft.1/foundation/protocol-release/equality-order.json",
+      "schemaId": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869"
     }
   ],
   "deferred": [
