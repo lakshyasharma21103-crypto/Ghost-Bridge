@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869",
+  "title": "ProtocolRelease Fixture Corpus",
+  "description": "Closed slice-local D2 evidence machinery. Its classifications, operations, bounds, and field names are not Ghost Bridge wire semantics or conformance claims.",
+  "type": "object",
+  "required": ["fixtureSchema", "protocolRelease", "classification", "cases"],
+  "properties": {
+    "fixtureSchema": {
+      "const": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869"
+    },
+    "protocolRelease": {
+      "const": "ghostbridge/e1.r0-draft.1"
+    },
+    "classification": {
+      "enum": [
+        "structural-positive",
+        "structural-negative",
+        "semantic-positive",
+        "semantic-negative",
+        "boundary",
+        "equality-order"
+      ]
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/case"
+      }
+    }
+  },
+  "$defs": {
+    "caseId": {
+      "type": "string",
+      "pattern": "^FND-PROTOCOL-RELEASE-[A-Z0-9-]+(?![\\s\\S])"
+    },
+    "valueCase": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "targetSchema",
+        "operation",
+        "value",
+        "structuralExpected",
+        "semanticExpected"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "kind": {
+          "const": "value"
+        },
+        "targetSchema": {
+          "const": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17"
+        },
+        "operation": {
+          "enum": ["structural-only", "validate"]
+        },
+        "value": true,
+        "structuralExpected": {
+          "enum": ["pass", "fail"]
+        },
+        "semanticExpected": {
+          "enum": ["pass", "fail", "not-applicable"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "equalityCase": {
+      "type": "object",
+      "required": ["id", "kind", "targetSchema", "operation", "values", "equalExpected"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "kind": {
+          "const": "equality"
+        },
+        "targetSchema": {
+          "const": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17"
+        },
+        "operation": {
+          "const": "exact-equality"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": true
+        },
+        "equalExpected": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "orderingCase": {
+      "type": "object",
+      "required": ["id", "kind", "targetSchema", "operation", "left", "right", "orderExpected"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/caseId"
+        },
+        "kind": {
+          "const": "ordering"
+        },
+        "targetSchema": {
+          "const": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17"
+        },
+        "operation": {
+          "const": "compare"
+        },
+        "left": true,
+        "right": true,
+        "orderExpected": {
+          "enum": ["LESS", "EQUAL", "GREATER"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "case": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/valueCase"
+        },
+        {
+          "$ref": "#/$defs/equalityCase"
+        },
+        {
+          "$ref": "#/$defs/orderingCase"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

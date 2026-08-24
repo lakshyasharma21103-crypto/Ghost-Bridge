@@ -1,0 +1,592 @@
+{
+  "fixtureSchema": "urn:uuid:96042323-b06d-4c04-a3ab-0b1d646f6869",
+  "protocolRelease": "ghostbridge/e1.r0-draft.1",
+  "classification": "structural-negative",
+  "cases": [
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-NULL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": null,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-BOOLEAN-TRUE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": true,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-BOOLEAN-FALSE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": false,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-NUMBER",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": 1,
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-ARRAY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": ["ghostbridge/e1.r0"],
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-OBJECT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": { "release": "ghostbridge/e1.r0" },
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EPOCH-LEADING-ZERO",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e01.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-REVISION-LEADING-ZERO",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r01",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-ITERATION-LEADING-ZERO",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.01",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EPOCH-PLUS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e+1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-REVISION-PLUS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r+1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-ITERATION-PLUS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.+1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EPOCH-MINUS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e-1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-REVISION-MINUS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r-1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-ITERATION-MINUS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.-1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EPOCH-DECIMAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.0.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-REVISION-DECIMAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r1.0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-ITERATION-DECIMAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.1.0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EPOCH-EXPONENT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1e0.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-REVISION-EXPONENT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r1e0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-ITERATION-EXPONENT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.1e0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-LEADING-SPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": " ghostbridge/e1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-TRAILING-SPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0 ",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EMBEDDED-PREFIX-SPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghost bridge/e1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EMBEDDED-EPOCH-SPACE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1 0.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EMBEDDED-STAGE-TAB",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-dr\taft.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-UPPERCASE-PREFIX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "Ghostbridge/e1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-UPPERCASE-COMPONENT-MARKERS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/E1.R0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-UPPERCASE-STAGE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-DRAFT.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-NONASCII-EPOCH-DIGIT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e١.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-NONASCII-REVISION-DIGIT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r१",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-NONASCII-ITERATION-DIGIT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.１",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-LOOKALIKE-CYRILLIC-I",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbrіdge/e1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-LOOKALIKE-FULLWIDTH-SLASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge／e1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-LOOKALIKE-EN-DASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0–draft.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-UNKNOWN-STAGE-PRE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-pre.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-FINAL-AS-STAGE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-final.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-MISSING-ITERATION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-MISSING-STAGE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EXTRA-SUFFIX-COMPONENT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft.1.extra",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EXTRA-NUMERIC-SUFFIX",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft.1.2",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EMPTY-EPOCH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EMPTY-REVISION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EMPTY-ITERATION",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-SEPARATOR-SLASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1/r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-SEPARATOR-COLON",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1:r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-SEPARATOR-DOUBLE-DOT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1..r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-SEPARATOR-STAGE-UNDERSCORE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0_draft.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-SEPARATOR-STAGE-COLON",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft:1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-LEGACY-IDENTITY",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/0.1-draft",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-TRAILING-LF",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft.1\n",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-TRAILING-CR",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft.1\r",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-TRAILING-CRLF",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft.1\r\n",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-TRAILING-ASCII",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-draft.1x",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-TRAILING-SLASH",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0/",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-TRAILING-NUL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0\u0000",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-PREFIX-PARTIAL",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-LEADING-CONTENT",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "xghostbridge/e1.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EPOCH-ELEVEN-DIGITS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e10000000000.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-REVISION-ELEVEN-DIGITS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r10000000000",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-ITERATION-ELEVEN-DIGITS",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e0.r0-draft.10000000000",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-STAGE-ALIAS-EXP",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-exp.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-STAGE-MIXED-CASE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e1.r0-Draft.1",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-MALFORMED-OVER-FIFTY-NINE",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e2147483647.r2147483647-experimental.2147483647x",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-SN-EXTREMELY-LONG-MALFORMED",
+      "kind": "value",
+      "targetSchema": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+      "operation": "structural-only",
+      "value": "ghostbridge/e9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.r0",
+      "structuralExpected": "fail",
+      "semanticExpected": "not-applicable"
+    }
+  ]
+}

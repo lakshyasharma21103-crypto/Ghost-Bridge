@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:uuid:f27a43b2-052e-4f02-aeb5-2ea4f21f4e17",
+  "title": "ProtocolRelease",
+  "description": "Canonical normal Ghost Bridge protocol release identity. The semantic validator owns the integer upper bound, equality, ordering, and type-separation rules.",
+  "type": "string",
+  "maxLength": 59,
+  "pattern": "^ghostbridge/e(?:0|[1-9][0-9]{0,9})\\.r(?:0|[1-9][0-9]{0,9})(?:-(?:experimental|draft|alpha|beta|rc)\\.(?:0|[1-9][0-9]{0,9}))?(?![\\s\\S])"
+}

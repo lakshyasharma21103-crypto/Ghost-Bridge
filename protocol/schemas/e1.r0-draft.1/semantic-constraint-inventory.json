@@ -492,6 +492,96 @@
       "failureAuthority": { "status": "downstream-binding-pending", "references": ["REQ-COMP-0007"] },
       "downstreamOwner": "D2-01B",
       "executableCheck": "RDA-SEM-EXACT-BYTE-INTEGRITY"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-RANGE-EXACTNESS",
+      "validationLayer": "SEMANTIC",
+      "affected": [
+        "ProtocolRelease epoch",
+        "ProtocolRelease revision",
+        "ProtocolRelease iteration"
+      ],
+      "predicate": "Parse each canonical ASCII decimal component without coercion or a lossy numeric path and require the exact inclusive integer range 0 through 2147483647; reject every ten-digit over-max value without wrapping, clamping, or rounding.",
+      "structuralCoverage": "PARTIAL",
+      "provenance": {
+        "h": ["H-03", "H-13"],
+        "req": ["REQ-VERS-0001"],
+        "d2r": ["D2R-001", "D2R-031", "D2R-032"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0001"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-EXACT-EQUALITY",
+      "validationLayer": "SEMANTIC",
+      "affected": ["ProtocolRelease equality"],
+      "predicate": "After both operands independently pass complete normal ProtocolRelease validation, compare their exact validated string code units without normalization, aliases, repair, or substitution.",
+      "structuralCoverage": "NONE",
+      "provenance": { "h": ["H-03"], "req": ["REQ-VERS-0002"], "d2r": ["D2R-001", "D2R-032"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0002"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-TOTAL-ORDER",
+      "validationLayer": "SEMANTIC",
+      "affected": ["ProtocolRelease ordering"],
+      "predicate": "For validated normal releases, compare exact integer epoch, then integer revision, then the exact stage chain experimental < draft < alpha < beta < rc < final, then integer iteration only for the same non-final stage, returning exactly LESS, EQUAL, or GREATER.",
+      "structuralCoverage": "NONE",
+      "provenance": { "h": ["H-03"], "req": ["REQ-VERS-0002"], "d2r": ["D2R-001", "D2R-032"] },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0002"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-VALIDATE-BEFORE-OPERATION",
+      "validationLayer": "SEMANTIC",
+      "affected": ["ProtocolRelease equality operands", "ProtocolRelease ordering operands"],
+      "predicate": "Reject an invalid operand before equality or ordering can produce a result; neither structural acceptance alone nor the validity of the other operand makes an invalid release comparable.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-03", "H-13"],
+        "req": ["REQ-VERS-0001", "REQ-VERS-0002"],
+        "d2r": ["D2R-001", "D2R-032"]
+      },
+      "failureAuthority": {
+        "status": "existing",
+        "references": ["REQ-VERS-0001", "REQ-VERS-0002"]
+      },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-TYPE-SEPARATION",
+      "validationLayer": "SEMANTIC",
+      "affected": [
+        "ProtocolRelease",
+        "legacy release identity",
+        "schema and non-release identity classes"
+      ],
+      "predicate": "Keep normal ProtocolRelease distinct from the immutable legacy identity and every schema, bundle, profile, capability, extension, experiment, algorithm, package, build, deployment, channel, and support-state identity; never parse, rank, alias, or substitute a different identity class as ProtocolRelease.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-03", "H-10", "H-13", "H-14"],
+        "req": ["REQ-VERS-0003"],
+        "d2r": ["D2R-002", "D2R-003", "D2R-032"]
+      },
+      "failureAuthority": { "status": "existing", "references": ["REQ-VERS-0003"] },
+      "downstreamOwner": "D2-01"
+    },
+    {
+      "id": "FND-PROTOCOL-RELEASE-ORDER-NONIMPLICATIONS",
+      "validationLayer": "SEMANTIC",
+      "affected": ["ProtocolRelease ordering result"],
+      "predicate": "Treat ordering only as the accepted total preference and chronology relation; it implies no compatibility, implementation or release support, lifecycle state, conformance, security eligibility, safety, authority, publication, or release decision.",
+      "structuralCoverage": "NONE",
+      "provenance": {
+        "h": ["H-03", "H-14"],
+        "req": ["REQ-VERS-0002", "REQ-VERS-0003"],
+        "d2r": ["D2R-003", "D2R-032"]
+      },
+      "failureAuthority": {
+        "status": "existing",
+        "references": ["REQ-VERS-0002", "REQ-VERS-0003"]
+      },
+      "downstreamOwner": "D2-01"
     }
   ]
 }

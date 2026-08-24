@@ -15,6 +15,12 @@ import {
   participantFixtureCheckContractIds,
   runParticipantIdentityCapabilityFixtures,
 } from './lib/participant-identity-capability-fixture-runner.mjs';
+import {
+  PROTOCOL_RELEASE_FIXTURE_SCHEMA_ID,
+  PROTOCOL_RELEASE_REQUIRED_PROOF_IDS,
+  runProtocolReleaseFixtures,
+} from './lib/protocol-release-fixture-runner.mjs';
+import { runProtocolReleaseSelfTests } from './lib/protocol-release-self-tests.mjs';
 import { loadAuthorityIndex, verifyBundleProvenance } from './lib/provenance.mjs';
 import {
   loadReleaseDataFiles,
@@ -169,10 +175,16 @@ function main() {
     assets: loadedAssets.assets,
     ajv,
   });
+  const protocolReleaseFixtures = runProtocolReleaseFixtures({
+    manifest: bundle.manifest,
+    assets: loadedAssets.assets,
+    ajv,
+  });
   const processedFixturePaths = new Set([
     ...fixtures.processedFixturePaths,
     ...r1Fixtures.processedFixturePaths,
     ...participantIdentityCapabilityFixtures.processedFixturePaths,
+    ...protocolReleaseFixtures.processedFixturePaths,
   ]);
   const fixtureProcessing = assertAllDeclaredPathsProcessed(
     'fixture',
@@ -183,9 +195,16 @@ function main() {
     ...fixtures.fixtureTargetSchemaIds,
     ...r1Fixtures.fixtureTargetSchemaIds,
     ...participantIdentityCapabilityFixtures.fixtureTargetSchemaIds,
+    ...protocolReleaseFixtures.fixtureTargetSchemaIds,
   ]);
   const combinedFixtureCounts = new Map(fixtures.fixtureCounts);
   for (const [classification, count] of participantIdentityCapabilityFixtures.fixtureCounts) {
+    combinedFixtureCounts.set(
+      classification,
+      (combinedFixtureCounts.get(classification) ?? 0) + count,
+    );
+  }
+  for (const [classification, count] of protocolReleaseFixtures.fixtureCounts) {
     combinedFixtureCounts.set(
       classification,
       (combinedFixtureCounts.get(classification) ?? 0) + count,
@@ -211,6 +230,11 @@ function main() {
     schemas: bundle.schemas,
     manifest: bundle.manifest,
   });
+  const protocolReleaseSelfTests = runProtocolReleaseSelfTests({
+    schemas: bundle.schemas,
+    manifest: bundle.manifest,
+    fixtureCorpusValidator: ajv.getSchema(PROTOCOL_RELEASE_FIXTURE_SCHEMA_ID),
+  });
   const seededSelfTests = runSeededValidatorSelfTests({
     bundle,
     registry: releaseDataBundle.manifest,
@@ -218,6 +242,8 @@ function main() {
   });
   const completedNamedProofs = new Set([
     ...participantIdentityCapabilitySelfTests.namedProofs,
+    ...protocolReleaseFixtures.namedProofs,
+    ...protocolReleaseSelfTests.namedProofs,
     ...seededSelfTests.namedProofs,
     ...directNamedProofs,
   ]);
@@ -243,14 +269,36 @@ function main() {
       fail(`Mandatory named proof did not execute: ${proofId}`);
   }
   completedNamedProofs.add('REQUIRED_NAMED_PROOF_BINDING');
-  const namedProofOutputIds = Object.freeze([
+  const historicalNamedProofOutputIds = Object.freeze([
     ...requiredEvidenceProofIds,
     'REQUIRED_NAMED_PROOF_BINDING',
+  ]);
+  for (const proofId of PROTOCOL_RELEASE_REQUIRED_PROOF_IDS) {
+    if (!completedNamedProofs.has(proofId)) {
+      fail(`Mandatory ProtocolRelease named proof did not execute: ${proofId}`);
+    }
+  }
+  completedNamedProofs.add('PROTOCOL_RELEASE_REQUIRED_NAMED_PROOF_BINDING');
+  const protocolReleaseNamedProofOutputIds = Object.freeze([
+    ...PROTOCOL_RELEASE_REQUIRED_PROOF_IDS,
+    'PROTOCOL_RELEASE_REQUIRED_NAMED_PROOF_BINDING',
+  ]);
+  const namedProofOutputIds = Object.freeze([
+    ...historicalNamedProofOutputIds,
+    ...protocolReleaseNamedProofOutputIds,
   ]);
   const printNamedProof = (proofId) => {
     if (!completedNamedProofs.has(proofId))
       fail(`Named PASS output is not evidence-bound: ${proofId}`);
     console.log(`${proofId} PASS`);
+  };
+  const printProtocolReleasePass = (proofIds, output) => {
+    for (const proofId of proofIds) {
+      if (!completedNamedProofs.has(proofId)) {
+        fail(`ProtocolRelease PASS output is not evidence-bound: ${proofId}`);
+      }
+    }
+    console.log(output);
   };
 
   console.log(`VALIDATOR Ajv ${ajvVersion} Draft 2020-12`);
@@ -275,7 +323,8 @@ function main() {
     `FIXTURES ${
       fixtures.fixtureCount +
       r1Fixtures.fixtureCount +
-      participantIdentityCapabilityFixtures.fixtureCount
+      participantIdentityCapabilityFixtures.fixtureCount +
+      protocolReleaseFixtures.fixtureCount
     }`,
   );
   console.log(`FIXTURE_TARGET_SCHEMAS ${allFixtureTargetSchemaIds.size}`);
@@ -298,16 +347,43 @@ function main() {
   console.log(
     `PARTICIPANT_IDENTITY_CAPABILITY_SEMANTIC_CHECKS PASS ${participantIdentityCapabilityFixtures.semanticCount}`,
   );
+  printProtocolReleasePass(
+    ['PROTOCOL_RELEASE_LITERAL_ORACLES_EXECUTED'],
+    `PROTOCOL_RELEASE_FIXTURES PASS ${protocolReleaseFixtures.fixtureCount}`,
+  );
+  printProtocolReleasePass(
+    ['PROTOCOL_RELEASE_LITERAL_ORACLES_EXECUTED'],
+    `PROTOCOL_RELEASE_SEMANTIC_EXECUTIONS PASS ${protocolReleaseFixtures.semanticCount}`,
+  );
+  printProtocolReleasePass(
+    ['PROTOCOL_RELEASE_LITERAL_ORACLES_EXECUTED'],
+    `PROTOCOL_RELEASE_EQUALITY_EXECUTIONS PASS ${protocolReleaseFixtures.equalityCount}`,
+  );
+  printProtocolReleasePass(
+    ['PROTOCOL_RELEASE_LITERAL_ORACLES_EXECUTED'],
+    `PROTOCOL_RELEASE_COMPARATOR_EXECUTIONS PASS ${protocolReleaseFixtures.comparatorCount}`,
+  );
+  printProtocolReleasePass(
+    ['PROTOCOL_RELEASE_TARGET_COVERAGE_EXECUTED'],
+    `PROTOCOL_RELEASE_TARGET_COVERAGE PASS ${protocolReleaseFixtures.fixtureTargetSchemaIds.size}`,
+  );
   console.log(
     `SEMANTIC_CHECKS PASS ${
       fixtures.semanticCount +
       r1Fixtures.semanticCount +
-      participantIdentityCapabilityFixtures.semanticCount
+      participantIdentityCapabilityFixtures.semanticCount +
+      protocolReleaseFixtures.semanticCount
     }`,
   );
   console.log(`SEMANTIC_CHECK_IDENTIFIERS PASS ${semanticCheckDeclarationCount}`);
   console.log(`SEMANTIC_REGISTRY_COVERAGE PASS ${semanticRegistryCoverage}`);
   for (const proofId of namedProofOutputIds) printNamedProof(proofId);
+  for (const { diagnostic, result } of protocolReleaseSelfTests.diagnosticResults) {
+    printProtocolReleasePass(
+      ['PROTOCOL_RELEASE_SEEDED_DIAGNOSTICS_EXECUTED'],
+      `PROTOCOL_RELEASE_DIAGNOSTIC ${diagnostic} ${result}`,
+    );
+  }
   console.log(
     `REGISTRY_EXACT_SET PASS classes=${releaseData.artifactsByClass.size} facets=${releaseData.facetCount} auth=${releaseData.authenticationProfileCount}`,
   );
@@ -321,6 +397,16 @@ function main() {
   console.log(`R1_SEMANTIC_PREDICATE_SELF_TESTS PASS ${r1SemanticSelfTests}`);
   console.log(
     `PARTICIPANT_IDENTITY_CAPABILITY_SELF_TESTS PASS ${participantIdentityCapabilitySelfTests.count}`,
+  );
+  printProtocolReleasePass(
+    [
+      'PROTOCOL_RELEASE_SEEDED_DIAGNOSTICS_EXECUTED',
+      'PROTOCOL_RELEASE_VALIDATION_BOUNDARIES_EXECUTED',
+      'PROTOCOL_RELEASE_INVALID_OPERAND_REJECTION_EXECUTED',
+      'PROTOCOL_RELEASE_COMPARATOR_TOTAL_ORDER_EXECUTED',
+      'PROTOCOL_RELEASE_COMPARATOR_DETERMINISM_EXECUTED',
+    ],
+    `PROTOCOL_RELEASE_SELF_TESTS PASS ${protocolReleaseSelfTests.count}`,
   );
   console.log(`PATH_POLICY_SELF_TESTS PASS ${seededSelfTests.pathCount}`);
   console.log(`REGISTRY_SELF_TESTS PASS ${seededSelfTests.registryCount}`);
