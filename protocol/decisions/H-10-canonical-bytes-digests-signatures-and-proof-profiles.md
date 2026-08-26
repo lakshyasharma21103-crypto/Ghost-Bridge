@@ -19,6 +19,22 @@ examples are not normative vectors. Cryptographic validity remains distinct
 from authorization. H-10 acceptance creates no implementation, migration,
 deployment, conformance, release, or Protocol 1.0 authority.
 
+### Accepted supplement H-10-S1
+
+On 2026-08-26, **H-10-S1 Revision 2 — Canonical Negotiation Transcript
+Semantic Commitment Domain** was accepted by explicit human disposition with
+the qualification recorded in
+`protocol/decisions/H-10-S1-canonical-negotiation-transcript-semantic-commitment-domain.md`.
+
+H-10-S1 allocates `gb.negotiation.transcript.v1` as a distinct H-10 Digest
+domain for the exact successful, selected-release-bound, secret-free canonical
+semantic negotiation transcript. It does not change the meaning of any
+pre-existing H-10 domain, does not authorize implementation, and does not make
+D2-01 a semantic authority. H/D1/H-13 remain semantic authority;
+human-accepted D2-BG-03 closes the transcript representation/projection;
+D2-01 only realizes accepted schema/assets without semantic discretion and
+must STOP when semantic authority is incomplete.
+
 ## Decision scope
 
 H-10 establishes the accepted, cross-language cryptographic representation for
@@ -563,6 +579,7 @@ rules are:
 | Approved domain family | `audience` | `target` | `organization` / tagged `workspace` |
 | --- | --- | --- | --- |
 | Authentication request/content, consent/selection, Install Grant intent/result, Connection authority, authorization action, Approval action/payload/proof, Invocation intent, Task acceptance, Result/output, Receipt semantic/evidence/signature | Required | Required | Required; workspace tag is present even when workspace is absent |
+| Negotiation transcript (`gb.negotiation.transcript.v1`) | Required | Required | Required; workspace tag is present even when workspace is absent |
 | Install resolution, Connection Offer, Delegation proof | Required | Required | Required; workspace tag is present even when workspace is absent |
 | Passport, issuer metadata, capability/profile manifest, revocation status/snapshot/checkpoint, release/artifact manifest | Forbidden and absent | Forbidden and absent | Forbidden and absent; object payload carries its own issuer/subject identity |
 | Extension-covered object | Exactly inherits the owning registered domain; standalone use is forbidden | Exactly inherits | Exactly inherits |
@@ -707,6 +724,7 @@ own the downstream policy identified in the last column.
 | `gb.authentication.request.v1` | Signature | H-05 governed request proof; exact method/operation/body commitment/Connection/audience/target/tenant/time/nonce/release | H-12 defines request-target and transport placement; H-11 key status |
 | `gb.consent.envelope.v1` | Digest | H-01 exact final human-consent envelope | H-01 decides consent/material-change semantics |
 | `gb.connection.selection.v1` | Digest | H-01/H-03/H-04 exact final selected result before authority commit | H-01/H-04 selection and H-06 commit remain unchanged |
+| `gb.negotiation.transcript.v1` | Digest | H-03/H-04/D1 exact successful, selected-release-bound, secret-free canonical semantic negotiation transcript; distinct from the final selected-result commitment | H-10-S1 fixes purpose/context/acyclicity; H/D1/H-13 remain semantic authority; human-accepted D2-BG-03 closes the projection; D2-01 realizes accepted assets without semantic discretion; D2-03 owns bytes/vectors; H-06 commit remains unchanged |
 | `gb.install-grant.intent.v1` | Digest | H-06 exact redemption intent, including explicit presence and stable attempt identity | H-06 equality/transaction remains unchanged |
 | `gb.install-grant.result.v1` | Digest | H-06 exact authoritative redemption result identity | H-06 replay/disclosure/transaction remains unchanged |
 | `gb.connection.authority.v1` | Digest | H-01/H-04/H-05/H-06/H-07 immutable Connection authority/context bundle | H-07 lifecycle and current intersection |
@@ -775,6 +793,9 @@ current Trust registry entries. In particular, current generic
 current value is H-10 conformant. `FUTURE H-DECISION-REQUIRED SEMANTIC
 COMMITMENT` marks accepted semantics for which downstream work may later create
 a field/schema only after authorization.
+`ACCEPTED FUTURE SEMANTIC COMMITMENT` marks a semantic commitment whose H-level
+purpose/domain decision is accepted but whose downstream representation,
+schema, canonical byte evidence, or implementation remains separately gated.
 
 All approved digest rows use `gb-c14n-jcs-ijson-v1` plus
 `gb-digest-jcs-sha256-v1`; all approved signature rows use
@@ -817,6 +838,7 @@ All approved digest rows use `gb-c14n-jcs-ijson-v1` plus
 | EXISTING REPOSITORY FIELD | Core/Agent grant `keyHash` | Secret-derived lookup | No public H-10 profile | H-06 semantics; deployment storage/privacy | Keep deployment-private legacy lookup; do not expose or call a commitment |
 | EXISTING REPOSITORY FIELD | Client cache and backend idempotency hashes | Local key lookup/fingerprint | No protocol H-10 profile | Deployment policy | Remain explicitly local; never compare as H-10 evidence |
 | EXISTING REPOSITORY FIELD | Platform `#seal` token | Platform HMAC envelope | No Ghost Bridge proof profile | Platform/H-12 adapter policy | Remain deployment-private; not portable authority/proof |
+| ACCEPTED FUTURE SEMANTIC COMMITMENT | Successful negotiation transcript identity/digest slot | Transcript digest uses `gb.negotiation.transcript.v1`; the typed transcript identity/reference remains separate and D2-BG-03-owned | `C/D`; no signing key | H-03/H-04/H-10-S1/H-13; human-accepted D2-BG-03 closes projection; D2-01 realizes accepted schema/assets without semantic discretion; D2-03 owns bytes/vectors | New successful-negotiation evidence only; no backfill; failed negotiations are outside this domain |
 | FUTURE H-DECISION-REQUIRED SEMANTIC COMMITMENT | H-01 consent envelope/final selection | `gb.consent.envelope.v1` and `gb.connection.selection.v1`; final authority bundle separately uses `gb.connection.authority.v1` | `C/D` | H-01/H-03/H-04/H-05/H-10/H-13 | New evidence only; no backfill |
 | FUTURE H-DECISION-REQUIRED SEMANTIC COMMITMENT | H-02 authorization action | `gb.authorization.action.v1` | `C/D`; any future authorization proof needs a separately governed signature domain/key purpose | H-02/H-10/H-13 | New evidence; must remain distinct from Approval |
 | FUTURE H-DECISION-REQUIRED SEMANTIC COMMITMENT | H-06 redemption intent/result | `gb.install-grant.intent.v1`, `gb.install-grant.result.v1` | `C/D` | H-06/H-10/H-13 | New explicitly profiled records; no rewriting legacy grants |
