@@ -1414,3 +1414,30 @@ authorized phases:
 
 This accepted record does not by itself close any `GB-*` gap. Gap closure
 requires separately approved normative requirements and their traced assets.
+
+## Accepted supplement H-02-S1
+
+On 2026-08-27, Lakshya Sharma (`lakshyasharma21103-crypto`) explicitly
+human-approved **H-02-S1 Revision 8 — Experimental Isolation Roles and Evidence
+Authority**. The accepted supplement is recorded in
+[`H-02-S1-experimental-isolation-roles-and-evidence-authority.md`](./H-02-S1-experimental-isolation-roles-and-evidence-authority.md).
+
+Within H-02's constitutional scope, H-02-S1 settles source/role authority
+separation for experimental isolation: Organization is the positive authority;
+Workspace authority is narrowing-only; the Isolation Attestation Authority has
+bounded measured-fact authority; and Trust supplies verification/evidence, not
+Connection or Invocation authority. It also settles universal H-02 projection
+coherence with contradiction rejection, distinct Workspace-present and
+Workspace-absent authority branches, privacy across every unequal
+`ExactTenantContext`, equality-only comparison against Connection-owned values,
+and the non-transfer rules among permission, measurement truth, Trust evidence,
+Workspace narrowing, and Connection authority.
+
+H-02-S1 does **not** define the final runtime or producer ontology; measurement
+vocabulary; measurement correspondence, coverage, or currentness; the final
+isolation attestation payload; cryptographic domains, payloads, signatures,
+digests, algorithms, proof identities, or commitment mechanics; H-11
+currentness/history materialization; D1 normative `REQ-*` wording; or D2 schemas
+and representation. Those matters remain downstream-owned by H-13-S2, H-10,
+H-11, D1, and D2 as assigned in the supplement. Their unresolved work cannot
+authorize implementation and cannot be supplied by implementation discretion.
